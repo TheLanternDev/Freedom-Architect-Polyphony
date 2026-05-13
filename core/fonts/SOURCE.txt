@@ -1,0 +1,4 @@
+DejaVuSans.ttf — DejaVu Fonts 2.37 (bitstream-vera / dejavu-fonts), see
+https://dejavu-fonts.github.io/ — distributed under a free license.
+
+Extracted from the official dejavu-fonts-ttf-2.37.tar.bz2 release.

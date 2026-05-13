@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_URL: redis://redis:6379
+      ARCHITEKT_DB_PATH: /data/architekt.db
+      AW_CORS_ORIGINS: "*"
+    volumes:
+      - aw_sqlite:/data
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  aw_sqlite:

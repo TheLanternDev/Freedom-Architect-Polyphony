@@ -1,0 +1,37 @@
+# Sekrety — NIGDY do repo
+.env
+.env.*
+!.env.example
+
+# Logi runtime (mogą zawierać hashe briefów klientów)
+cost_log.jsonl
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Frontend / Tauri artefakty buildów
+ui/node_modules/
+ui/dist/
+ui/src-tauri/target/
+
+# Lokalne ustawienia narzędzi
+.claude/
+
+# Opcjonalne duże zrzuty benchmarków (odtwórz: pytest tests/benchmark_rada.py --benchmark-json=...)
+data/benchmark_results.json
