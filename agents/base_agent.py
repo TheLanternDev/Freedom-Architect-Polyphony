@@ -17,7 +17,6 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Optional
 
 from config.agent_models import (
@@ -106,12 +105,7 @@ except Exception:  # pragma: no cover
 
 
 # ── Cennik (USD za 1M tokenów) — jedno miejsce do podmiany ──────────────────
-# Lokalizacja loga kosztów — root projektu / cost_log.jsonl
-_COST_LOG_PATH = Path(
-    os.getenv("COST_LOG_PATH", Path(__file__).resolve().parent.parent / "cost_log.jsonl")
-)
-
-
+# Zapis kosztów: `core.cost_tracking` (async append).
 _PRICES_PER_M: dict[str, tuple[float, float]] = {
     # input, output
     "claude-opus-4-6":             (15.0, 75.0),
@@ -381,13 +375,21 @@ class BaseAgent(ABC):
                 "LLM [%s] %s in=%d out=%d ≈ $%.4f",
                 self.name, log_model, in_tok, out_tok, cost,
             )
-            self._log_cost(
-                model=log_model,
-                input_tokens=in_tok,
-                output_tokens=out_tok,
-                cost_usd=cost,
-                context=context,
-            )
+            try:
+                from core.cost_tracking import append_cost_log_async, build_cost_entry
+
+                await append_cost_log_async(
+                    build_cost_entry(
+                        agent=self.name,
+                        model=log_model,
+                        input_tokens=in_tok,
+                        output_tokens=out_tok,
+                        cost_usd=cost,
+                        context=context,
+                    )
+                )
+            except Exception as e:
+                logger.warning("Cost log write failed for %s: %s", self.name, e)
 
             if redis is not None:
                 try:
@@ -591,29 +593,3 @@ class BaseAgent(ABC):
     def _fallback_contribute(self, context: str) -> str:
         """Bezpieczny fallback — używamy istniejącego sync `contribute`."""
         return self.contribute(context)
-
-    def _log_cost(
-        self,
-        model: str,
-        input_tokens: int,
-        output_tokens: int,
-        cost_usd: float,
-        context: str,
-    ) -> None:
-        """Append-only log do cost_log.jsonl. Nigdy nie wywala calla."""
-        try:
-            brief_hash = hashlib.sha256(context.encode("utf-8")).hexdigest()[:16]
-            entry = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "agent": self.name,
-                "model": model,
-                "in_tokens": input_tokens,
-                "out_tokens": output_tokens,
-                "cost_usd": round(cost_usd, 6),
-                "brief_hash": brief_hash,
-            }
-            _COST_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with _COST_LOG_PATH.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except Exception as e:  # log nigdy nie blokuje ścieżki głównej
-            logger.warning("Cost log write failed for %s: %s", self.name, e)

@@ -1,6 +1,6 @@
 # Instalacja lokalna (model A — BYOK)
 
-Krótka ścieżka „od repozytorium do działającego API + UI”. Szczegóły endpointów: `README.md`, kontrakt: `SPEC_CURRENT.md`.
+Krótka ścieżka „od repozytorium do działającego API + UI”. Szczegóły endpointów: `README.md`, kontrakt: `docs/spec/SPEC_CURRENT.md` (skrót w korzeniu: `SPEC_CURRENT.md`).
 
 ## Wymagania
 
@@ -76,7 +76,7 @@ Po `npm run build` w `ui/`: ustaw `AW_SERVE_UI=1`, uruchom `uvicorn` — statycz
 
 - Baza SQLite: domyślnie **`data/architekt.db`** (katalog względem cwd przy starcie uvicorn).
 - Kopia zapasowa = skopiuj ten plik przy zamkniętej aplikacji lub w przerwie w zapisie.
-- Koszty LLM (jeśli włączone): `cost_log.jsonl` — ścieżka z `COST_LOG_PATH` lub domyślna w repo (`README.md`).
+- Koszty LLM (jeśli włączone): domyślnie **`data/cost_log.jsonl`** — nadpisz `COST_LOG_PATH`, jeśli trzymasz log gdzie indziej (np. stary plik `cost_log.jsonl` w korzeniu repo).
 
 **Skrót:** bez kopii pliku bazy **nie odzyskasz** historii debat po utracie dysku lub odinstalowaniu katalogu danych.
 

@@ -8,7 +8,7 @@
 ## Sieć
 
 - Domyślny profil: **localhost / zaufane LAN**.  
-- **Nie** wystawiaj `uvicorn` na 0.0.0.0 w internecie bez reverse proxy, TLS i uwierzytelniania — endpointy nie są zaprojektowane pod anonimowy dostęp z sieci (por. `SPEC_CURRENT.md`, admin bez auth).
+- **Nie** wystawiaj `uvicorn` na 0.0.0.0 w internecie bez reverse proxy, TLS i uwierzytelniania — endpointy nie są zaprojektowane pod anonimowy dostęp z sieci (por. `docs/spec/SPEC_CURRENT.md`, admin bez auth).
 
 ## Telemetria
 

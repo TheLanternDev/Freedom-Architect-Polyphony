@@ -5,6 +5,8 @@
 
 # Dane lokalne / runtime (nie do repo)
 data/*.db
+data/benchmark_results.json
+data/cost_log.jsonl
 cost_log.jsonl
 
 # Python (korzeń)
@@ -24,3 +26,7 @@ __pycache__/
 # Frontend (szczegóły także w `ui/.gitignore`)
 ui/node_modules/
 ui/dist/
+ui/src-tauri/target/
+
+# Claude / lokalne narzędzia
+.claude/

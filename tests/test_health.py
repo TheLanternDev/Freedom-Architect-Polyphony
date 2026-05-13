@@ -1,10 +1,10 @@
 """
-Testy endpointu /health — kontrakt v3.2 (Architekt Wolności).
+Testy endpointu /health — kontrakt v3.3 (Architekt Wolności).
 
-v3.2 raportuje:
+v3.3 raportuje:
 - council_agents (zamiast `agents`)
 - synthesizer (Syez)
-- version = "3.2"
+- version = "3.3"
 - redis / rada_status / db_status / core_status
 - max_active_projects (AKSJOMAT 2)
 - sse_endpoint
@@ -21,7 +21,7 @@ def test_health_returns_200_and_core_fields(client_no_redis):
 
     data = resp.json()
     assert data["status"] == "alive"
-    assert data["version"] == "3.2"
+    assert data["version"] == "3.3"
     assert data["sse_endpoint"] == "POST /debate/stream"
 
 
@@ -58,7 +58,7 @@ def test_health_when_rada_unavailable(client_no_redis, monkeypatch):
     assert data["council_agents"] == 0
     assert data["rada_status"] == "niedostępna"
     assert data["status"] == "alive"
-    assert data["version"] == "3.2"
+    assert data["version"] == "3.3"
 
 
 def test_health_ready_ok(client_no_redis):

@@ -1,7 +1,7 @@
 """
 Cost dashboard dla Architekta Wolności v3.0.
 
-Czyta cost_log.jsonl i pokazuje:
+Czyta log kosztów (`data/cost_log.jsonl` lub `COST_LOG_PATH`) i pokazuje:
 - koszt ostatniego briefu + najdroższy agent
 - top koszty per agent / per model
 - sumę dnia / wszech czasów
@@ -17,20 +17,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-LOG_PATH = _REPO_ROOT / "cost_log.jsonl"
+
+
+def _log_path() -> Path:
+    raw = (os.getenv("COST_LOG_PATH") or "").strip()
+    if raw:
+        return Path(raw)
+    return _REPO_ROOT / "data" / "cost_log.jsonl"
 
 
 def _read_entries() -> list[dict]:
-    if not LOG_PATH.exists():
+    log_path = _log_path()
+    if not log_path.exists():
         return []
     entries: list[dict] = []
-    with LOG_PATH.open(encoding="utf-8") as f:
+    with log_path.open(encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -73,7 +81,7 @@ def _print_brief(entries: list[dict], brief_hash: str) -> None:
 
 def _print_last_brief(entries: list[dict]) -> None:
     if not entries:
-        print("Pusty cost_log.jsonl — nie było jeszcze żadnych wywołań LLM.")
+        print(f"Pusty log kosztów ({_log_path()}) — nie było jeszcze żadnych wywołań LLM.")
         return
     last_hash = entries[-1]["brief_hash"]
     _print_brief(entries, last_hash)

@@ -2,7 +2,7 @@
 
 **Wersja:** 1.1
 **Data:** 2026-05-10
-**Bazuje na:** `Rada_Nadzorcza_Moj_Swiat_Specyfikacja_v1.md` (spec v1.0)
+**Bazuje na:** `docs/spec/Rada_Nadzorcza_Moj_Swiat_Specyfikacja_v1.md` (spec v1.0)
 **Stan kodu odniesienia:** branch obecny, `main.py` v3.1, `agents/` kompletne (10 plików), UI v3.1
 
 > **Zmiana w v1.1:** dodano dwa AKSJOMATY ponad blokami — „Architektura Marzenia” oraz „Doprowadzanie Projektów Do Końca”. To są pierwotne sensy projektu Architekt Wolności i muszą być wbite w logikę kodu, a nie tylko opisane w prozie.

@@ -4,6 +4,12 @@ Format oparty na [Keep a Changelog](https://keepachangelog.com/pl/1.0.0/).
 
 ## [Unreleased]
 
+### Zmienione
+
+- Dokumentacja specyfikacji w katalogu **`docs/spec/`**; skrót w korzeniu: `SPEC_CURRENT.md`.
+- Indeks dokumentacji: **`docs/README.md`**.
+- Domyślny log kosztów LLM: **`data/cost_log.jsonl`** (`COST_LOG_PATH` nadpisuje; stary `cost_log.jsonl` w korzeniu ustaw przez env).
+
 ### Dodane (Tydzień 2 — onboarding, docs, repo)
 
 - UI: modal **Połączenie** (`LocalSetupModal`) — test `GET /health`, nadpisanie URL API w `localStorage` (`aw_api_base_override`), pierwsze uruchomienie do momentu „Nie pokazuj przy starcie” (`aw_setup_v2_done`).

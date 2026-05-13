@@ -1,6 +1,6 @@
 # Architekt Wolności – Rada Nadzorcza „Mój Świat” (backend + Tauri UI)
 
-**Instalacja lokalna (model founders / BYOK):** [`INSTALL.md`](INSTALL.md) · oferta: [`docs/FOUNDERS_OFFER.md`](docs/FOUNDERS_OFFER.md) · bezpieczeństwo lokalne: [`docs/SECURITY_LOCAL.md`](docs/SECURITY_LOCAL.md) · support: [`docs/SUPPORT_PLAYBOOK.md`](docs/SUPPORT_PLAYBOOK.md) · smoke: `./scripts/smoke_week1.sh`
+**Instalacja lokalna (model founders / BYOK):** [`INSTALL.md`](INSTALL.md) · **dokumentacja:** [`docs/README.md`](docs/README.md) · kontrakt: [`docs/spec/SPEC_CURRENT.md`](docs/spec/SPEC_CURRENT.md) · oferta: [`docs/FOUNDERS_OFFER.md`](docs/FOUNDERS_OFFER.md) · bezpieczeństwo lokalne: [`docs/SECURITY_LOCAL.md`](docs/SECURITY_LOCAL.md) · support: [`docs/SUPPORT_PLAYBOOK.md`](docs/SUPPORT_PLAYBOOK.md) · smoke: `./scripts/smoke_week1.sh`
 
 Silnik FastAPI (SSE, SQLite, Redis opcjonalnie) oraz aplikacja **Tauri v2 + React 19 + Vite + Tailwind** zgodnie ze specyfikacją MVP v1.1 (historia debat, strukturalna synteza Syeza, zobowiązania, alert budżetu LLM).
 
@@ -30,7 +30,7 @@ uvicorn main:app --reload --host 127.0.0.1 --port 8000
 | GET | `/debate/{id}/export.pdf` | Eksport PDF |
 | POST | `/commitment` | Zapis zobowiązania powiązanego z debatą |
 
-**Alarm kosztów:** ustaw `DAILY_BUDGET_USD` (np. `0.5`). Gdy suma dzisiejszych wpisów w `cost_log.jsonl` (UTC) ≥ próg, pierwszy event SSE to `budget_warning` (debata i tak trwa).
+**Alarm kosztów:** ustaw `DAILY_BUDGET_USD` (np. `0.5`). Gdy suma dzisiejszych wpisów w `data/cost_log.jsonl` (UTC; `COST_LOG_PATH` nadpisuje lokalizację) ≥ próg, pierwszy event SSE to `budget_warning` (debata i tak trwa).
 
 **Publiczna produkcja:** opcjonalny klucz HTTP `ARCHITEKT_API_KEY` (Bearer na API), token `ARCHITEKT_ADMIN_TOKEN` dla `/admin/trigger-followups`, rate limit debat (`AW_RATE_DEBATE_PER_MINUTE`) — szczegóły: [`docs/SECURITY_PRODUCTION.md`](docs/SECURITY_PRODUCTION.md).
 
@@ -60,7 +60,7 @@ pytest -q
 
 ## Skrypty pomocnicze
 
-- `python3 scripts/cost_dashboard.py` — podsumowanie kosztów z `cost_log.jsonl` (także `--today`, `--all`, `--brief HASH`).
+- `python3 scripts/cost_dashboard.py` — podsumowanie kosztów z domyślnego logu (`data/cost_log.jsonl` lub `COST_LOG_PATH`; także `--today`, `--all`, `--brief HASH`).
 - `python3 scripts/run_acb.py` — szybki smoke równoległych głosów + dashboard + synteza (dev).
 
 ## Strona marketingowa (Polyphony)

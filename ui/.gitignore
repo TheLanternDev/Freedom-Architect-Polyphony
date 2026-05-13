@@ -25,13 +25,10 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Frontend / Tauri artefakty buildów
-ui/node_modules/
-ui/dist/
-ui/src-tauri/target/
+# Frontend / Tauri artefakty buildów (ścieżki względem `ui/`)
+node_modules/
+dist/
+src-tauri/target/
 
 # Lokalne ustawienia narzędzi
 .claude/
-
-# Opcjonalne duże zrzuty benchmarków (odtwórz: pytest tests/benchmark_rada.py --benchmark-json=...)
-data/benchmark_results.json

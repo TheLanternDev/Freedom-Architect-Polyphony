@@ -34,20 +34,25 @@ def _utcnow() -> str:
 
 
 async def init_db(db_path: Optional[Path] = None) -> None:
-    """Tworzy plik DB i ładuje schemat (idempotentne)."""
-    if not _AIOSQLITE_OK:
-        logger.warning("aiosqlite niedostępne — pomijam init_db (tryb degraded).")
-        return
-    path = db_path or DB_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    schema = _SCHEMA_PATH.read_text(encoding="utf-8")
-    async with aiosqlite.connect(path) as db:  # type: ignore[union-attr]
-        await db.executescript(schema)
-        await _migrate_debates_parent_column(db)
-        await _migrate_commitments_phase2(db)
-        await _migrate_agent_evolution_table(db)
-        await db.commit()
-    logger.info("DB initialized at %s", path)
+    """SQLite (plik + migracje) lub PostgreSQL (`DATABASE_URL`) — patrz `db.backend`."""
+    from db.backend import init_database
+
+    async def _sqlite_body() -> None:
+        if not _AIOSQLITE_OK:
+            logger.warning("aiosqlite niedostępne — pomijam init_db SQLite (tryb degraded).")
+            return
+        path = db_path or DB_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        schema = _SCHEMA_PATH.read_text(encoding="utf-8")
+        async with aiosqlite.connect(path) as db:  # type: ignore[union-attr]
+            await db.executescript(schema)
+            await _migrate_debates_parent_column(db)
+            await _migrate_commitments_phase2(db)
+            await _migrate_agent_evolution_table(db)
+            await db.commit()
+        logger.info("SQLite initialized at %s", path)
+
+    await init_database(_sqlite_body)
 
 
 async def _migrate_debates_parent_column(db: Any) -> None:
@@ -95,12 +100,12 @@ async def _migrate_agent_evolution_table(db: Any) -> None:
 
 
 async def get_db() -> AsyncIterator[Any]:
-    """FastAPI dependency — wstrzykuje połączenie z włączonymi FK i row_factory."""
-    if not _AIOSQLITE_OK:
-        raise RuntimeError("aiosqlite niedostępne — zainstaluj `aiosqlite`.")
-    async with aiosqlite.connect(DB_PATH) as db:  # type: ignore[union-attr]
-        await db.execute("PRAGMA foreign_keys = ON")
-        db.row_factory = aiosqlite.Row  # type: ignore[attr-defined,union-attr]
+    """Jedno połączenie na żądanie — SQLite lub Postgres (`DATABASE_URL`)."""
+    from db.backend import acquire_http_db, use_postgres
+
+    if not use_postgres() and not _AIOSQLITE_OK:
+        raise RuntimeError("aiosqlite niedostępne — zainstaluj `aiosqlite` lub ustaw DATABASE_URL.")
+    async with acquire_http_db(DB_PATH) as db:
         yield db
 
 
@@ -382,21 +387,54 @@ class _Repo:
     ) -> list[dict[str, Any]]:
         lim = max(1, min(limit, 200))
         q = (query or "").strip()
+        dialect = getattr(db, "dialect", "sqlite")
+        order = (
+            "ORDER BY datetime(created_at) DESC"
+            if dialect == "sqlite"
+            else "ORDER BY created_at DESC"
+        )
+        order_d = (
+            "ORDER BY datetime(d.created_at) DESC"
+            if dialect == "sqlite"
+            else "ORDER BY d.created_at DESC"
+        )
         if not q:
             cur = await db.execute(
-                """
+                f"""
                 SELECT id, created_at, category, mode, brief_description, dream_id,
                        substr(brief_description, 1, 140) AS preview
                   FROM debates
-                 ORDER BY datetime(created_at) DESC
+                 {order}
                  LIMIT ?
                 """,
                 (lim,),
             )
         else:
             needle = q.lower()[:500]
-            cur = await db.execute(
+            if dialect == "postgres":
+                where = """
+                 WHERE POSITION($1 IN lower(coalesce(d.brief_description,''))) > 0
+                    OR POSITION($2 IN lower(coalesce(d.intention,''))) > 0
+                    OR POSITION($3 IN lower(coalesce(d.extra_context,''))) > 0
+                    OR POSITION($4 IN lower(coalesce(d.synthesis_text,''))) > 0
+                    OR POSITION($5 IN lower(coalesce(v.voice_text,''))) > 0
                 """
+                sql = f"""
+                SELECT DISTINCT d.id, d.created_at, d.category, d.mode, d.brief_description, d.dream_id,
+                       substr(d.brief_description::text, 1, 140) AS preview
+                  FROM debates d
+                  LEFT JOIN agent_voices v ON v.debate_id = d.id
+                 {where}
+                 {order_d}
+                 LIMIT $6
+                """
+                cur = await db.execute(
+                    sql,
+                    (needle, needle, needle, needle, needle, lim),
+                )
+            else:
+                cur = await db.execute(
+                    f"""
                 SELECT DISTINCT d.id, d.created_at, d.category, d.mode, d.brief_description, d.dream_id,
                        substr(d.brief_description, 1, 140) AS preview
                   FROM debates d
@@ -406,11 +444,11 @@ class _Repo:
                     OR instr(lower(coalesce(d.extra_context,'')), ?) > 0
                     OR instr(lower(coalesce(d.synthesis_text,'')), ?) > 0
                     OR instr(lower(coalesce(v.voice_text,'')), ?) > 0
-                 ORDER BY datetime(d.created_at) DESC
+                 {order_d}
                  LIMIT ?
                 """,
-                (needle, needle, needle, needle, needle, lim),
-            )
+                    (needle, needle, needle, needle, needle, lim),
+                )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
@@ -613,13 +651,19 @@ class _Repo:
         self, db: Any, project_id: int, limit: int = 50
     ) -> list[dict[str, Any]]:
         lim = max(1, min(limit, 200))
+        dialect = getattr(db, "dialect", "sqlite")
+        ord_created = (
+            "ORDER BY datetime(created_at) DESC"
+            if dialect == "sqlite"
+            else "ORDER BY created_at DESC"
+        )
         cur = await db.execute(
-            """
+            f"""
             SELECT id, text, due_at, follow_up_at, status, created_at,
                    trigger_type, needs_attention, debate_id, completed_at, release_reason
               FROM commitments
              WHERE project_id = ?
-             ORDER BY datetime(created_at) DESC
+             {ord_created}
              LIMIT ?
             """,
             (project_id, lim),

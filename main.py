@@ -54,7 +54,7 @@ from typing import Any, AsyncIterator, Literal, Optional
 import redis.asyncio as aioredis
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -114,6 +114,17 @@ try:
 except ImportError:
     render_debate_pdf_bytes = None  # type: ignore[misc,assignment]
 
+try:
+    from core.cost_tracking import (
+        evaluate_hard_budget,
+        load_budget_snapshot,
+        maybe_fire_cost_webhook,
+    )
+except ImportError:
+    evaluate_hard_budget = None  # type: ignore[misc,assignment]
+    load_budget_snapshot = None  # type: ignore[misc,assignment]
+    maybe_fire_cost_webhook = None  # type: ignore[misc,assignment]
+
 # Persystencja
 try:
     from db import DB_PATH, get_db, init_db, repo
@@ -125,27 +136,9 @@ except ImportError as e:
 
 redis_client: Optional[aioredis.Redis] = None
 
-
-def _rate_limit_enabled() -> bool:
-    return os.getenv("AW_DISABLE_RATE_LIMIT", "").lower() not in ("1", "true", "yes")
-
-
-def _debate_rate_limit() -> str:
-    try:
-        n = int(os.getenv("AW_RATE_DEBATE_PER_MINUTE", "30") or "30")
-    except ValueError:
-        n = 30
-    n = max(5, min(n, 120))
-    return f"{n}/minute"
-
-
-def _cors_allow_origins() -> list[str]:
-    """Produkcja: AW_CORS_ORIGINS=https://app.example.com,http://localhost:5173 — dev: *."""
-    raw = (os.getenv("AW_CORS_ORIGINS") or "*").strip()
-    if raw == "*":
-        return ["*"]
-    out = [p.strip() for p in raw.split(",") if p.strip()]
-    return out if out else ["*"]
+from api.settings import cors_allow_origins, debate_rate_limit, openapi_urls, rate_limit_enabled
+from api.http_guard import architekt_http_guard
+from api.routers.meta import router as meta_router
 
 
 @asynccontextmanager
@@ -161,23 +154,45 @@ async def lifespan(app: FastAPI):
         )
         await redis_client.ping()
         logger.info("✅ Redis podłączony – cache aktywny")
+        import api.runtime as rt
+
+        rt.redis_client = redis_client
     except Exception as e:
         logger.warning(f"⚠️ Redis niedostępny ({e}) – działamy bez cache")
         redis_client = None
+        import api.runtime as rt
 
-    # SQLite (wymagany dla AKSJOMATU 2 — projekty / functionality / audyty)
+        rt.redis_client = None
+
+    # Baza: SQLite lub Postgres (`DATABASE_URL`) — patrz db.backend
     if DB_AVAILABLE:
         try:
             await init_db()
-            logger.info("✅ SQLite zainicjalizowany: %s", DB_PATH)
+            try:
+                from db.backend import use_postgres
+
+                if use_postgres():
+                    logger.info("✅ PostgreSQL — pool aktywny (DATABASE_URL)")
+                else:
+                    logger.info("✅ SQLite zainicjalizowany: %s", DB_PATH)
+            except Exception:
+                logger.info("✅ DB zainicjalizowany: %s", DB_PATH)
             await _run_phase2_startup_tasks()
         except Exception as e:
             logger.error("⚠️ init_db failed: %s", e)
 
     yield
+    try:
+        from db.backend import shutdown_database
+
+        await shutdown_database()
+    except Exception as e:
+        logger.warning("shutdown_database: %s", e)
     if redis_client:
         await redis_client.close()
 
+
+_docs_url, _redoc_url, _openapi_url = openapi_urls()
 
 app = FastAPI(
     title="Architekt Wolności - AI Engine v3.3",
@@ -187,53 +202,28 @@ app = FastAPI(
     ),
     version="3.3.0",
     lifespan=lifespan,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
+    openapi_url=_openapi_url,
 )
 
-limiter = Limiter(key_func=get_remote_address, enabled=_rate_limit_enabled())
+limiter = Limiter(key_func=get_remote_address, enabled=rate_limit_enabled())
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+app.include_router(meta_router)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_allow_origins(),
+    allow_origins=cors_allow_origins(),
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
 
 
 @app.middleware("http")
-async def _architekt_api_key_guard(request: Request, call_next):
-    """
-    Gdy ustawiono ARCHITEKT_API_KEY — każde żądanie (poza ścieżkami publicznymi)
-    wymaga nagłówka Authorization: Bearer <klucz>.
-    """
-    if request.method == "OPTIONS":
-        return await call_next(request)
-    key = (os.getenv("ARCHITEKT_API_KEY") or "").strip()
-    if not key:
-        return await call_next(request)
-    path = request.url.path
-    if path in (
-        "/health",
-        "/health/ready",
-        "/openapi.json",
-        "/docs",
-        "/redoc",
-        "/",
-    ) or path.startswith("/assets/"):
-        return await call_next(request)
-    auth = (request.headers.get("authorization") or "").strip()
-    if auth == f"Bearer {key}":
-        return await call_next(request)
-    return JSONResponse(
-        {
-            "detail": (
-                "Unauthorized — ustaw nagłówek Authorization: Bearer "
-                "<ARCHITEKT_API_KEY> (patrz README / docs/SECURITY_PRODUCTION.md)."
-            )
-        },
-        status_code=401,
-    )
+async def _architekt_auth_middleware(request: Request, call_next):
+    return await architekt_http_guard(request, call_next)
 
 
 # ==================== MODELE API ====================
@@ -454,11 +444,10 @@ async def _run_phase2_startup_tasks() -> None:
     if not DB_AVAILABLE:
         return
     try:
-        from db.connection import aiosqlite, DB_PATH as _DB
+        from db.backend import acquire_http_db
+        from db.connection import DB_PATH as _DB
 
-        async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
-            await db.execute("PRAGMA foreign_keys = ON")
-            db.row_factory = aiosqlite.Row  # type: ignore[attr-defined,union-attr]
+        async with acquire_http_db(_DB) as db:
             nudged = await _apply_followup_nudges_db(db)
             sync = await _sync_stale_projects_db(db)
             await db.commit()
@@ -471,35 +460,41 @@ async def _run_phase2_startup_tasks() -> None:
         logger.warning("Faza 2 startup maintenance failed: %s", e)
 
 
-_COST_LOG_DEFAULT = Path(__file__).resolve().parent / "cost_log.jsonl"
-
-
-def _sum_cost_logged_today_utc() -> float:
-    """
-    Agregacja dziennego kosztu z cost_log.jsonl (UTC, prefiks daty YYYY-MM-DD).
-    Używane przy alarmie budżetowym v1.1 — nie blokuje debaty, tylko informuje SSE.
-    """
-    path = Path(os.getenv("COST_LOG_PATH", str(_COST_LOG_DEFAULT)))
-    if not path.is_file():
+def _spent_today_usd_logged() -> float:
+    """Koszt dzienny UTC z cost_log.jsonl — spójnie z twardym budżetem."""
+    if load_budget_snapshot is None:
         return 0.0
-    day = datetime.now(UTC).strftime("%Y-%m-%d")
-    total = 0.0
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                ts = str(entry.get("timestamp", ""))
-                if len(ts) >= 10 and ts[:10] == day:
-                    total += float(entry.get("cost_usd", 0) or 0)
-    except OSError as e:
-        logger.warning("cost log read failed: %s", e)
-    return round(total, 6)
+    return float(load_budget_snapshot().spent_today_usd)
+
+
+async def _ensure_hard_budget_or_raise() -> None:
+    """Twarde limity env — brak startu debaty (402)."""
+    if evaluate_hard_budget is None or load_budget_snapshot is None:
+        return
+    block = evaluate_hard_budget(load_budget_snapshot())
+    if block is None:
+        return
+    if maybe_fire_cost_webhook is not None:
+        asyncio.create_task(
+            maybe_fire_cost_webhook(
+                {
+                    "event": "budget_hard_block",
+                    "kind": block.kind,
+                    "spent_usd": block.spent_usd,
+                    "ceiling_usd": block.ceiling_usd,
+                }
+            )
+        )
+    raise HTTPException(
+        status_code=402,
+        detail={
+            "error": "budget_exceeded",
+            "kind": block.kind,
+            "spent_usd": block.spent_usd,
+            "ceiling_usd": block.ceiling_usd,
+            "message_pl": block.message_pl,
+        },
+    )
 
 
 def _maybe_budget_warning_sse() -> Optional[str]:
@@ -510,7 +505,7 @@ def _maybe_budget_warning_sse() -> Optional[str]:
         ceiling = float(raw)
     except ValueError:
         return None
-    spent = _sum_cost_logged_today_utc()
+    spent = _spent_today_usd_logged()
     if spent >= ceiling:
         return _sse(
             "budget_warning",
@@ -731,7 +726,7 @@ async def _stream_debate_inner(
     raw_brief = _build_council_context(brief) + _mode_decorator_for_dream(
         brief.mode, brief.language
     )
-    _cost_start = _sum_cost_logged_today_utc()
+    _cost_start = _spent_today_usd_logged()
 
     # ── A0: Architektura Marzenia ──────────────────────────────────────────
     dream: Optional[Any] = None
@@ -764,16 +759,13 @@ async def _stream_debate_inner(
 
     # Zapis marzenia + projektu (tylko gdy mamy DB)
     debate_id: Optional[int] = None
-    if DB_AVAILABLE and dream is not None:
-        try:
-            # otwieramy własne połączenie, bo to nie endpoint z Depends
-            from db.connection import aiosqlite, DB_PATH as _DB
-            async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
-                await db.execute("PRAGMA foreign_keys = ON")
-                db.row_factory = aiosqlite.Row  # type: ignore[attr-defined,union-attr]
-                # Insert dream
+    from db.backend import optional_debate_db
+    from db.connection import DB_PATH as _STREAM_DB_PATH
+
+    async with optional_debate_db(_STREAM_DB_PATH, DB_AVAILABLE) as db:
+        if db is not None and dream is not None:
+            try:
                 await repo.insert_dream(db, dream)
-                # Projekt (architektura funkcjonalna) tworzymy ZAWSZE — AKSJOMAT 2
                 project_id = await repo.ensure_project_for_dream(
                     db, dream.dream_id, dream.functionality_checklist
                 )
@@ -793,225 +785,220 @@ async def _stream_debate_inner(
                 if project_id is not None:
                     proj_row = await repo.get_project(db, project_id)
                     yield _sse("project_state", proj_row or {})
-        except Exception as e:
-            logger.warning("Persistence A0 step failed: %s", e)
+            except Exception as e:
+                logger.warning("Persistence A0 step failed: %s", e)
 
-    # ── Faza 1: głosy Rady ─────────────────────────────────────────────────
-    budget_evt = _maybe_budget_warning_sse()
-    if budget_evt:
-        yield budget_evt
+        budget_evt = _maybe_budget_warning_sse()
+        if budget_evt:
+            try:
+                from core.cost_tracking import maybe_fire_cost_webhook
 
-    yield _sse(
-        "debate_start",
-        {
-            "agents": council_names,
-            "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
-            "context_preview": raw_brief[:120],
-            "mode": brief.mode,
-            "category": brief.category,
-            "dream_id": dream.dream_id if dream is not None else None,
-            "continuation_parent_id": continuation_parent_id,
-        },
-    )
+                asyncio.create_task(
+                    maybe_fire_cost_webhook({"event": "budget_soft_warning_sse"})
+                )
+            except Exception:
+                pass
+            yield budget_evt
 
-    if not council:
-        # Tryb fallback gdy agents/ nie załadowane
         yield _sse(
-            "synthesis_done",
-            {"full_text": "Rada niedostępna — brak pakietu agents/"},
-        )
-        yield _sse(
-            "debate_done",
+            "debate_start",
             {
-                "debate_id": debate_id,
-                "agent_count": 0,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "agents": council_names,
+                "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
+                "context_preview": raw_brief[:120],
+                "mode": brief.mode,
+                "category": brief.category,
+                "dream_id": dream.dream_id if dream is not None else None,
+                "continuation_parent_id": continuation_parent_id,
             },
         )
-        return
 
-    agent_queues: dict[str, asyncio.Queue] = {a.name: asyncio.Queue() for a in council}
-    full_voices: dict[str, str] = {}
-
-    evolution_by_agent: dict[str, str] = {}
-    if DB_AVAILABLE and _agent_evolution_enabled():
-        try:
-            from db.connection import aiosqlite, DB_PATH as _DB
-
-            async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
-                await db.execute("PRAGMA foreign_keys = ON")
-                db.row_factory = aiosqlite.Row  # type: ignore[attr-defined,union-attr]
-                evolution_by_agent = await repo.list_agent_evolution(db)
-        except Exception as e:
-            logger.warning("agent evolution load failed: %s", e)
-
-    lang = brief.language
-
-    async def run_agent(agent, queue: asyncio.Queue):
-        try:
-            evo = evolution_by_agent.get(agent.name) if evolution_by_agent else None
-            response = await agent.acontribute(
-                raw_brief,
-                dream=dream,
-                language=lang,
-                debate_mode=brief.mode,
-                evolution_note=(evo.strip() if evo and evo.strip() else None),
+        if not council:
+            yield _sse(
+                "synthesis_done",
+                {"full_text": "Rada niedostępna — brak pakietu agents/"},
             )
-            words = response.split()
-            buf: list[str] = []
-            for w in words:
-                buf.append(w)
-                if len(buf) >= 4:
-                    await queue.put((" ".join(buf) + " ", False))
-                    buf = []
-                    await asyncio.sleep(0.03)
-            if buf:
-                await queue.put((" ".join(buf), False))
-            await queue.put((response, True))
-        except Exception as e:
-            await queue.put((f"[błąd: {e}]", True))
+            yield _sse(
+                "debate_done",
+                {
+                    "debate_id": debate_id,
+                    "agent_count": 0,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                },
+            )
+            return
 
-    for a in council:
-        yield _sse("agent_start", {"agent": a.name})
+        agent_queues: dict[str, asyncio.Queue] = {a.name: asyncio.Queue() for a in council}
+        full_voices: dict[str, str] = {}
 
-    tasks = [asyncio.create_task(run_agent(a, agent_queues[a.name])) for a in council]
-    done_agents: set[str] = set()
-    while len(done_agents) < len(council):
-        for a in council:
-            if a.name in done_agents:
-                continue
-            q = agent_queues[a.name]
+        evolution_by_agent: dict[str, str] = {}
+        if db is not None and _agent_evolution_enabled():
             try:
-                text, is_final = q.get_nowait()
-                if is_final:
-                    done_agents.add(a.name)
-                    full_voices[a.name] = text
-                    yield _sse("agent_done", {"agent": a.name, "full_text": text})
-                else:
-                    yield _sse("agent_chunk", {"agent": a.name, "chunk": text})
-            except asyncio.QueueEmpty:
-                pass
-        await asyncio.sleep(0.01)
-    await asyncio.gather(*tasks)
+                evolution_by_agent = await repo.list_agent_evolution(db)
+            except Exception as e:
+                logger.warning("agent evolution load failed: %s", e)
 
-    pairs: list[dict[str, Any]] = []
-    if compute_live_pair_frictions is not None:
+        lang = brief.language
+
+
+        async def run_agent(agent, queue: asyncio.Queue):
+            try:
+                evo = evolution_by_agent.get(agent.name) if evolution_by_agent else None
+                response = await agent.acontribute(
+                    raw_brief,
+                    dream=dream,
+                    language=lang,
+                    debate_mode=brief.mode,
+                    evolution_note=(evo.strip() if evo and evo.strip() else None),
+                )
+                words = response.split()
+                buf: list[str] = []
+                for w in words:
+                    buf.append(w)
+                    if len(buf) >= 4:
+                        await queue.put((" ".join(buf) + " ", False))
+                        buf = []
+                        await asyncio.sleep(0.03)
+                if buf:
+                    await queue.put((" ".join(buf), False))
+                await queue.put((response, True))
+            except Exception as e:
+                await queue.put((f"[błąd: {e}]", True))
+
+        for a in council:
+            yield _sse("agent_start", {"agent": a.name})
+
+        tasks = [asyncio.create_task(run_agent(a, agent_queues[a.name])) for a in council]
+        done_agents: set[str] = set()
+        while len(done_agents) < len(council):
+            for a in council:
+                if a.name in done_agents:
+                    continue
+                q = agent_queues[a.name]
+                try:
+                    text, is_final = q.get_nowait()
+                    if is_final:
+                        done_agents.add(a.name)
+                        full_voices[a.name] = text
+                        yield _sse("agent_done", {"agent": a.name, "full_text": text})
+                    else:
+                        yield _sse("agent_chunk", {"agent": a.name, "chunk": text})
+                except asyncio.QueueEmpty:
+                    pass
+            await asyncio.sleep(0.01)
+        await asyncio.gather(*tasks)
+
+        pairs: list[dict[str, Any]] = []
+        if compute_live_pair_frictions is not None:
+            try:
+                pairs = compute_live_pair_frictions(council_names, full_voices)
+            except Exception as e:
+                logger.warning("live_tensions compute failed: %s", e)
+        yield _sse("live_tensions", {"pairs": pairs})
+
+        # ── Faza 2: Syez (z wymuszeniem completion_audit) ──────────────────────
+        yield _sse(
+            "synthesis_start",
+            {"synthesizer": SYNTHESIZER.name},
+        )
+
+        bundle = "\n\n".join(f"[{name}]\n{voice}" for name, voice in full_voices.items())
+        syez_payload = _build_syez_payload(raw_brief, bundle, dream, brief, live_pairs=pairs)
+
         try:
-            pairs = compute_live_pair_frictions(council_names, full_voices)
+            synthesis = await SYNTHESIZER.acontribute(syez_payload, dream=dream, language=lang)
         except Exception as e:
-            logger.warning("live_tensions compute failed: %s", e)
-    yield _sse("live_tensions", {"pairs": pairs})
+            synthesis = f"[błąd syntezy: {e}]" if lang == "pl" else f"[synthesis error: {e}]"
 
-    # ── Faza 2: Syez (z wymuszeniem completion_audit) ──────────────────────
-    yield _sse(
-        "synthesis_start",
-        {"synthesizer": SYNTHESIZER.name},
-    )
+        # Stream syntezy tekstowej
+        for chunk in _chunk_words(synthesis, 5):
+            yield _sse("synthesis_chunk", {"chunk": chunk})
+            await asyncio.sleep(0.025)
+        yield _sse("synthesis_done", {"full_text": synthesis})
 
-    bundle = "\n\n".join(f"[{name}]\n{voice}" for name, voice in full_voices.items())
-    syez_payload = _build_syez_payload(raw_brief, bundle, dream, brief, live_pairs=pairs)
+        synthesis_final = synthesis
+        parsed_final: Optional[dict[str, Any]] = _try_parse_synthesis_json(synthesis_final)
 
-    try:
-        synthesis = await SYNTHESIZER.acontribute(syez_payload, dream=dream, language=lang)
-    except Exception as e:
-        synthesis = f"[błąd syntezy: {e}]" if lang == "pl" else f"[synthesis error: {e}]"
+        audit_violation_payload: Optional[dict[str, Any]] = None
+        audit_for_db: Optional[dict[str, Any]] = None
 
-    # Stream syntezy tekstowej
-    for chunk in _chunk_words(synthesis, 5):
-        yield _sse("synthesis_chunk", {"chunk": chunk})
-        await asyncio.sleep(0.025)
-    yield _sse("synthesis_done", {"full_text": synthesis})
+        if CORE_AVAILABLE and not (
+            synthesis_final.startswith("[błąd syntezy")
+            or synthesis_final.startswith("[synthesis error")
+        ):
+            try:
+                if parsed_final is not None and isinstance(
+                    parsed_final.get("completion_audit"), dict
+                ):
+                    audit_for_db = require_completion_audit(parsed_final)
+                else:
+                    validate_syez_prose_completion_audit(synthesis_final)
+                    audit_for_db = extract_completion_audit_from_prose(synthesis_final)
 
-    synthesis_final = synthesis
-    parsed_final: Optional[dict[str, Any]] = _try_parse_synthesis_json(synthesis_final)
-
-    audit_violation_payload: Optional[dict[str, Any]] = None
-    audit_for_db: Optional[dict[str, Any]] = None
-
-    if CORE_AVAILABLE and not (
-        synthesis_final.startswith("[błąd syntezy")
-        or synthesis_final.startswith("[synthesis error")
-    ):
-        try:
-            if parsed_final is not None and isinstance(
-                parsed_final.get("completion_audit"), dict
-            ):
-                audit_for_db = require_completion_audit(parsed_final)
-            else:
-                validate_syez_prose_completion_audit(synthesis_final)
-                audit_for_db = extract_completion_audit_from_prose(synthesis_final)
-
-            if DB_AVAILABLE and project_id is not None and debate_id is not None:
-                from db.connection import aiosqlite, DB_PATH as _DB
-                async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
+                if db is not None and project_id is not None and debate_id is not None:
                     await repo.save_completion_audit(db, project_id, debate_id, audit_for_db)
                     await db.commit()
 
-            if parsed_final is not None:
-                yield _sse("synthesis_structured", parsed_final)
+                if parsed_final is not None:
+                    yield _sse("synthesis_structured", parsed_final)
 
-        except CompletionViolation as cv:
-            logger.warning("Syez audit violation, re-prompting: %s", cv)
-            audit_violation_payload = cv.to_payload()
-            if lang == "en":
-                fix_prompt = (
-                    "The previous synthesis does not satisfy AXIOM 2 (completion audit).\n"
-                    "Rewrite IT ALL as PURE ENGLISH PROSE — no JSON; the only "
-                    "permitted code block is ```mermaid … ``` (agent relation diagram).\n"
-                    "Weave clearly three things: what remains in the functionality "
-                    "checklist, what blocks the first outstanding item, and the "
-                    "smallest concrete move (≈60 minutes).\n\n"
-                    f"Previous version:\n---\n{synthesis_final}\n---"
-                )
-            else:
-                fix_prompt = (
-                    "Poprzednia synteza nie spełnia AKSJOMATU 2 (audyt domknięcia).\n"
-                    "Przepisz CAŁOŚĆ jako CZYSTĄ POLSKĄ PROZĘ — bez JSON-a; jedyny "
-                    "dozwolony blok kodu to ```mermaid … ``` (diagram relacji agentów).\n"
-                    "Wpleć wyraźnie trzy rzeczy: co zostało z checklisty funkcjonalności, "
-                    "co blokuje pierwszą zaległą pozycję, oraz najmniejszy konkretny ruch "
-                    "(około 60 minut).\n\n"
-                    f"Poprzednia wersja:\n---\n{synthesis_final}\n---"
-                )
-            try:
-                fixed = await SYNTHESIZER.acontribute(
-                    fix_prompt, dream=dream, language=lang, debate_mode=brief.mode
-                )
-                synthesis_final = fixed
-                parsed_fix = _try_parse_synthesis_json(fixed)
-                if parsed_fix is not None and isinstance(
-                    parsed_fix.get("completion_audit"), dict
-                ):
-                    audit_for_db = require_completion_audit(parsed_fix)
-                    parsed_final = parsed_fix
+            except CompletionViolation as cv:
+                logger.warning("Syez audit violation, re-prompting: %s", cv)
+                audit_violation_payload = cv.to_payload()
+                if lang == "en":
+                    fix_prompt = (
+                        "The previous synthesis does not satisfy AXIOM 2 (completion audit).\n"
+                        "Rewrite IT ALL as PURE ENGLISH PROSE — no JSON; the only "
+                        "permitted code block is ```mermaid … ``` (agent relation diagram).\n"
+                        "Weave clearly three things: what remains in the functionality "
+                        "checklist, what blocks the first outstanding item, and the "
+                        "smallest concrete move (≈60 minutes).\n\n"
+                        f"Previous version:\n---\n{synthesis_final}\n---"
+                    )
                 else:
-                    validate_syez_prose_completion_audit(fixed)
-                    audit_for_db = extract_completion_audit_from_prose(fixed)
-                    parsed_final = parsed_fix
+                    fix_prompt = (
+                        "Poprzednia synteza nie spełnia AKSJOMATU 2 (audyt domknięcia).\n"
+                        "Przepisz CAŁOŚĆ jako CZYSTĄ POLSKĄ PROZĘ — bez JSON-a; jedyny "
+                        "dozwolony blok kodu to ```mermaid … ``` (diagram relacji agentów).\n"
+                        "Wpleć wyraźnie trzy rzeczy: co zostało z checklisty funkcjonalności, "
+                        "co blokuje pierwszą zaległą pozycję, oraz najmniejszy konkretny ruch "
+                        "(około 60 minut).\n\n"
+                        f"Poprzednia wersja:\n---\n{synthesis_final}\n---"
+                    )
+                try:
+                    fixed = await SYNTHESIZER.acontribute(
+                        fix_prompt, dream=dream, language=lang, debate_mode=brief.mode
+                    )
+                    synthesis_final = fixed
+                    parsed_fix = _try_parse_synthesis_json(fixed)
+                    if parsed_fix is not None and isinstance(
+                        parsed_fix.get("completion_audit"), dict
+                    ):
+                        audit_for_db = require_completion_audit(parsed_fix)
+                        parsed_final = parsed_fix
+                    else:
+                        validate_syez_prose_completion_audit(fixed)
+                        audit_for_db = extract_completion_audit_from_prose(fixed)
+                        parsed_final = parsed_fix
 
-                if DB_AVAILABLE and project_id is not None and debate_id is not None:
-                    from db.connection import aiosqlite, DB_PATH as _DB
-                    async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
+                    if db is not None and project_id is not None and debate_id is not None:
                         await repo.save_completion_audit(db, project_id, debate_id, audit_for_db)
                         await db.commit()
 
-                if parsed_final is not None:
-                    yield _sse("synthesis_structured", parsed_final)
-                audit_violation_payload = None
-            except CompletionViolation as cv2:
-                audit_violation_payload = cv2.to_payload()
-            except Exception as e:
-                logger.warning("Re-prompt audit failed: %s", e)
+                    if parsed_final is not None:
+                        yield _sse("synthesis_structured", parsed_final)
+                    audit_violation_payload = None
+                except CompletionViolation as cv2:
+                    audit_violation_payload = cv2.to_payload()
+                except Exception as e:
+                    logger.warning("Re-prompt audit failed: %s", e)
 
-    if audit_violation_payload is not None:
-        yield _sse("completion_audit_violation", audit_violation_payload)
+        if audit_violation_payload is not None:
+            yield _sse("completion_audit_violation", audit_violation_payload)
 
-    # Zapis pełnej syntezy + głosów
-    if DB_AVAILABLE and debate_id is not None:
-        try:
-            from db.connection import aiosqlite, DB_PATH as _DB
-            async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
-                await db.execute("PRAGMA foreign_keys = ON")
+        # Zapis pełnej syntezy + głosów
+        if db is not None and debate_id is not None:
+            try:
                 for name, voice in full_voices.items():
                     await repo.save_voice(db, debate_id, name, voice)
                 if _agent_evolution_enabled():
@@ -1019,23 +1006,19 @@ async def _stream_debate_inner(
                         await repo.merge_agent_evolution_snippet(db, name, voice)
                 await repo.save_synthesis(db, debate_id, synthesis_final, parsed_final)
                 await db.commit()
-        except Exception as e:
-            logger.warning("Persistence synthesis step failed: %s", e)
+            except Exception as e:
+                logger.warning("Persistence synthesis step failed: %s", e)
 
-    # Faza 2 / AKSJOMAT 2: tryb `schematy` — automatyczne zobowiązanie z follow-up 72h (ton przygotowawczy; prefix Szowa dokleja maintenance po terminie).
-    if (
-        DB_AVAILABLE
-        and debate_id is not None
-        and brief.mode == "schematy"
-        and project_id is not None
-    ):
-        try:
-            from db.connection import aiosqlite, DB_PATH as _DB
-
-            fu = (datetime.now(UTC) + timedelta(hours=72)).isoformat()
-            body = _auto_72h_schematy_body(brief.language)
-            async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
-                await db.execute("PRAGMA foreign_keys = ON")
+        # Faza 2 / AKSJOMAT 2: tryb `schematy` — automatyczne zobowiązanie z follow-up 72h (ton przygotowawczy; prefix Szowa dokleja maintenance po terminie).
+        if (
+            db is not None
+            and debate_id is not None
+            and brief.mode == "schematy"
+            and project_id is not None
+        ):
+            try:
+                fu = (datetime.now(UTC) + timedelta(hours=72)).isoformat()
+                body = _auto_72h_schematy_body(brief.language)
                 cid = await repo.insert_commitment(
                     db,
                     text=body,
@@ -1046,34 +1029,34 @@ async def _stream_debate_inner(
                 )
                 await repo.touch_project_last_progress(db, project_id)
                 await db.commit()
-            yield _sse(
-                "commitment_created",
-                {
-                    "id": cid,
-                    "debate_id": debate_id,
-                    "project_id": project_id,
-                    "follow_up_at": fu,
-                    "trigger_type": "auto_72h",
-                    "text": body,
-                },
-            )
-        except Exception as e:
-            logger.warning("auto 72h schematy commitment failed: %s", e)
+                yield _sse(
+                    "commitment_created",
+                    {
+                        "id": cid,
+                        "debate_id": debate_id,
+                        "project_id": project_id,
+                        "follow_up_at": fu,
+                        "trigger_type": "auto_72h",
+                        "text": body,
+                    },
+                )
+            except Exception as e:
+                logger.warning("auto 72h schematy commitment failed: %s", e)
 
-    _debate_cost = round(_sum_cost_logged_today_utc() - _cost_start, 6)
-    yield _sse(
-        "debate_done",
-        {
-            "debate_id": debate_id,
-            "agent_count": len(council),
-            "synthesizer": SYNTHESIZER.name,
-            "timestamp": datetime.now(UTC).isoformat(),
-            "dream_id": dream.dream_id if dream is not None else None,
-            "project_id": project_id,
-            "continuation_parent_id": continuation_parent_id,
-            "cost_usd": _debate_cost,
-        },
-    )
+        _debate_cost = round(_spent_today_usd_logged() - _cost_start, 6)
+        yield _sse(
+            "debate_done",
+            {
+                "debate_id": debate_id,
+                "agent_count": len(council),
+                "synthesizer": SYNTHESIZER.name,
+                "timestamp": datetime.now(UTC).isoformat(),
+                "dream_id": dream.dream_id if dream is not None else None,
+                "project_id": project_id,
+                "continuation_parent_id": continuation_parent_id,
+                "cost_usd": _debate_cost,
+            },
+        )
 
 
 def _chunk_words(text: str, group: int = 5) -> AsyncIterator[str]:  # type: ignore[override]
@@ -1203,7 +1186,7 @@ def _try_parse_synthesis_json(text: str) -> Optional[dict[str, Any]]:
 
 
 @app.post("/debate/stream")
-@limiter.limit(_debate_rate_limit())
+@limiter.limit(debate_rate_limit())
 async def debate_stream(request: Request, brief: Brief):
     """
     SSE endpoint — strumieniuje debatę Rady w czasie rzeczywistym.
@@ -1223,12 +1206,13 @@ async def debate_stream(request: Request, brief: Brief):
             )
         return StreamingResponse(fallback(), media_type="text/event-stream")
 
-    if brief.category == "projekt" and CORE_AVAILABLE and DB_AVAILABLE:
-        from db.connection import aiosqlite, DB_PATH as _DB
+    await _ensure_hard_budget_or_raise()
 
-        async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
-            await db.execute("PRAGMA foreign_keys = ON")
-            db.row_factory = aiosqlite.Row  # type: ignore[attr-defined,union-attr]
+    if brief.category == "projekt" and CORE_AVAILABLE and DB_AVAILABLE:
+        from db.backend import acquire_http_db
+        from db.connection import DB_PATH as _DB
+
+        async with acquire_http_db(_DB) as db:
             await _enforce_active_project_limit_for_brief(brief, db)
 
     return StreamingResponse(
@@ -1239,7 +1223,7 @@ async def debate_stream(request: Request, brief: Brief):
 
 
 @app.post("/debate/continue/stream")
-@limiter.limit(_debate_rate_limit())
+@limiter.limit(debate_rate_limit())
 async def debate_continue_stream(request: Request, payload: DebateContinueRequest):
     """
     Kontynuacja wątku: wczytuje metadane i głosy poprzedniej debaty, składa
@@ -1263,11 +1247,12 @@ async def debate_continue_stream(request: Request, payload: DebateContinueReques
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="baza niedostępna — brak kontekstu kontynuacji")
 
-    from db.connection import aiosqlite, DB_PATH as _DB
+    await _ensure_hard_budget_or_raise()
 
-    async with aiosqlite.connect(_DB) as db:  # type: ignore[union-attr]
-        await db.execute("PRAGMA foreign_keys = ON")
-        db.row_factory = aiosqlite.Row  # type: ignore[attr-defined,union-attr]
+    from db.backend import acquire_http_db
+    from db.connection import DB_PATH as _DB
+
+    async with acquire_http_db(_DB) as db:
         parent_row = await repo.get_debate_row(db, payload.previous_debate_id)
         if not parent_row:
             raise HTTPException(status_code=404, detail="Debata źródłowa nie istnieje")
@@ -1296,53 +1281,14 @@ async def debate_continue_stream(request: Request, payload: DebateContinueReques
     )
 
     if brief.category == "projekt" and CORE_AVAILABLE and DB_AVAILABLE:
-        async with aiosqlite.connect(_DB) as db2:  # type: ignore[union-attr]
-            await db2.execute("PRAGMA foreign_keys = ON")
-            db2.row_factory = aiosqlite.Row  # type: ignore[attr-defined,union-attr]
-            await _enforce_active_project_limit_for_brief(brief, db2)
+        async with acquire_http_db(_DB) as db:
+            await _enforce_active_project_limit_for_brief(brief, db)
 
     return StreamingResponse(
         _stream_debate(brief, continuation_parent_id=payload.previous_debate_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-@app.get("/health")
-async def health():
-    try:
-        from config.llm_providers import effective_llm_backend
-
-        llm_b = effective_llm_backend() if CORE_AVAILABLE else "none"
-    except Exception:
-        llm_b = "none"
-    return {
-        "status": "alive",
-        "council_agents": len(COUNCIL) if RADA_AVAILABLE else 0,
-        "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
-        "version": "3.2",
-        "redis": "connected" if redis_client else "disconnected",
-        "rada_status": "aktywna" if RADA_AVAILABLE else "niedostępna",
-        "db_status": "aktywna" if DB_AVAILABLE else "niedostępna",
-        "core_status": "aktywne" if CORE_AVAILABLE else "niedostępne",
-        "max_active_projects": MAX_ACTIVE_PROJECTS if CORE_AVAILABLE else None,
-        "llm_backend": llm_b,
-        "sse_endpoint": "POST /debate/stream",
-        "sse_continue_endpoint": "POST /debate/continue/stream",
-        "history_endpoint": "GET /history",
-        "debate_detail_endpoint": "GET /debate/{id}",
-        "commitment_endpoint": "POST /commitment",
-        "ready_endpoint": "GET /health/ready",
-    }
-
-
-@app.get("/health/ready")
-async def health_ready(db=Depends(get_db)):
-    """K8s/load balancer: SQLite musi odpowiadać (init_db w lifespan)."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="db niedostępna")
-    await db.execute("SELECT 1")
-    return {"ready": True}
 
 
 @app.get("/history")
