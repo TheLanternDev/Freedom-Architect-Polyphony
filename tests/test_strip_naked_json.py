@@ -10,29 +10,57 @@ import os
 # BaseAgent._sanitize_syez_output jest @staticmethod, więc wystarczy patch importów.
 
 # Stub wymaganych modułów, żeby import base_agent nie padł
-for mod in [
+_STUBBED_MODS = [
     "config", "config.agent_models", "config.llm_providers",
     "core", "core.completion_enforcer",
     "business_fa2", "business_fa2.config", "business_fa2.config.roles",
     "anthropic", "tenacity", "redis", "redis.asyncio",
-]:
+]
+# Zapamiętujemy, które moduły faktycznie podmieniliśmy — żeby je posprzątać
+# w teardown_module (inaczej stuby w sys.modules zatruwają kolejne testy,
+# np. test_anthropic_temperature_compat — patrz [[fa-test-isolation]]).
+_INSERTED_BY_US = [m for m in _STUBBED_MODS if m not in sys.modules]
+for mod in _STUBBED_MODS:
     if mod not in sys.modules:
         sys.modules[mod] = type(sys)("stub")
 
-# Stub atrybutów wymaganych przez import
-sys.modules["config.agent_models"].HYBRID_MODELS_ENABLED = False
-sys.modules["config.agent_models"].ModelCfg = dict
-sys.modules["config.agent_models"].get_model_config = lambda *a, **kw: {}
-sys.modules["config.llm_providers"].anthropic_api_key = lambda: None
-sys.modules["config.llm_providers"].anthropic_omits_temperature = lambda m: False
-sys.modules["config.llm_providers"].effective_llm_backend = lambda: "none"
-sys.modules["config.llm_providers"].map_claude_model_to_xai = lambda m: m
-sys.modules["config.llm_providers"].xai_chat_completion = None
-sys.modules["core.completion_enforcer"].AGENT_COMPLETION_POSTSCRIPT = ""
-sys.modules["business_fa2.config.roles"].FA2_BUSINESS_ROLES = {}
+# Atrybuty stubów — ustawiamy WYŁĄCZNIE na modułach, które sami wstrzyknęliśmy
+# (_INSERTED_BY_US). Mutowanie realnego modułu (gdy był już zaimportowany przez
+# wcześniejszy test) zatruwałoby go trwale — np. nadpisanie realnego
+# config.llm_providers.anthropic_omits_temperature lambdą psuło
+# test_anthropic_temperature_compat w pełnym zestawie.
+def _stub_attr(mod_name, attr, value):
+    if mod_name in _INSERTED_BY_US:
+        setattr(sys.modules[mod_name], attr, value)
 
-sys.path.insert(0, os.path.dirname(__file__))
-from base_agent import BaseAgent
+_stub_attr("config.agent_models", "HYBRID_MODELS_ENABLED", False)
+_stub_attr("config.agent_models", "ModelCfg", dict)
+_stub_attr("config.agent_models", "get_model_config", lambda *a, **kw: {})
+_stub_attr("config.llm_providers", "anthropic_api_key", lambda: None)
+_stub_attr("config.llm_providers", "anthropic_omits_temperature", lambda m: False)
+_stub_attr("config.llm_providers", "effective_llm_backend", lambda: "none")
+_stub_attr("config.llm_providers", "map_claude_model_to_xai", lambda m: m)
+_stub_attr("config.llm_providers", "xai_chat_completion", None)
+_stub_attr("core.completion_enforcer", "AGENT_COMPLETION_POSTSCRIPT", "")
+_stub_attr("core.completion_enforcer", "SYEZ_AKSJOMAT2_PROSE_APPEND", "")
+_stub_attr("business_fa2.config.roles", "FA2_BUSINESS_ROLES", {})
+
+# Importujemy base_agent jako samodzielny moduł (z katalogu agents/), NIE przez
+# pakiet agents — żeby agents/__init__.py nie wciągał realnych zależności,
+# które celowo stubujemy powyżej.
+_agents_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "agents")
+sys.path.insert(0, _agents_dir)
+from base_agent import BaseAgent  # noqa: E402
+
+# KLUCZOWE: sprzątamy stuby NATYCHMIAST po imporcie. _sanitize_syez_output jest
+# @staticmethod i nie sięga w runtime do stubowanych modułów, więc nie są już
+# potrzebne. Pozostawienie ich w sys.modules zatruwałoby collection kolejnych
+# plików testowych (np. test_anthropic_temperature_compat importuje realny
+# config.llm_providers). Usuwamy tylko to, co sami wstrzyknęliśmy.
+for _mod in _INSERTED_BY_US:
+    sys.modules.pop(_mod, None)
+if _agents_dir in sys.path:
+    sys.path.remove(_agents_dir)
 
 
 def test_pure_text_preserved():
