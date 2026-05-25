@@ -24,7 +24,10 @@ RED_PATTERNS_PL = [
     # "nie chcę żyć" / "nie chcę już żyć" / "nie chcę żyć dalej/tak/więcej"
     r"\bnie\s+chce\s+(?:juz\s+)?zyc(?:\s+(?:dalej|wiecej|tak)\b|[.!?]?\s*$)",
     r"\bnie\s+chce\s+(?:juz\s+)?(?:byc|istniec)\b",
+    # "skończyć ze sobą" oraz odwrotny szyk "ze sobą (już) skończyć",
+    # "chcę ze sobą skończyć", "mam dość, chcę ze sobą skończyć"
     r"\bskonczyc\s+ze\s+soba\b",
+    r"\bze\s+soba\s+(?:juz\s+)?(?:chce\s+)?skonczyc\b",
     r"\bnie\s+wytrzymam\s+(?:dluzej|tego\s+dluzej)\b",
     r"\bsamoboj\w*",
     r"\bodebrac\s+sobie\s+zycie\b",
@@ -33,6 +36,9 @@ RED_PATTERNS_PL = [
     # Dodatkowe warianty których brakuje w oryginale
     r"\bchce\s+umrzec\b",
     r"\bnie\s+ma\s+sensu\s+(?:zyc|zycie)\b",
+    # "najlepiej by mnie nie było" / "żeby mnie (już) nie było" / "gdyby mnie nie było"
+    # — wyrażenie ideacyjne (życzenie nieistnienia), nie zwykła metafora.
+    r"\b(?:najlepiej\s+)?(?:zeby|gdyby|by)\s+mnie\s+(?:juz\s+)?nie\s+bylo\b",
 ]
 
 RED_PATTERNS_EN = [
@@ -50,7 +56,14 @@ RED_PATTERNS = RED_PATTERNS_PL + RED_PATTERNS_EN
 _COMPILED = [re.compile(p) for p in RED_PATTERNS]
 
 
+# Litery bez rozkładu NFKD (encode('ascii','ignore') skasowałby je całkowicie,
+# np. "było" → "byo"). Mapujemy ręcznie do form ASCII przed normalizacją,
+# inaczej wzorce z tymi znakami nigdy nie trafią.
+_PREMAP = str.maketrans({"ł": "l", "Ł": "l", "ø": "o", "Ø": "o", "đ": "d", "Đ": "d"})
+
+
 def _normalize(s: str) -> str:
+    s = s.translate(_PREMAP)
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
     return s.lower()
 

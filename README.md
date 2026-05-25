@@ -19,6 +19,44 @@ pip install -r requirements.txt   # jeśli jeszcze nie
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+### Migracje bazy
+
+Dwa backendy, dwa mechanizmy — oba uruchamiane automatycznie przy starcie (`init_db`):
+
+- **SQLite** (domyślnie): migracje w kodzie (`db/connection.py`, funkcje `_migrate_*`), idempotentne `ALTER`/`CREATE IF NOT EXISTS`.
+- **PostgreSQL** (`DATABASE_URL`): `db/schema_postgres.sql` to *current desired state* (tylko `CREATE ... IF NOT EXISTS` — **nie** zmienia istniejących tabel). Zmiany strukturalne na działających bazach idą przez wersjonowane pliki `db/migrations/*.sql`, śledzone w tabeli `schema_migrations`.
+
+Każda strukturalna zmiana w `schema_postgres.sql` **musi** mieć odpowiadającą migrację w `db/migrations/`, inaczej istniejące bazy jej nie dostaną.
+
+**Dodanie nowej migracji:** utwórz plik `db/migrations/NNNN_opis.sql` (kolejny numer), wyłącznie idempotentny SQL (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE/INDEX IF NOT EXISTS`, bloki `DO $$ ... $$` z warunkami). Plik wykonywany jest w transakcji jako całość.
+
+**Uruchomienie:**
+
+```bash
+# Dev i produkcja — migracje aplikują się same przy starcie aplikacji:
+DATABASE_URL=postgresql://user:pass@host/db uvicorn main:app
+# (schema_migrations rejestruje wykonane wersje; ponowny start nie powtarza ich)
+```
+
+Nowa baza dostaje pełny schemat od razu (schema), a tracking w `schema_migrations` i tak oznacza migracje jako wykonane przy pierwszym przebiegu. Przed produkcyjnym deployem zrób backup bazy — migracje strukturalne są idempotentne, ale backup to standard.
+
+### Architektura (v3.3+)
+
+`main.py` pełni rolę routera FastAPI — logika biznesowa jest wydzielona do modułów w `api/services/`:
+
+| Moduł | Odpowiedzialność |
+|-------|-----------------|
+| `api/services/debate_orchestrator.py` | Orkiestracja SSE: agenci → Syez → audyt → zapis |
+| `api/services/dream_service.py` | Faza A0: destylacja marzenia + zapis DB |
+| `api/services/completion_service.py` | AKSJOMAT 2: stale nudges, follow-upy, limit projektów |
+| `api/services/budget_guard.py` | Twardy budżet LLM (402) + warning SSE |
+| `api/services/project_service.py` | CRUD projektów, complete, archive, enrichment |
+| `api/services/_sse.py` | Shared SSE helper |
+
+Rdzeń domenowy: `core/` (dream_architect, completion_enforcer, safety, live_tensions). Persistencja: `db/` (repo pattern, SQLite/Postgres).
+
+> Refaktoryzacja modularna jest w toku (v3.3+). Docelowo main.py → czysto routing, zero logiki biznesowej.
+
 ### Endpointy MVP v1.1 (wybrane)
 
 | Metoda | Ścieżka | Opis |

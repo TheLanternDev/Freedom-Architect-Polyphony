@@ -1,5 +1,14 @@
--- Architekt Wolności — PostgreSQL (produkcja, wspólny stan dla wielu instancji API)
--- Uruchamiane przez init_db gdy DATABASE_URL wskazuje na Postgres.
+-- Architekt Wolności — PostgreSQL: CURRENT DESIRED STATE (nie narzędzie migracji).
+--
+-- Ten plik opisuje docelowy kształt schematu i jest stosowany przez init_db
+-- (DATABASE_URL → Postgres) WYŁĄCZNIE przez CREATE TABLE/INDEX IF NOT EXISTS.
+-- Oznacza to, że NIE zmodyfikuje istniejących tabel (nie doda kolumn, nie
+-- przebuduje PK). Zmiany na DZIAŁAJĄCYCH bazach idą przez wersjonowane
+-- migracje w db/migrations/*.sql (śledzone w tabeli schema_migrations),
+-- uruchamiane automatycznie po tym schemacie. Patrz README → "Migracje bazy".
+--
+-- Reguła: każda zmiana strukturalna tutaj MUSI mieć odpowiadającą migrację
+-- w db/migrations/, inaczej istniejące bazy Postgres jej nie dostaną.
 
 -- Faza 4 (multi-user): każdy wiersz ma tenant_id. Domyślnie 'default' (tryb single-user wstecznie kompatybilny).
 CREATE TABLE IF NOT EXISTS dreams (

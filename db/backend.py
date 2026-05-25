@@ -19,6 +19,37 @@ logger = logging.getLogger(__name__)
 _pg_pool: Any = None
 
 _SCHEMA_PG_PATH = Path(__file__).resolve().parent / "schema_postgres.sql"
+_MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+
+async def _run_pg_migrations(conn: Any) -> None:
+    """Uruchamia niewykonane migracje z db/migrations/*.sql (tylko Postgres).
+
+    Wersjonowanie przez tabelę `schema_migrations`. Każdy plik wykonywany jako
+    całość jednym `execute` (asyncpg simple-query) — poprawnie obsługuje bloki
+    `DO $$ ... $$;`, których nie wolno dzielić po średnikach.
+    Pliki są idempotentne (IF [NOT] EXISTS), ale tracking i tak zapobiega
+    ponownemu uruchamianiu.
+    """
+    await conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        " version TEXT PRIMARY KEY,"
+        " applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())"
+    )
+    if not _MIGRATIONS_DIR.is_dir():
+        return
+    applied = {r["version"] for r in await conn.fetch("SELECT version FROM schema_migrations")}
+    for path in sorted(_MIGRATIONS_DIR.glob("*.sql")):
+        version = path.stem  # np. "0001_add_tenant_isolation"
+        if version in applied:
+            continue
+        sql_text = path.read_text(encoding="utf-8")
+        async with conn.transaction():
+            await conn.execute(sql_text)
+            await conn.execute(
+                "INSERT INTO schema_migrations(version) VALUES($1)", version
+            )
+        logger.info("Applied Postgres migration: %s", version)
 
 
 def database_url() -> str:
@@ -62,8 +93,11 @@ async def init_database(sqlite_init_cb: Any) -> None:
         _pg_pool = await asyncpg.create_pool(url, min_size=1, max_size=max_sz)
         schema_sql = _SCHEMA_PG_PATH.read_text(encoding="utf-8")
         async with _pg_pool.acquire() as conn:
+            # 1) Schema = current desired state (tworzy brakujące tabele na nowej bazie).
             for stmt in _split_pg_schema(schema_sql):
                 await conn.execute(stmt)
+            # 2) Migracje = doprowadzenie ISTNIEJĄCYCH baz do tego stanu (ALTER itp.).
+            await _run_pg_migrations(conn)
         logger.info(
             "PostgreSQL pool initialized (%s)",
             re.sub(r":([^@/]*)@", r":****@", url),
