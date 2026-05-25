@@ -510,7 +510,7 @@ async def adistill_dream(
     backend = effective_llm_backend()
     if backend == "none":
         logger.info(
-            "adistill_dream: brak LLM (ustaw ANTHROPIC_API_KEY lub XAI_API_KEY w `ui/.env`) "
+            "adistill_dream: brak LLM (ustaw ANTHROPIC_API_KEY lub XAI_API_KEY w `src/.env`) "
             "— używam fallbacku."
         )
         dream = _fallback_dream(raw_brief, language=language)

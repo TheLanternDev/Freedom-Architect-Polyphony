@@ -1,6 +1,6 @@
 """Konfiguracja Architekta Wolności v3.0."""
 
-# Bootstrap: `ui/.env` (lub legacy `.env` w root) — wypełnia też „puste” zmienne z shella.
+# Bootstrap: `src/.env` (lub legacy `.env` w root) — wypełnia też „puste” zmienne z shella.
 try:  # pragma: no cover
     import importlib.util
     from pathlib import Path

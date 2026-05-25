@@ -19,7 +19,7 @@ Zmiany kluczowe vs. v3.1:
 
 from __future__ import annotations
 
-# `ui/.env` (lub `AW_ENV_FILE`) — przed importami lokalnymi; wypełnia brakujące / puste zmienne.
+# `src/.env` (lub `AW_ENV_FILE`) — przed importami lokalnymi; wypełnia brakujące / puste zmienne.
 try:  # pragma: no cover
     import importlib.util
     from pathlib import Path as _RepoPath
@@ -922,11 +922,11 @@ async def generate_architecture(brief: Brief):
 def _mount_single_origin_web_ui() -> None:
     """
     Punkt produktowy #9 — jedna domena API + SPA (zero Stripe w kodzie).
-    Włącz: AW_SERVE_UI=1 oraz zbuduj `ui/dist` (`npm run build` w ui/).
+    Włącz: AW_SERVE_UI=1 oraz zbuduj `src/dist` (`npm run build` w src/).
     """
     if os.getenv("AW_SERVE_UI", "").strip().lower() not in ("1", "true", "yes"):
         return
-    root = Path(os.getenv("AW_UI_DIST", Path(__file__).resolve().parent / "ui" / "dist"))
+    root = Path(os.getenv("AW_UI_DIST", Path(__file__).resolve().parent / "src" / "dist"))
     if not root.is_dir():
         logger.warning("AW_SERVE_UI włączone, ale brak folderu %s — pomijam SPA.", root)
         return

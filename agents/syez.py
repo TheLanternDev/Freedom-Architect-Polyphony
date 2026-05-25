@@ -161,6 +161,6 @@ class Syez(BaseAgent):
     def contribute(self, context: str) -> str:
         return (
             f"{self.emoji} {self.name}: Bez działającego LLM nie ma pełnej syntezy. "
-            "Włącz ANTHROPIC_API_KEY lub XAI_API_KEY w `ui/.env` i powtórz debatę — zlustruję wtedy głosy Rady "
+            "Włącz ANTHROPIC_API_KEY lub XAI_API_KEY w `src/.env` i powtórz debatę — zlustruję wtedy głosy Rady "
             "w czystej polskiej prozie."
         )

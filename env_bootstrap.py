@@ -1,9 +1,9 @@
 """
 Ładowanie zmiennych z pliku `.env` przed resztą aplikacji (FastAPI / agenci).
 
-Domyślna ścieżka: `ui/.env` (jeden plik z sekretami + `VITE_*` dla Vite/Tauri).
+Domyślna ścieżka: `src/.env` (jeden plik z sekretami + `VITE_*` dla Vite/Tauri).
 Opcjonalnie drugi plik w korzeniu repozytorium (`.env`), jeśli istnieje —
-uzupełnia tylko klucze nadal puste po `ui/.env`.
+uzupełnia tylko klucze nadal puste po `src/.env`.
 
 Nadpisanie jawne: `AW_ENV_FILE=/ścieżka/do/pliku` (tylko ten plik, jeśli istnieje).
 
@@ -24,7 +24,7 @@ def repo_root() -> Path:
 
 
 def resolve_dotenv_paths() -> list[Path]:
-    """Kolejność ładowania: AW_ENV_FILE → ui/.env → .env (legacy)."""
+    """Kolejność ładowania: AW_ENV_FILE → src/.env → .env (legacy)."""
     explicit = os.getenv("AW_ENV_FILE", "").strip()
     if explicit:
         p = Path(explicit).expanduser()
@@ -34,9 +34,9 @@ def resolve_dotenv_paths() -> list[Path]:
 
     root = repo_root()
     paths: list[Path] = []
-    ui_env = root / "ui" / ".env"
-    if ui_env.is_file():
-        paths.append(ui_env)
+    src_env = root / "src" / ".env"
+    if src_env.is_file():
+        paths.append(src_env)
     legacy = root / ".env"
     if legacy.is_file():
         paths.append(legacy)
