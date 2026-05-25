@@ -1,0 +1,44 @@
+{
+  "_meta": {
+    "spec_version": "1.0",
+    "last_updated": "RRRR-MM-DD",
+    "source": "Pierwsze uruchomienie — 20 pytań zamkniętych",
+    "scale": "0-10 jeśli nie wskazano inaczej",
+    "edit_policy": "Tylko użytkownik lub świadoma sesja głębokiej integracji może modyfikować. System NIGDY nie zmienia tych wartości autonomicznie."
+  },
+  "wartosci_nadrzedne": ["<wartość 1>", "<wartość 2>", "<wartość 3>"],
+  "rdzen_tozsamosci": "<jednozdaniowy opis rdzenia tożsamości>",
+  "etap_zycia": ["<etap A>", "<etap B>"],
+  "paradygmat_granic": "<zdanie o paradygmacie granic>",
+  "najwieksza_prosba_do_zycia": "<największa prośba do życia>",
+  "metryki": {
+    "zgodnosc_z_soba": 0,
+    "wewnetrzne_sterowanie": 0,
+    "swoboda_emocjonalna": 0,
+    "akceptacja_cienia": 0,
+    "jakosc_snu_30d": 0,
+    "prawdziwy_odpoczynek_h_dziennie_max": 0
+  },
+  "wzorce": {
+    "emocje_najczesciej_wypychane": ["<emocja 1>", "<emocja 2>"],
+    "reakcja_na_niepowodzenie": "<opis reakcji>",
+    "relacja_z_cialem": "<opis relacji z ciałem>",
+    "stan_relacji_zewnetrznych": "<opis stanu relacji>"
+  },
+  "zrodla_sensu_i_przeplywu": [
+    {"obszar": "<obszar 1>", "ranga": 1},
+    {"obszar": "<obszar 2>", "ranga": 2}
+  ],
+  "protokol_szacunku_i_zdrowia": {
+    "pelny_szacunek": true,
+    "reaguj_na_brak_snu": true,
+    "reaguj_na_chroniczne_przeciazenie": true,
+    "nigdy_nie_naciskaj": true,
+    "delikatnie_przypominaj_o_podstawach": ["sen", "jedzenie", "odpoczynek", "ciało"]
+  },
+  "tryby_systemu": {
+    "default": "osobisty",
+    "dostepne": ["osobisty", "biznesowy"],
+    "przelacznik_w_kazdej_chwili": true
+  }
+}

@@ -8,6 +8,11 @@ data/*.db
 data/benchmark_results.json
 data/cost_log.jsonl
 cost_log.jsonl
+data/.fuse_hidden*
+
+# Artefakty pakowania / dystrybucji
+dist/
+*.tar.gz
 
 # Python (korzeń)
 venv/
@@ -28,5 +33,26 @@ ui/node_modules/
 ui/dist/
 ui/src-tauri/target/
 
+# Frontend po refaktorze v3.3 (przeniesiony ui/ -> src/) — artefakty budowania
+src/node_modules/
+src/dist/
+src/src-tauri/target/
+src/.vite/
+**/node_modules/
+**/.vite/
+
 # Claude / lokalne narzędzia
 .claude/
+
+# Workspace narzędziowy (evale skilli, raporty audytowe, .skill) — nie kod aplikacji
+_tools/
+
+# Integracje sprzedażowe (Aimfox/Smartlead) — osobna domena, nie kod aplikacji
+marketing/
+
+# Dokumenty sprzedażowe — osobna domena, nie kod aplikacji
+SOP-LinkedIn-Sales-Channel.md
+
+# Prywatne dane tożsamości użytkownika (wrażliwe, psychologiczne) — out of repo.
+# Wersjonujemy tylko strukturę-przykład (config/patryk_identity.example.json).
+config/patryk_identity.json
