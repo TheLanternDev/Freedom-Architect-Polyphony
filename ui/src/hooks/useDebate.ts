@@ -220,6 +220,16 @@ export function useDebate() {
         break;
       }
 
+      case "safety_halt": {
+        const p = payload as { message?: string };
+        setState((s) => ({
+          ...s,
+          status: "error",
+          error: p?.message?.trim() || tRef.current("debate.stream.broke"),
+        }));
+        break;
+      }
+
       case "stream_error": {
         const p = payload as { message?: string; error?: string };
         const fb = p?.message
