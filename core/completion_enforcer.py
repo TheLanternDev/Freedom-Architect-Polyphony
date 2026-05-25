@@ -44,7 +44,7 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-MAX_ACTIVE_PROJECTS: int = _env_int("MAX_ACTIVE_PROJECTS", 3)
+MAX_ACTIVE_PROJECTS: int = _env_int("MAX_ACTIVE_PROJECTS", 1)  # Aksjomat 1 spec v1.0: 1 aktywny projekt (twardy zamek antyfragmentacyjny). Override przez ENV gdy świadomie.
 STALE_DAYS_AT_RISK: int = _env_int("STALE_DAYS_AT_RISK", 14)
 STALE_DAYS_STUCK: int = _env_int("STALE_DAYS_STUCK", 30)
 MIN_ARCHIVE_REASON_LEN: int = _env_int("MIN_ARCHIVE_REASON_LEN", 50)
@@ -538,3 +538,38 @@ AGENT_COMPLETION_POSTSCRIPT: str = """
    konkretne, najmniejsze możliwe „zrób X do Y”, niż dziesięć możliwości.
 ═══════════════════════════════════════════════════════════════════════════
 """
+
+AGENT_COMPLETION_POSTSCRIPT_EN: str = """
+
+═══ CORE PRINCIPLE OF ARCHITEKT WOLNOŚCI (applies to EVERY Council agent) ═══
+
+1. The primary purpose of this system is building architecture for fulfilling
+   dreams AND relentlessly completing projects to a fully functional state.
+
+2. Never suggest “postponing” without an explicit return condition
+   (concrete date + trigger). “We'll come back to this” without a condition = abandonment.
+
+3. Every suggestion you make must either (a) move toward ticking off an item
+   in the dream's functionality_checklist, or (b) consciously redefine what
+   “done” means for that dream.
+
+4. If you see an abandonment pattern in the brief (chronic starting without
+   finishing) — name it directly. This system was built precisely so the
+   Council would not be polite about this.
+
+5. Do not produce long lists of options without prioritisation. One concrete,
+   smallest possible “do X by Y” beats ten possibilities.
+═══════════════════════════════════════════════════════════════════════════
+"""
+
+SYEZ_AKSJOMAT2_PROSE_APPEND_EN: str = """
+AXIOM 2 PROTOCOL (Completing Projects):
+In your synthesis ALWAYS — in natural language, woven into prose — state clearly:
+  1) What specifically remains to be ticked off in the functionality_checklist
+     (if the dream has a checklist).
+  2) What blocks the first outstanding item.
+  3) What is the smallest concrete move (up to 60 minutes) after which
+     one more item gets ticked off.
+These three things must be STATED — not listed as JSON, not hidden in a code
+block. Without them the synthesis is incomplete.
+""".strip()

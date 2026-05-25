@@ -91,13 +91,14 @@ export function DebateHistory({ onSelect, disabled }: Props) {
                 ${disabled ? "opacity-40 cursor-not-allowed" : ""}
               `}
             >
-              <span className="text-white/25 font-mono text-[10px] mr-2">
-                #{r.id}
-              </span>
-              <span className="text-teal/70">{r.mode}</span>
-              <span className="text-white/25 mx-1">·</span>
-              <span className="text-white/35">{r.category}</span>
-              <span className="block text-white/45 mt-1 truncate">
+              <div className="flex items-center gap-1 mb-1">
+                <span className="font-mono text-[10px] text-white/20">#{r.id}</span>
+                <span className="text-white/15 mx-0.5">·</span>
+                <span className="text-[10px] text-teal/55">{r.mode}</span>
+                <span className="text-white/15 mx-0.5">·</span>
+                <span className="text-[10px] text-white/30">{r.category}</span>
+              </div>
+              <span className="block text-[12px] text-white/75 leading-snug line-clamp-2">
                 {r.preview ?? "—"}
               </span>
             </button>

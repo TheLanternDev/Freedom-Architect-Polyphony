@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
+from db.tenant import current_tenant_id as _tid  # Faza 4 — multi-user
+
 logger = logging.getLogger(__name__)
 
 try:  # pragma: no cover
@@ -45,10 +47,15 @@ async def init_db(db_path: Optional[Path] = None) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         schema = _SCHEMA_PATH.read_text(encoding="utf-8")
         async with aiosqlite.connect(path) as db:  # type: ignore[union-attr]
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute("PRAGMA busy_timeout=5000")
             await db.executescript(schema)
             await _migrate_debates_parent_column(db)
             await _migrate_commitments_phase2(db)
             await _migrate_agent_evolution_table(db)
+            await _migrate_users_table(db)
+            await _migrate_tenant_id_columns(db)  # Faza 4
+            await _migrate_debates_fts(db)         # FTS5 full-text search
             await db.commit()
         logger.info("SQLite initialized at %s", path)
 
@@ -81,21 +88,159 @@ async def _migrate_commitments_phase2(db: Any) -> None:
         await db.execute("ALTER TABLE commitments ADD COLUMN release_reason TEXT NULL")
 
 
+async def _migrate_tenant_id_columns(db: Any) -> None:
+    """Faza 4 — multi-user: idempotentne dodanie kolumny tenant_id do tabel z danymi użytkownika.
+    Wszystkie wiersze sprzed migracji dostają tenant_id = 'default' (tryb single-user wstecznie OK).
+    Indeksy po tenant_id dla najczęściej listowanych tabel.
+    """
+    tables = (
+        "dreams",
+        "debates",
+        "agent_voices",
+        "projects",
+        "functionality_items",
+        "completion_audits",
+        "commitments",
+    )
+    for tbl in tables:
+        cur = await db.execute(f"PRAGMA table_info({tbl})")
+        rows = await cur.fetchall()
+        col_names = {r[1] for r in rows}
+        if "tenant_id" not in col_names:
+            await db.execute(
+                f"ALTER TABLE {tbl} ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'"
+            )
+    for tbl in ("dreams", "debates", "projects", "commitments", "agent_voices", "functionality_items"):
+        await db.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{tbl}_tenant_id ON {tbl}(tenant_id)"
+        )
+
+
+async def _migrate_debates_fts(db: Any) -> None:
+    """FTS5 virtual table dla wyszukiwania debat — zastępuje instr() full-table scan.
+
+    Idempotentne: sprawdza czy tabela istnieje przed stworzeniem.
+    Trigger keep_debates_fts_* utrzymuje spójność przy INSERT/UPDATE/DELETE.
+    """
+    cur = await db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='debates_fts'"
+    )
+    if await cur.fetchone():
+        return  # już istnieje
+
+    await db.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS debates_fts USING fts5(
+            debate_id UNINDEXED,
+            tenant_id UNINDEXED,
+            brief_description,
+            intention,
+            extra_context,
+            synthesis_text,
+            content='debates',
+            content_rowid='id'
+        )
+        """
+    )
+    # Populate from existing rows
+    await db.execute(
+        """
+        INSERT INTO debates_fts(rowid, debate_id, tenant_id, brief_description, intention, extra_context, synthesis_text)
+        SELECT id, id, tenant_id,
+               coalesce(brief_description,''),
+               coalesce(intention,''),
+               coalesce(extra_context,''),
+               coalesce(synthesis_text,'')
+        FROM debates
+        """
+    )
+    # Triggers to keep FTS in sync
+    await db.executescript(
+        """
+        CREATE TRIGGER IF NOT EXISTS keep_debates_fts_insert
+        AFTER INSERT ON debates BEGIN
+            INSERT INTO debates_fts(rowid, debate_id, tenant_id, brief_description, intention, extra_context, synthesis_text)
+            VALUES (new.id, new.id, new.tenant_id,
+                    coalesce(new.brief_description,''), coalesce(new.intention,''),
+                    coalesce(new.extra_context,''), coalesce(new.synthesis_text,''));
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS keep_debates_fts_update
+        AFTER UPDATE ON debates BEGIN
+            INSERT INTO debates_fts(debates_fts, rowid, debate_id, tenant_id, brief_description, intention, extra_context, synthesis_text)
+            VALUES ('delete', old.id, old.id, old.tenant_id,
+                    coalesce(old.brief_description,''), coalesce(old.intention,''),
+                    coalesce(old.extra_context,''), coalesce(old.synthesis_text,''));
+            INSERT INTO debates_fts(rowid, debate_id, tenant_id, brief_description, intention, extra_context, synthesis_text)
+            VALUES (new.id, new.id, new.tenant_id,
+                    coalesce(new.brief_description,''), coalesce(new.intention,''),
+                    coalesce(new.extra_context,''), coalesce(new.synthesis_text,''));
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS keep_debates_fts_delete
+        AFTER DELETE ON debates BEGIN
+            INSERT INTO debates_fts(debates_fts, rowid, debate_id, tenant_id, brief_description, intention, extra_context, synthesis_text)
+            VALUES ('delete', old.id, old.id, old.tenant_id,
+                    coalesce(old.brief_description,''), coalesce(old.intention,''),
+                    coalesce(old.extra_context,''), coalesce(old.synthesis_text,''));
+        END;
+        """
+    )
+
+
 async def _migrate_agent_evolution_table(db: Any) -> None:
-    """P5: rolling pamięć ewolucyjna per agent (idempotentne)."""
+    """P5→Faza 4: rolling pamięć ewolucyjna per agent per tenant (idempotentne)."""
     cur = await db.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_evolution'"
     )
     if await cur.fetchone():
+        # Istniejąca tabela — dodaj tenant_id jeśli brakuje (migracja PK wymaga recreate)
+        try:
+            cur2 = await db.execute("PRAGMA table_info(agent_evolution)")
+            cols = [r[1] for r in await cur2.fetchall()]
+            if "tenant_id" not in cols:
+                await db.execute("ALTER TABLE agent_evolution RENAME TO _agent_evolution_old")
+                await db.execute(
+                    """CREATE TABLE agent_evolution (
+                        agent_name TEXT NOT NULL,
+                        tenant_id  TEXT NOT NULL DEFAULT 'default',
+                        note_md    TEXT NOT NULL DEFAULT '',
+                        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                        PRIMARY KEY (agent_name, tenant_id)
+                    )"""
+                )
+                await db.execute(
+                    "INSERT INTO agent_evolution (agent_name, tenant_id, note_md, updated_at) "
+                    "SELECT agent_name, 'default', note_md, updated_at FROM _agent_evolution_old"
+                )
+                await db.execute("DROP TABLE _agent_evolution_old")
+        except Exception:
+            pass
         return
     await db.execute(
         """
         CREATE TABLE agent_evolution (
-            agent_name  TEXT PRIMARY KEY,
+            agent_name  TEXT NOT NULL,
+            tenant_id   TEXT NOT NULL DEFAULT 'default',
             note_md     TEXT NOT NULL DEFAULT '',
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (agent_name, tenant_id)
         )
         """
+    )
+
+
+async def _migrate_users_table(db: Any) -> None:
+    """Faza 4: tabela użytkowników (idempotentne)."""
+    await db.execute(
+        """CREATE TABLE IF NOT EXISTS users (
+            username     TEXT PRIMARY KEY,
+            pw_hash      TEXT NOT NULL,
+            salt         TEXT NOT NULL,
+            tenant_id    TEXT NOT NULL,
+            display_name TEXT,
+            created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+        )"""
     )
 
 
@@ -121,18 +266,19 @@ class _Repo:
     # ---- dreams ----------------------------------------------------------
 
     async def insert_dream(self, db: Any, dream: Any) -> str:
-        """Zapisuje DreamArchitecture. Zwraca dream_id."""
+        """Zapisuje DreamArchitecture. Zwraca dream_id. Stempel tenant_id z ContextVar (Faza 4)."""
         await db.execute(
             """
             INSERT INTO dreams (
-              id, created_at, raw_brief, core_dream, value_anchor,
+              id, tenant_id, created_at, raw_brief, core_dream, value_anchor,
               pillars_json, milestones_json, next_move_json,
               completion_criteria_json, functionality_checklist_json,
               status
-            ) VALUES (?,?,?,?,?,?,?,?,?,?, 'living')
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'living')
             """,
             (
                 dream.dream_id,
+                _tid(),
                 dream.created_at,
                 dream.raw_brief,
                 dream.core_dream,
@@ -147,7 +293,9 @@ class _Repo:
         return dream.dream_id
 
     async def get_dream(self, db: Any, dream_id: str) -> Optional[dict[str, Any]]:
-        cur = await db.execute("SELECT * FROM dreams WHERE id = ?", (dream_id,))
+        cur = await db.execute(
+            "SELECT * FROM dreams WHERE id = ? AND tenant_id = ?", (dream_id, _tid())
+        )
         row = await cur.fetchone()
         return dict(row) if row else None
 
@@ -161,19 +309,25 @@ class _Repo:
         functionality_checklist (AKSJOMAT 2 — bez tego projekt nie ma definicji
         skończoności). Zwraca project_id.
         """
-        cur = await db.execute("SELECT id FROM projects WHERE dream_id = ?", (dream_id,))
+        tid = _tid()
+        cur = await db.execute(
+            "SELECT id FROM projects WHERE dream_id = ? AND tenant_id = ?",
+            (dream_id, tid),
+        )
         row = await cur.fetchone()
         if row:
             return int(row["id"])
         cur = await db.execute(
-            "INSERT INTO projects (dream_id, status, started_at) VALUES (?, 'dreaming', ?)",
-            (dream_id, _utcnow()),
+            "INSERT INTO projects (dream_id, tenant_id, status, started_at) "
+            "VALUES (?, ?, 'dreaming', ?)",
+            (dream_id, tid, _utcnow()),
         )
         project_id = int(cur.lastrowid)
         for desc in functionality_checklist:
             await db.execute(
-                "INSERT INTO functionality_items (project_id, description) VALUES (?, ?)",
-                (project_id, desc),
+                "INSERT INTO functionality_items (project_id, tenant_id, description) "
+                "VALUES (?, ?, ?)",
+                (project_id, tid, desc),
             )
         return project_id
 
@@ -184,21 +338,26 @@ class _Repo:
               FROM projects p
               JOIN dreams d ON d.id = p.dream_id
              WHERE p.status IN ('dreaming','in_progress','at_risk','stuck')
+               AND p.tenant_id = ?
              ORDER BY p.started_at DESC
-            """
+            """,
+            (_tid(),),
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
     async def get_project(self, db: Any, project_id: int) -> Optional[dict[str, Any]]:
-        cur = await db.execute("SELECT * FROM projects WHERE id = ?", (project_id,))
+        cur = await db.execute(
+            "SELECT * FROM projects WHERE id = ? AND tenant_id = ?",
+            (project_id, _tid()),
+        )
         row = await cur.fetchone()
         if not row:
             return None
         p = dict(row)
         cur = await db.execute(
-            "SELECT * FROM functionality_items WHERE project_id = ? ORDER BY id",
-            (project_id,),
+            "SELECT * FROM functionality_items WHERE project_id = ? AND tenant_id = ? ORDER BY id",
+            (project_id, _tid()),
         )
         items = [dict(r) for r in await cur.fetchall()]
         p["functionality"] = items
@@ -212,9 +371,10 @@ class _Repo:
         for k, v in fields.items():
             cols.append(f"{k} = ?")
             vals.append(v)
-        vals.append(project_id)
+        vals.extend([project_id, _tid()])
         await db.execute(
-            f"UPDATE projects SET {', '.join(cols)} WHERE id = ?", tuple(vals)
+            f"UPDATE projects SET {', '.join(cols)} WHERE id = ? AND tenant_id = ?",
+            tuple(vals),
         )
 
     async def mark_functionality_done(
@@ -223,9 +383,10 @@ class _Repo:
         item_id: int,
         evidence_url: Optional[str] = None,
     ) -> Optional[int]:
-        """Odhacza pozycję i zwraca project_id (lub None gdy nie znaleziono)."""
+        """Odhacza pozycję i zwraca project_id (lub None gdy nie znaleziono / inny tenant)."""
         cur = await db.execute(
-            "SELECT project_id FROM functionality_items WHERE id = ?", (item_id,)
+            "SELECT project_id FROM functionality_items WHERE id = ? AND tenant_id = ?",
+            (item_id, _tid()),
         )
         row = await cur.fetchone()
         if not row:
@@ -235,9 +396,9 @@ class _Repo:
             """
             UPDATE functionality_items
                SET is_done = 1, done_at = ?, evidence_url = COALESCE(?, evidence_url)
-             WHERE id = ?
+             WHERE id = ? AND tenant_id = ?
             """,
-            (_utcnow(), evidence_url, item_id),
+            (_utcnow(), evidence_url, item_id, _tid()),
         )
         # AKSJOMAT 2: każdy ruch = aktualizacja last_progress_at + przejście do IN_PROGRESS
         await db.execute(
@@ -268,12 +429,13 @@ class _Repo:
         cur = await db.execute(
             """
             INSERT INTO debates (
-              category, mode, brief_description, intention, extra_context,
+              tenant_id, category, mode, brief_description, intention, extra_context,
               dream_id, parent_debate_id
             )
-            VALUES (?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?)
             """,
             (
+                _tid(),
                 category,
                 mode,
                 brief_description,
@@ -299,12 +461,15 @@ class _Repo:
         voice_text: str,
     ) -> None:
         await db.execute(
-            "INSERT INTO agent_voices (debate_id, agent_name, voice_text) VALUES (?,?,?)",
-            (debate_id, agent_name, voice_text),
+            "INSERT INTO agent_voices (tenant_id, debate_id, agent_name, voice_text) VALUES (?,?,?,?)",
+            (_tid(), debate_id, agent_name, voice_text),
         )
 
     async def list_agent_evolution(self, db: Any) -> dict[str, str]:
-        cur = await db.execute("SELECT agent_name, note_md FROM agent_evolution")
+        cur = await db.execute(
+            "SELECT agent_name, note_md FROM agent_evolution WHERE tenant_id = ?",
+            (_tid(),),
+        )
         rows = await cur.fetchall()
         return {str(r[0]): str(r[1] or "") for r in rows}
 
@@ -324,8 +489,8 @@ class _Repo:
         if not snippet:
             return
         cur = await db.execute(
-            "SELECT note_md FROM agent_evolution WHERE agent_name = ?",
-            (agent_name,),
+            "SELECT note_md FROM agent_evolution WHERE agent_name = ? AND tenant_id = ?",
+            (agent_name, _tid()),
         )
         row = await cur.fetchone()
         prev = str(row[0] or "") if row else ""
@@ -340,14 +505,30 @@ class _Repo:
 
         await db.execute(
             """
-            INSERT INTO agent_evolution (agent_name, note_md, updated_at)
-            VALUES (?, ?, datetime('now'))
-            ON CONFLICT(agent_name) DO UPDATE SET
+            INSERT INTO agent_evolution (agent_name, tenant_id, note_md, updated_at)
+            VALUES (?, ?, ?, datetime('now'))
+            ON CONFLICT(agent_name, tenant_id) DO UPDATE SET
                 note_md = excluded.note_md,
                 updated_at = excluded.updated_at
             """,
-            (agent_name, merged),
+            (agent_name, _tid(), merged),
         )
+
+    async def list_recent_voices_for_agent(
+        self,
+        db: Any,
+        agent_name: str,
+        limit: int = 30,
+    ) -> list[dict[str, Any]]:
+        """Faza 3: ostatnie głosy agenta (do przebudowy ewolucji)."""
+        cur = await db.execute(
+            "SELECT voice_text, debate_id FROM agent_voices "
+            "WHERE agent_name = ? AND tenant_id = ? "
+            "ORDER BY id DESC LIMIT ?",
+            (agent_name, _tid(), max(1, min(limit, 100))),
+        )
+        rows = await cur.fetchall()
+        return [{"voice_text": str(r[0] or ""), "debate_id": r[1]} for r in rows]
 
     async def save_synthesis(
         self,
@@ -357,11 +538,13 @@ class _Repo:
         synthesis_json: Optional[dict[str, Any]],
     ) -> None:
         await db.execute(
-            "UPDATE debates SET synthesis_text = ?, full_synthesis_json = ? WHERE id = ?",
+            "UPDATE debates SET synthesis_text = ?, full_synthesis_json = ? "
+            "WHERE id = ? AND tenant_id = ?",
             (
                 synthesis_text,
                 json.dumps(synthesis_json, ensure_ascii=False) if synthesis_json else None,
                 debate_id,
+                _tid(),
             ),
         )
 
@@ -373,8 +556,9 @@ class _Repo:
         audit: dict[str, Any],
     ) -> int:
         cur = await db.execute(
-            "INSERT INTO completion_audits (project_id, debate_id, remaining_json) VALUES (?,?,?)",
-            (project_id, debate_id, json.dumps(audit, ensure_ascii=False)),
+            "INSERT INTO completion_audits (tenant_id, project_id, debate_id, remaining_json) "
+            "VALUES (?,?,?,?)",
+            (_tid(), project_id, debate_id, json.dumps(audit, ensure_ascii=False)),
         )
         return int(cur.lastrowid)
 
@@ -398,26 +582,29 @@ class _Repo:
             if dialect == "sqlite"
             else "ORDER BY d.created_at DESC"
         )
+        tid = _tid()
         if not q:
             cur = await db.execute(
                 f"""
                 SELECT id, created_at, category, mode, brief_description, dream_id,
                        substr(brief_description, 1, 140) AS preview
                   FROM debates
+                 WHERE tenant_id = ?
                  {order}
                  LIMIT ?
                 """,
-                (lim,),
+                (tid, lim),
             )
         else:
             needle = q.lower()[:500]
             if dialect == "postgres":
                 where = """
-                 WHERE POSITION($1 IN lower(coalesce(d.brief_description,''))) > 0
-                    OR POSITION($2 IN lower(coalesce(d.intention,''))) > 0
-                    OR POSITION($3 IN lower(coalesce(d.extra_context,''))) > 0
-                    OR POSITION($4 IN lower(coalesce(d.synthesis_text,''))) > 0
-                    OR POSITION($5 IN lower(coalesce(v.voice_text,''))) > 0
+                 WHERE d.tenant_id = $1
+                   AND (POSITION($2 IN lower(coalesce(d.brief_description,''))) > 0
+                    OR POSITION($3 IN lower(coalesce(d.intention,''))) > 0
+                    OR POSITION($4 IN lower(coalesce(d.extra_context,''))) > 0
+                    OR POSITION($5 IN lower(coalesce(d.synthesis_text,''))) > 0
+                    OR POSITION($6 IN lower(coalesce(v.voice_text,''))) > 0)
                 """
                 sql = f"""
                 SELECT DISTINCT d.id, d.created_at, d.category, d.mode, d.brief_description, d.dream_id,
@@ -426,34 +613,61 @@ class _Repo:
                   LEFT JOIN agent_voices v ON v.debate_id = d.id
                  {where}
                  {order_d}
-                 LIMIT $6
+                 LIMIT $7
                 """
                 cur = await db.execute(
                     sql,
-                    (needle, needle, needle, needle, needle, lim),
+                    (tid, needle, needle, needle, needle, needle, lim),
                 )
             else:
-                cur = await db.execute(
-                    f"""
-                SELECT DISTINCT d.id, d.created_at, d.category, d.mode, d.brief_description, d.dream_id,
-                       substr(d.brief_description, 1, 140) AS preview
-                  FROM debates d
-                  LEFT JOIN agent_voices v ON v.debate_id = d.id
-                 WHERE instr(lower(coalesce(d.brief_description,'')), ?) > 0
-                    OR instr(lower(coalesce(d.intention,'')), ?) > 0
-                    OR instr(lower(coalesce(d.extra_context,'')), ?) > 0
-                    OR instr(lower(coalesce(d.synthesis_text,'')), ?) > 0
-                    OR instr(lower(coalesce(v.voice_text,'')), ?) > 0
-                 {order_d}
-                 LIMIT ?
-                """,
-                    (needle, needle, needle, needle, needle, lim),
+                # FTS5 path — sub-millisecond at any scale; fallback to instr() if table absent
+                fts_check = await db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='debates_fts'"
                 )
+                use_fts = await fts_check.fetchone() is not None
+                if use_fts:
+                    cur = await db.execute(
+                        f"""
+                        SELECT DISTINCT d.id, d.created_at, d.category, d.mode,
+                               d.brief_description, d.dream_id,
+                               substr(d.brief_description, 1, 140) AS preview
+                          FROM debates_fts f
+                          JOIN debates d ON d.id = f.rowid
+                         WHERE f.debates_fts MATCH ?
+                           AND d.tenant_id = ?
+                         {order_d}
+                         LIMIT ?
+                        """,
+                        (needle, tid, lim),
+                    )
+                else:
+                    # Legacy fallback (pre-migration)
+                    cur = await db.execute(
+                        f"""
+                        SELECT DISTINCT d.id, d.created_at, d.category, d.mode,
+                               d.brief_description, d.dream_id,
+                               substr(d.brief_description, 1, 140) AS preview
+                          FROM debates d
+                          LEFT JOIN agent_voices v ON v.debate_id = d.id
+                         WHERE d.tenant_id = ?
+                           AND (instr(lower(coalesce(d.brief_description,'')), ?) > 0
+                            OR instr(lower(coalesce(d.intention,'')), ?) > 0
+                            OR instr(lower(coalesce(d.extra_context,'')), ?) > 0
+                            OR instr(lower(coalesce(d.synthesis_text,'')), ?) > 0
+                            OR instr(lower(coalesce(v.voice_text,'')), ?) > 0)
+                         {order_d}
+                         LIMIT ?
+                        """,
+                        (tid, needle, needle, needle, needle, needle, lim),
+                    )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
     async def get_debate_row(self, db: Any, debate_id: int) -> Optional[dict[str, Any]]:
-        cur = await db.execute("SELECT * FROM debates WHERE id = ?", (debate_id,))
+        cur = await db.execute(
+            "SELECT * FROM debates WHERE id = ? AND tenant_id = ?",
+            (debate_id, _tid()),
+        )
         row = await cur.fetchone()
         return dict(row) if row else None
 
@@ -462,16 +676,19 @@ class _Repo:
             """
             SELECT agent_name, voice_text
               FROM agent_voices
-             WHERE debate_id = ?
+             WHERE debate_id = ? AND tenant_id = ?
              ORDER BY id
             """,
-            (debate_id,),
+            (debate_id, _tid()),
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
     async def get_commitment(self, db: Any, commitment_id: int) -> Optional[dict[str, Any]]:
-        cur = await db.execute("SELECT * FROM commitments WHERE id = ?", (commitment_id,))
+        cur = await db.execute(
+            "SELECT * FROM commitments WHERE id = ? AND tenant_id = ?",
+            (commitment_id, _tid()),
+        )
         row = await cur.fetchone()
         return dict(row) if row else None
 
@@ -483,10 +700,10 @@ class _Repo:
             SELECT id, text, due_at, follow_up_at, status, created_at,
                    trigger_type, needs_attention, release_reason, completed_at
               FROM commitments
-             WHERE debate_id = ?
+             WHERE debate_id = ? AND tenant_id = ?
              ORDER BY id DESC
             """,
-            (debate_id,),
+            (debate_id, _tid()),
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
@@ -495,13 +712,17 @@ class _Repo:
         self, db: Any, debate_id: int
     ) -> Optional[dict[str, Any]]:
         cur = await db.execute(
-            "SELECT id, mode, dream_id FROM debates WHERE id = ?", (debate_id,)
+            "SELECT id, mode, dream_id FROM debates WHERE id = ? AND tenant_id = ?",
+            (debate_id, _tid()),
         )
         row = await cur.fetchone()
         return dict(row) if row else None
 
     async def project_id_for_dream(self, db: Any, dream_id: str) -> Optional[int]:
-        cur = await db.execute("SELECT id FROM projects WHERE dream_id = ?", (dream_id,))
+        cur = await db.execute(
+            "SELECT id FROM projects WHERE dream_id = ? AND tenant_id = ?",
+            (dream_id, _tid()),
+        )
         row = await cur.fetchone()
         return int(row["id"]) if row else None
 
@@ -522,12 +743,13 @@ class _Repo:
         cur = await db.execute(
             """
             INSERT INTO commitments (
-              debate_id, project_id, text, due_at, follow_up_at,
+              tenant_id, debate_id, project_id, text, due_at, follow_up_at,
               trigger_type, needs_attention, status
             )
-            VALUES (?,?,?,?,?,?,?, 'open')
+            VALUES (?,?,?,?,?,?,?,?, 'open')
             """,
             (
+                _tid(),
                 debate_id,
                 project_id,
                 text,
@@ -545,9 +767,9 @@ class _Repo:
             UPDATE projects
                SET last_progress_at = ?,
                    status = CASE WHEN status = 'dreaming' THEN 'in_progress' ELSE status END
-             WHERE id = ?
+             WHERE id = ? AND tenant_id = ?
             """,
-            (_utcnow(), project_id),
+            (_utcnow(), project_id, _tid()),
         )
 
     async def list_open_commitments_with_followup(self, db: Any) -> list[dict[str, Any]]:
@@ -557,7 +779,9 @@ class _Repo:
                    trigger_type, needs_attention, debate_id, project_id
               FROM commitments
              WHERE status = 'open' AND follow_up_at IS NOT NULL
-            """
+               AND tenant_id = ?
+            """,
+            (_tid(),),
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
@@ -566,9 +790,9 @@ class _Repo:
         await db.execute(
             """
             UPDATE commitments SET needs_attention = 1, text = ?
-             WHERE id = ? AND status = 'open'
+             WHERE id = ? AND status = 'open' AND tenant_id = ?
             """,
-            (text, commitment_id),
+            (text, commitment_id, _tid()),
         )
 
     async def list_commitments_due(
@@ -605,9 +829,9 @@ class _Repo:
                SET status = 'released',
                    release_reason = ?,
                    completed_at = ?
-             WHERE id = ? AND status = 'open'
+             WHERE id = ? AND status = 'open' AND tenant_id = ?
             """,
-            (reason, _utcnow(), commitment_id),
+            (reason, _utcnow(), commitment_id, _tid()),
         )
         return cur.rowcount > 0
 
@@ -630,9 +854,9 @@ class _Repo:
                SET status = 'completed',
                    completed_at = ?,
                    text = text || ?
-             WHERE id = ? AND status = 'open'
+             WHERE id = ? AND status = 'open' AND tenant_id = ?
             """,
-            (_utcnow(), tail, commitment_id),
+            (_utcnow(), tail, commitment_id, _tid()),
         )
         return cur.rowcount > 0
 
@@ -640,9 +864,9 @@ class _Repo:
         cur = await db.execute(
             """
             SELECT COUNT(*) FROM commitments
-             WHERE project_id = ? AND status = 'open'
+             WHERE project_id = ? AND status = 'open' AND tenant_id = ?
             """,
-            (project_id,),
+            (project_id, _tid()),
         )
         row = await cur.fetchone()
         return int(row[0]) if row else 0
@@ -662,11 +886,11 @@ class _Repo:
             SELECT id, text, due_at, follow_up_at, status, created_at,
                    trigger_type, needs_attention, debate_id, completed_at, release_reason
               FROM commitments
-             WHERE project_id = ?
+             WHERE project_id = ? AND tenant_id = ?
              {ord_created}
              LIMIT ?
             """,
-            (project_id, lim),
+            (project_id, _tid(), lim),
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
@@ -678,9 +902,10 @@ class _Repo:
              WHERE project_id = ?
                AND status = 'open'
                AND trigger_type = 'stale_project'
+               AND tenant_id = ?
              LIMIT 1
             """,
-            (project_id,),
+            (project_id, _tid()),
         )
         return await cur.fetchone() is not None
 
@@ -688,11 +913,13 @@ class _Repo:
         cur = await db.execute(
             """
             SELECT follow_up_at FROM commitments
-             WHERE project_id = ? AND status = 'open' AND follow_up_at IS NOT NULL
+             WHERE project_id = ? AND status = 'open'
+               AND follow_up_at IS NOT NULL
+               AND tenant_id = ?
              ORDER BY follow_up_at ASC
              LIMIT 1
             """,
-            (project_id,),
+            (project_id, _tid()),
         )
         row = await cur.fetchone()
         return str(row[0]) if row and row[0] else None

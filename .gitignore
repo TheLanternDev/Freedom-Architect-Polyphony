@@ -56,3 +56,6 @@ SOP-LinkedIn-Sales-Channel.md
 # Prywatne dane tożsamości użytkownika (wrażliwe, psychologiczne) — out of repo.
 # Wersjonujemy tylko strukturę-przykład (config/patryk_identity.example.json).
 config/patryk_identity.json
+
+data/
+docs/Architekt_Wolnosci_Specyfikacja_Pelna_v3.3.pdf

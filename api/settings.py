@@ -24,13 +24,39 @@ def openapi_urls() -> tuple[str | None, str | None, str | None]:
     return "/docs", "/redoc", "/openapi.json"
 
 
+_DEV_VITE_ORIGINS = (
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",
+    "http://tauri.localhost",
+)
+
+
 def cors_allow_origins() -> list[str]:
-    """Produkcja: AW_CORS_ORIGINS=https://app.example.com — dev: *."""
+    """Produkcja: `AW_CORS_ORIGINS=https://app.example.com` (lista CSV).
+    Dev (`AW_ENV != production`): jeśli ENV ustawione — używamy go, ale
+    automatycznie *dosypujemy* origins Vite/Tauri (1420 + tauri://localhost),
+    żeby przykładowy `.env` skopiowany bez świadomości nie blokował lokalnego UI.
+    Brak ENV w dev → `*` (otwarcie, jak dotąd).
+    """
     raw = (os.getenv("AW_CORS_ORIGINS") or "*").strip()
+
+    if is_production() and raw == "*":
+        import logging
+        logging.getLogger(__name__).warning(
+            "⚠️  PRODUKCJA: AW_CORS_ORIGINS='*' — ustaw konkretne origins!"
+        )
+
     if raw == "*":
         return ["*"]
     out = [p.strip() for p in raw.split(",") if p.strip()]
-    return out if out else ["*"]
+    if not out:
+        return ["*"]
+    if not is_production():
+        for origin in _DEV_VITE_ORIGINS:
+            if origin not in out:
+                out.append(origin)
+    return out
 
 
 def rate_limit_enabled() -> bool:

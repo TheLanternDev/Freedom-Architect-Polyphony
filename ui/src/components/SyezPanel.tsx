@@ -104,24 +104,15 @@ function TensionBars({
   tensions: NonNullable<SynthesisStructuredPayload["tensions"]>;
 }) {
   return (
-    <div className="space-y-3">
-      {tensions.map((t, i) => {
-        const w = Math.min(98, 32 + Math.min((t.why?.length ?? 0) * 0.35, 66));
-        return (
-          <div key={i}>
-            <div className="flex justify-between text-[11px] text-white/45 mb-1 gap-2">
-              <span className="truncate">{t.between?.join(" ↔ ") ?? "Tension"}</span>
-            </div>
-            <div className="h-2 rounded-full bg-white/[0.07] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-teal-dark to-teal transition-all duration-500"
-                style={{ width: `${w}%` }}
-              />
-            </div>
-            <p className="text-[11px] text-white/55 mt-1 leading-snug">{t.why}</p>
+    <div className="space-y-2">
+      {tensions.map((t, i) => (
+        <div key={i} className="border border-white/[0.07] rounded-lg px-3 py-2">
+          <div className="text-[11px] text-teal/70 font-medium mb-1">
+            {t.between?.join(" ↔ ") ?? "Tension"}
           </div>
-        );
-      })}
+          <p className="text-[12px] text-white/65 leading-snug">{t.why}</p>
+        </div>
+      ))}
     </div>
   );
 }
@@ -152,6 +143,17 @@ export function SyezPanel({
 
   const inferredQuestions = extractLikelyOpenQuestions(synthesis);
   const segments = splitSynthesisSegments(synthesis);
+
+  // Wyciąga akapit "Jeden krok teraz:" z tekstu syntezy (FA2)
+  const nextStepText = (() => {
+    const marker = /Jeden krok teraz\s*:/i;
+    const match = synthesis.match(marker);
+    if (!match || match.index == null) return null;
+    const after = synthesis.slice(match.index + match[0].length).trimStart();
+    // Bierzemy do końca akapitu (podwójny newline) lub max 600 znaków
+    const end = after.search(/\n\n/);
+    return (end > 0 ? after.slice(0, end) : after.slice(0, 600)).trim() || null;
+  })();
 
   const downloadMd = useCallback(async () => {
     if (debateId != null) {
@@ -477,6 +479,14 @@ export function SyezPanel({
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {isDone && nextStepText && (
+              <div className="rounded-lg border border-teal/35 bg-teal/[0.07] px-4 py-3">
+                <div className="text-[10px] uppercase tracking-widest text-teal/70 mb-1.5">
+                  Jeden krok teraz
+                </div>
+                <p className="text-[13px] text-white/90 leading-snug">{nextStepText}</p>
               </div>
             )}
             <div className="text-[13px] text-white/80 leading-relaxed">

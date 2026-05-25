@@ -15,7 +15,8 @@ import uuid
 from datetime import datetime, timezone
 
 from core import MAX_ACTIVE_PROJECTS
-from main import Brief, _build_syez_payload, _extract_json_block, _try_parse_synthesis_json
+from main import Brief
+from api.services.debate_orchestrator import build_syez_payload, _extract_json_block, _try_parse_synthesis_json
 
 
 def _seed_active_project(db_path) -> int:
@@ -77,7 +78,7 @@ def test_hard_lock_blocks_new_project_at_limit(client_no_redis, fresh_db_path):
 
 def test_hard_lock_does_not_block_when_below_limit(client_no_redis, fresh_db_path):
     """Poniżej limitu — request nie jest blokowany (200 + SSE)."""
-    if MAX_ACTIVE_PROJECTS > 0:
+    if MAX_ACTIVE_PROJECTS > 1:
         _seed_active_project(fresh_db_path)
     resp = client_no_redis.post(
         "/debate/stream",
@@ -140,7 +141,7 @@ def test_try_parse_synthesis_json_returns_none_on_malformed():
     assert _try_parse_synthesis_json("```json\n{ malformed\n```") is None
 
 
-# ── _build_syez_payload ─────────────────────────────────────────────────────
+# ── build_syez_payload ─────────────────────────────────────────────────────
 
 
 _VALID_DESCRIPTION = (
@@ -148,13 +149,13 @@ _VALID_DESCRIPTION = (
 )
 
 
-def test_build_syez_payload_contains_aksjomat_requirement():
+def testbuild_syez_payload_contains_aksjomat_requirement():
     brief = Brief(
         description=_VALID_DESCRIPTION,
         category="decyzja",
         mode="pelna",
     )
-    out = _build_syez_payload("oryginalny brief", "[Kogit]\nbla", None, brief)
+    out = build_syez_payload("oryginalny brief", "[Kogit]\nbla", None, brief)
     # AKSJOMAT 2 — treść prozaiczna (bez JSON-owego schema promptu)
     assert "functionality_checklist" in out
     assert "ZAKAZ: JSON" in out
@@ -163,7 +164,7 @@ def test_build_syez_payload_contains_aksjomat_requirement():
     assert "Tryb debaty: pelna" in out
 
 
-def test_build_syez_payload_includes_dream_when_provided():
+def testbuild_syez_payload_includes_dream_when_provided():
     from core.dream_architect import distill_dream
 
     brief = Brief(
@@ -172,6 +173,6 @@ def test_build_syez_payload_includes_dream_when_provided():
         mode="marzen",
     )
     dream = distill_dream("Test marzenia dla syntezy Syeza.")
-    out = _build_syez_payload("brief", "voices", dream, brief)
+    out = build_syez_payload("brief", "voices", dream, brief)
     assert "ARCHITEKTURA MARZENIA" in out
     assert dream.core_dream in out

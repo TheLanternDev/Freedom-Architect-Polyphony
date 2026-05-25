@@ -1,5 +1,5 @@
 /**
- * Lekki i18n dla Architekta Wolności / Freedom Architect.
+ * Lekki i18n dla Architekta Wolności: Wielogłos / Freedom Architect: Polyphony.
  *
  * Bez zewnętrznych zależności — kontekst + hook + płaski słownik PL/EN.
  * `t("klucz")` → wybrany język. Wybór trzymamy w localStorage.
@@ -20,7 +20,7 @@ type Phrase = { pl: string; en: string };
 
 export const DICT: Record<string, Phrase> = {
   // App-level
-  "app.brand": { pl: "Architekt Wolności", en: "Freedom Architect" },
+  "app.brand": { pl: "Architekt Wolności: Wielogłos", en: "Freedom Architect: Polyphony" },
   "app.title.supervisory": { pl: "Rada", en: "Supervisory" },
   "app.title.council": { pl: "Nadzorcza", en: "Council" },
   "app.status.idle": { pl: "Gotowy", en: "Ready" },
@@ -200,6 +200,12 @@ export const DICT: Record<string, Phrase> = {
   "agent.role.Tai": { pl: "perspektywa czasu", en: "time perspective" },
   "agent.role.Obver": { pl: "obiektywna ocena", en: "objective assessment" },
   "agent.role.Kidi": { pl: "kreatywność i zabawa", en: "creativity & play" },
+
+  // FA2 (business) role overrides — shown when councilMode === "fa2"
+  "agent.role.fa2.Emojy": { pl: "trendy i sygnały popytu", en: "trends & demand signals" },
+  "agent.role.fa2.Smaty": { pl: "operacje i finanse", en: "operations & finance" },
+  "agent.role.fa2.Deega": { pl: "diagnoza i konkurencja", en: "competition & diagnosis" },
+  "agent.role.fa2.Kidi": { pl: "innowacja i nisze", en: "innovation & niches" },
 
   // Lexical tension (backend + TensionMeter)
   "tensions.title": {
@@ -487,7 +493,7 @@ export function LangProvider({ children }: { children: ReactNode }) {
     if (typeof document !== "undefined") {
       document.documentElement.lang = lang;
       document.title =
-        lang === "pl" ? "Architekt Wolności" : "Freedom Architect";
+        lang === "pl" ? "Architekt Wolności: Wielogłos" : "Freedom Architect: Polyphony";
     }
   }, [lang]);
 

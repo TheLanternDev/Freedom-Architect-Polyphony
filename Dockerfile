@@ -5,8 +5,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY agents ./agents
+COPY api ./api
 COPY core ./core
 COPY db ./db
+COPY env_bootstrap.py .
 COPY main.py .
 
 ENV PYTHONUNBUFFERED=1

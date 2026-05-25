@@ -3,7 +3,7 @@ Testy warstwy cache + szacowania kosztu w `BaseAgent`.
 
 W v3.2 cache LLM przeszedł z endpointu `/generate` (legacy) do `BaseAgent`,
 gdzie każde wywołanie agenta sprawdza Redisa pod kluczem
-`llm:v6:<agent>:<sha256>`. Tu testujemy czyste funkcje:
+`llm:v7:<agent>:<sha256>`. Tu testujemy czyste funkcje:
   - `_cache_key` (deterministyczność + uwzględnienie dream_id)
   - `_calculate_cost` (cennik per model)
 """
@@ -20,7 +20,7 @@ from agents.base_agent import BaseAgent
 
 def test_cache_key_has_v6_prefix_and_agent_name():
     key = BaseAgent._cache_key("Kogit", "ctx", "claude-sonnet-4-6", 0.5)
-    assert key.startswith("llm:v6:Kogit:")
+    assert key.startswith("llm:v7:Kogit:")
 
 
 def test_cache_key_is_deterministic_for_same_input():

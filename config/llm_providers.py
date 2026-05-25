@@ -63,7 +63,7 @@ def anthropic_omits_temperature(model: str) -> bool:
     (podłańcuchy w `model.lower()`, rozdzielone przecinkami).
     """
     m = (model or "").lower()
-    if "opus-4-7" in m:
+    if "opus-4-6" in m:
         return True
     raw = os.getenv("AW_ANTHROPIC_OMIT_TEMPERATURE_SUBSTR", "").strip()
     if not raw:
@@ -73,6 +73,14 @@ def anthropic_omits_temperature(model: str) -> bool:
         if p and p in m:
             return True
     return False
+
+
+def is_retryable_anthropic_exception(exc: Exception) -> bool:
+    """HTTP 429/5xx/529 (overloaded) od Anthropic → retry."""
+    code = getattr(getattr(exc, "response", None), "status_code", 0)
+    if code == 529 or code == 429:
+        return True
+    return 500 <= code < 600
 
 
 def map_claude_model_to_xai(claude_model: str) -> str:

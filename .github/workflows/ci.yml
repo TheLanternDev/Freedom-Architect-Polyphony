@@ -13,7 +13,30 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install ruff
-      - run: ruff check api main.py tests --select=E9,F63,F7,F82
+      - run: ruff check api main.py tests core agents db config --select=E9,F63,F7,F82
+      # SEC-1 guard: raw db.execute() in route handlers bypasses _Repo tenant isolation.
+      # Exclusions:
+      #   api/routers/auth.py — operates on users table (no tenant isolation needed, auth layer)
+      #   api/routers/meta.py — health check SELECT 1 only
+      #   # allow-raw-execute  — inline override for reviewed callsites
+      - name: Check no raw db.execute() in route handlers
+        run: |
+          if grep -rn "db\.execute(" main.py agents/ core/ \
+               --include="*.py" \
+               | grep -v "# allow-raw-execute"; then
+            echo "❌ Raw db.execute() found in route handlers — use repo.* methods instead."
+            echo "   If intentional, add '# allow-raw-execute' comment to the line."
+            exit 1
+          fi
+          if grep -rn "db\.execute(" api/ \
+               --include="*.py" \
+               --exclude="auth.py" \
+               --exclude="meta.py" \
+               | grep -v "# allow-raw-execute"; then
+            echo "❌ Raw db.execute() found in api/ (excluding auth.py, meta.py)."
+            exit 1
+          fi
+          echo "✅ No unguarded db.execute() in route handlers."
 
   audit:
     runs-on: ubuntu-latest

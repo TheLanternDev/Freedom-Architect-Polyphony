@@ -35,13 +35,12 @@ try:  # pragma: no cover
 except Exception:
     pass
 
-import asyncio
+import hmac
 import json
 import logging
 import os
-import re
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 # `datetime.UTC` jest dostępne od Pythona 3.11 — zapewniamy zgodność wsteczną do 3.10.
 try:
@@ -49,10 +48,10 @@ try:
 except ImportError:  # pragma: no cover - tylko Python < 3.11
     UTC = timezone.utc  # type: ignore[assignment]
 from pathlib import Path
-from typing import Any, AsyncIterator, Literal, Optional
+from typing import Any, Literal, Optional
 
 import redis.asyncio as aioredis
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -73,36 +72,14 @@ except ImportError:
     RADA_AVAILABLE = False
     logger.warning("⚠️ agents/ package not found – Rada disabled, using fallback")
 
-# AKSJOMATY (core)
+# AKSJOMATY (core) — minimalny import na potrzeby main.py routing guards + health
 try:
-    from core import (
-        AGENT_COMPLETION_POSTSCRIPT,  # noqa: F401
-        CompletionViolation,
-        DreamArchitecture,
-        MAX_ACTIVE_PROJECTS,
-        adistill_dream,
-        assert_full_functionality,
-        enforce_active_project_limit,
-        extract_completion_audit_from_prose,
-        require_completion_audit,
-        validate_archive_reason,
-        validate_syez_prose_completion_audit,
-    )
-    from core.completion_enforcer import (
-        FunctionalityItem,
-        Project,
-        ProjectStatus,
-        classify_stale_status,
-    )
+    from core import CompletionViolation, MAX_ACTIVE_PROJECTS  # noqa: F401
     CORE_AVAILABLE = True
 except ImportError as e:
     CORE_AVAILABLE = False
+    MAX_ACTIVE_PROJECTS = None  # type: ignore[assignment]
     logger.error("⚠️ core/ package not importable: %s", e)
-
-try:
-    from core.live_tensions import compute_live_pair_frictions
-except ImportError:
-    compute_live_pair_frictions = None  # type: ignore[assignment,misc]
 
 try:
     from core.debate_export import render_debate_markdown
@@ -114,16 +91,11 @@ try:
 except ImportError:
     render_debate_pdf_bytes = None  # type: ignore[misc,assignment]
 
-try:
-    from core.cost_tracking import (
-        evaluate_hard_budget,
-        load_budget_snapshot,
-        maybe_fire_cost_webhook,
-    )
-except ImportError:
-    evaluate_hard_budget = None  # type: ignore[misc,assignment]
-    load_budget_snapshot = None  # type: ignore[misc,assignment]
-    maybe_fire_cost_webhook = None  # type: ignore[misc,assignment]
+# Serwisy wyekstrahowane z main.py v3.3
+from api.services.budget_guard import ensure_hard_budget_or_raise as _ensure_hard_budget_or_raise
+from api.services.completion_service import run_phase2_maintenance as _run_phase2_startup_tasks
+from api.services.debate_orchestrator import stream_debate as _stream_debate
+from api.services.project_service import enforce_active_project_limit_for_brief as _enforce_active_project_limit_for_brief
 
 # Persystencja
 try:
@@ -140,9 +112,62 @@ from api.settings import cors_allow_origins, debate_rate_limit, openapi_urls, ra
 from api.http_guard import architekt_http_guard
 from api.routers.meta import router as meta_router
 
+# Faza 4/5: dodatkowe routery
+try:
+    from api.routers.personal import router as personal_router
+except ImportError:
+    personal_router = None  # type: ignore[assignment]
+
+try:
+    from api.routers.integrations import router as integrations_router
+except ImportError:
+    integrations_router = None  # type: ignore[assignment]
+
+try:
+    from api.routers.auth import router as auth_router
+except ImportError:
+    auth_router = None  # type: ignore[assignment]
+
+try:
+    from api.routers.voice import router as voice_router
+except ImportError:
+    voice_router = None  # type: ignore[assignment]
+
+
+def _production_startup_checks() -> None:
+    """Blokuje start w AW_ENV=production bez wymaganych sekretów."""
+    from api.settings import is_production, api_key_legacy, jwt_secret_configured
+    if not is_production():
+        return
+    errors: list[str] = []
+    if not api_key_legacy() and not jwt_secret_configured():
+        errors.append(
+            "ARCHITEKT_API_KEY lub ARCHITEKT_JWT_SECRET musi być ustawiony w produkcji "
+            "(bez tego API jest całkowicie otwarte)."
+        )
+    if api_key_legacy() and not jwt_secret_configured():
+        logger.warning(
+            "⚠️  ARCHITEKT_API_KEY (shared legacy key) jest ustawiony bez ARCHITEKT_JWT_SECRET. "
+            "Shared key dzieli jeden tenant między wszystkich klientów i jest deprecated — "
+            "ustaw ARCHITEKT_JWT_SECRET i przełącz klientów na /auth/login (per-user JWT)."
+        )
+    if not (os.getenv("ANTHROPIC_API_KEY") or "").strip():
+        errors.append("ANTHROPIC_API_KEY wymagany w produkcji.")
+    if not (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip():
+        errors.append(
+            "ARCHITEKT_ADMIN_TOKEN wymagany w produkcji — bez niego /admin/* jest dostępny "
+            "dla każdego uwierzytelnionego użytkownika."
+        )
+    if errors:
+        for e in errors:
+            logger.critical("🛑 %s", e)
+        raise SystemExit("Startup zablokowany — brakujące sekrety produkcyjne. Patrz logi powyżej.")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _production_startup_checks()
+
     global redis_client
     # Redis (opcjonalny)
     try:
@@ -197,7 +222,7 @@ _docs_url, _redoc_url, _openapi_url = openapi_urls()
 app = FastAPI(
     title="Architekt Wolności - AI Engine v3.3",
     description=(
-        "Rada Nadzorcza „Mój Świat” (9 agentów + Syez) + dwa AKSJOMATY: "
+        'Rada Nadzorcza „Mój Świat” (9 agentów + Syez) + dwa AKSJOMATY: '
         "Architektura Marzenia + Doprowadzanie Projektów Do Końca."
     ),
     version="3.3.0",
@@ -212,6 +237,37 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(meta_router)
+if personal_router:
+    app.include_router(personal_router)
+if integrations_router:
+    app.include_router(integrations_router)
+if auth_router:
+    app.include_router(auth_router)
+if voice_router:
+    app.include_router(voice_router)
+
+# ── Dwa Tryby (spec v1.0): osobisty (ten program) + biznesowy (business_fa2) ──
+# Mount sub-aplikacji `Freedom Architect 2.0` pod prefiksem /business. Lazy
+# import + fail-soft: jeśli zależności biznesowe (np. shared.utils.cache,
+# Redis) nie są obecne, osobisty tryb dalej działa.
+try:
+    from business_fa2.api.main import app as _business_app  # noqa: WPS433
+    app.mount("/business", _business_app, name="freedom_architect_2_business")
+    _editions_available = ("personal", "business")
+except Exception as _biz_err:  # noqa: BLE001
+    logger.warning("Tryb biznesowy niedostępny (business_fa2): %s", _biz_err)
+    _editions_available = ("personal",)
+
+
+@app.get("/edition", tags=["meta"])
+async def _editions() -> dict[str, object]:
+    """Spec v1.0 §3: przełącznik między trybami dostępny w każdej chwili."""
+    return {
+        "current": "personal",
+        "available": list(_editions_available),
+        "business_mount": "/business" if "business" in _editions_available else None,
+    }
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -222,8 +278,15 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def _architekt_auth_middleware(request: Request, call_next):
-    return await architekt_http_guard(request, call_next)
+async def _security_headers_middleware(request: Request, call_next):
+    response = await architekt_http_guard(request, call_next)
+    from api.settings import is_production
+    if is_production():
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 
 # ==================== MODELE API ====================
@@ -279,910 +342,25 @@ class DebateContinueRequest(BaseModel):
 
 # ==================== SSE HELPERS ====================
 
-
-def _sse(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+from api.services._sse import sse as _sse
 
 
-# ── Faza 2: ton Szowa / Deegi — nie „miłe przypomnienie”, lecz konfrontacja (AKSJOMAT 2) ──
 
-SHADOW_FOLLOWUP_PREFIX_PL = (
-    "[Przełamywanie Schematu] Minęły 72 godziny. Co się stało z Twoim zobowiązaniem?\n\n"
-)
-SHADOW_FOLLOWUP_PREFIX_EN = (
-    "[Pattern Break] 72 hours have passed. What happened to your commitment?\n\n"
-)
-
-SHADOW_NO_SILENT_RELEASE_PL = (
-    "Nie możesz po cichu zniknąć ze swojego własnego zobowiązania."
-)
-SHADOW_NO_SILENT_RELEASE_EN = (
-    "You cannot quietly vanish from a commitment you made to yourself."
-)
-
-MIN_COMMITMENT_RELEASE_REASON_LEN = 30
-
-DEEGA_STALE_AT_RISK_PL = (
-    "[Przełamywanie Schematu — głos Deegi] Za długo nie było ruchu, który odhacza checklistę. "
-    "Co konkretnie dziś — w jednym zdaniu — rusza pierwszą zaległą funkcjonalność?"
-)
-SZOW_STALE_STUCK_PL = (
-    "[Przełamywanie Schematu — głos Szowa] To już nie „zajęty jestem”. To ucieczka przed domknięciem. "
-    "Nazwij jedną rzecz, którą udajesz, że nie widzisz — i zrób z nią coś dziś."
-)
-
-DEEGA_STALE_AT_RISK_EN = (
-    "[Pattern Break — Deega] Silence does not complete functionality. "
-    "In one sentence: what moves the first unchecked item today?"
-)
-SZOW_STALE_STUCK_EN = (
-    "[Pattern Break — Szow] This is no longer 'busy'. This is avoidance of finishing. "
-    "Name one thing you pretend not to see — and act on it today."
-)
-
-AUTO_72H_SCHEMATY_BODY_PL = (
-    "Tryb agresywny: masz 72 godziny, by pokazać ruch albo jawnie zmienić kurs. "
-    "Zapisz dowód (nawet mały) albo nowe zobowiązanie — cisza = wzorzec."
-)
-AUTO_72H_SCHEMATY_BODY_EN = (
-    "Aggressive mode: 72 hours to show motion or explicitly change course. "
-    "Record proof (even tiny) or a new commitment — silence is the pattern."
+from api.services.commitment_service import (
+    MIN_COMMITMENT_RELEASE_REASON_LEN,
+    create_commitment as _create_commitment_svc,
+    release_commitment as _release_commitment_svc,
+    complete_commitment as _complete_commitment_svc,
+    delete_forbidden_payload as _delete_forbidden_payload,
 )
 
 
-def _shadow_followup_prefix(language: str) -> str:
-    return SHADOW_FOLLOWUP_PREFIX_EN if language == "en" else SHADOW_FOLLOWUP_PREFIX_PL
+def _council_mode_from_request(request: Request) -> str:
+    """UI: nagłówek X-Council-Mode=fa2 → ramowanie biznesowe."""
+    v = (request.headers.get("X-Council-Mode") or "").strip().lower()
+    return "fa2" if v == "fa2" else "personal"
 
 
-def _auto_72h_schematy_body(language: str) -> str:
-    return AUTO_72H_SCHEMATY_BODY_EN if language == "en" else AUTO_72H_SCHEMATY_BODY_PL
-
-
-def _stale_nudge_text(status: str, language: str) -> str:
-    if language == "en":
-        return DEEGA_STALE_AT_RISK_EN if status == "at_risk" else SZOW_STALE_STUCK_EN
-    return DEEGA_STALE_AT_RISK_PL if status == "at_risk" else SZOW_STALE_STUCK_PL
-
-
-def _stale_status_order(status: str) -> int:
-    return {
-        "dreaming": 0,
-        "in_progress": 1,
-        "at_risk": 2,
-        "stuck": 3,
-    }.get(status, -1)
-
-
-async def _apply_followup_nudges_db(db: Any) -> int:
-    """
-    Oznacza przeterminowane follow-upy jako wymagające uwagi i dokleja prefix Szowa
-    do treści (tylko raz — gdy needs_attention jeszcze 0).
-    """
-    from datetime import timezone
-
-    n = 0
-    now = datetime.now(timezone.utc)
-    for row in await repo.list_open_commitments_with_followup(db):
-        if int(row.get("needs_attention") or 0) != 0:
-            continue
-        raw = row.get("follow_up_at")
-        if not raw:
-            continue
-        try:
-            fu = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if fu.tzinfo is None:
-            fu = fu.replace(tzinfo=timezone.utc)
-        if fu > now:
-            continue
-        cid = int(row["id"])
-        lang = "en" if str(row.get("text", "")).startswith("[Pattern Break]") else "pl"
-        prefix = _shadow_followup_prefix(lang)
-        old_text = str(row.get("text") or "")
-        new_text = old_text if old_text.startswith(prefix.strip()) else prefix + old_text
-        await repo.set_commitment_needs_attention(db, cid, new_text)
-        n += 1
-    return n
-
-
-async def _sync_stale_projects_db(db: Any) -> dict[str, int]:
-    """
-    AKSJOMAT 2: utrwala AT_RISK/STUCK w SQLite i tworzy zobowiązania `stale_project`
-    (Deega / Szow) — bez spamu: max jedno otwarte stale_project na projekt.
-    """
-    if not CORE_AVAILABLE:
-        return {"projects_updated": 0, "stale_commitments_created": 0}
-    updates = 0
-    created = 0
-    rows = await repo.list_active_projects(db)
-    for r in rows:
-        pid = int(r["id"])
-        full = await repo.get_project(db, pid)
-        if not full:
-            continue
-        items = [FunctionalityItem(**f) for f in full["functionality"]]
-        current = ProjectStatus(str(full["status"]))
-        p = Project(
-            id=pid,
-            dream_id=str(full["dream_id"]),
-            status=current,
-            started_at=full.get("started_at"),
-            last_progress_at=full.get("last_progress_at"),
-            functionality=items,
-        )
-        rec = classify_stale_status(p, now=datetime.now(UTC))
-        if rec in (ProjectStatus.COMPLETED, ProjectStatus.ARCHIVED_CONSCIOUSLY):
-            continue
-        if rec == current:
-            continue
-        if _stale_status_order(rec.value) <= _stale_status_order(current.value):
-            continue
-        await repo.update_project_status(db, pid, rec.value)
-        updates += 1
-        if await repo.has_open_stale_nudge(db, pid):
-            continue
-        lang = "pl"
-        txt = _stale_nudge_text(rec.value, lang)
-        fu = (datetime.now(UTC) + timedelta(hours=72)).isoformat()
-        await repo.insert_commitment(
-            db,
-            text=txt,
-            debate_id=None,
-            project_id=pid,
-            due_at=None,
-            follow_up_at=fu,
-            trigger_type="stale_project",
-            needs_attention=0,
-        )
-        created += 1
-    return {"projects_updated": updates, "stale_commitments_created": created}
-
-
-async def _run_phase2_startup_tasks() -> None:
-    """Lifespan + admin: follow-upy + synchronizacja zastojów projektów."""
-    if not DB_AVAILABLE:
-        return
-    try:
-        from db.backend import acquire_http_db
-        from db.connection import DB_PATH as _DB
-
-        async with acquire_http_db(_DB) as db:
-            nudged = await _apply_followup_nudges_db(db)
-            sync = await _sync_stale_projects_db(db)
-            await db.commit()
-            logger.info(
-                "Faza 2 maintenance: followup_nudges=%s stale_sync=%s",
-                nudged,
-                sync,
-            )
-    except Exception as e:
-        logger.warning("Faza 2 startup maintenance failed: %s", e)
-
-
-def _spent_today_usd_logged() -> float:
-    """Koszt dzienny UTC z cost_log.jsonl — spójnie z twardym budżetem."""
-    if load_budget_snapshot is None:
-        return 0.0
-    return float(load_budget_snapshot().spent_today_usd)
-
-
-async def _ensure_hard_budget_or_raise() -> None:
-    """Twarde limity env — brak startu debaty (402)."""
-    if evaluate_hard_budget is None or load_budget_snapshot is None:
-        return
-    block = evaluate_hard_budget(load_budget_snapshot())
-    if block is None:
-        return
-    if maybe_fire_cost_webhook is not None:
-        asyncio.create_task(
-            maybe_fire_cost_webhook(
-                {
-                    "event": "budget_hard_block",
-                    "kind": block.kind,
-                    "spent_usd": block.spent_usd,
-                    "ceiling_usd": block.ceiling_usd,
-                }
-            )
-        )
-    raise HTTPException(
-        status_code=402,
-        detail={
-            "error": "budget_exceeded",
-            "kind": block.kind,
-            "spent_usd": block.spent_usd,
-            "ceiling_usd": block.ceiling_usd,
-            "message_pl": block.message_pl,
-        },
-    )
-
-
-def _maybe_budget_warning_sse() -> Optional[str]:
-    raw = os.getenv("DAILY_BUDGET_USD")
-    if not raw:
-        return None
-    try:
-        ceiling = float(raw)
-    except ValueError:
-        return None
-    spent = _spent_today_usd_logged()
-    if spent >= ceiling:
-        return _sse(
-            "budget_warning",
-            {
-                "spent_usd": spent,
-                "ceiling_usd": ceiling,
-                "message": (
-                    "Dzienny próg kosztów LLM został osiągnięty lub przekroczony "
-                    "(zmienna DAILY_BUDGET_USD). Rada nadal działa — świadomy wybór."
-                ),
-            },
-        )
-    return None
-
-
-def _extract_json_block(text: str) -> Optional[str]:
-    t = (text or "").strip()
-    if t.startswith("```"):
-        t = re.sub(r"^```[a-zA-Z0-9]*\s*", "", t)
-        t = re.sub(r"\s*```\s*$", "", t)
-    start = t.find("{")
-    end = t.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        return None
-    return t[start : end + 1]
-
-
-# ==================== HARD LOCK — limit aktywnych projektów ====================
-
-
-async def _enforce_active_project_limit_for_brief(brief: Brief, db: Any) -> None:
-    """
-    AKSJOMAT 2: Reguła „Najpierw kończ”.
-    Sprawdza tylko przy `category=projekt`. Inne kategorie nie liczą się
-    do limitu (marzenie/decyzja/schemat to rozmowy, nie zobowiązania).
-    """
-    if not (CORE_AVAILABLE and DB_AVAILABLE):
-        return
-    rows = await repo.list_active_projects(db)
-    projects = [
-        Project(
-            id=int(r["id"]),
-            dream_id=str(r["dream_id"]),
-            status=ProjectStatus(r["status"]),
-            started_at=r.get("started_at"),
-            last_progress_at=r.get("last_progress_at"),
-        )
-        for r in rows
-    ]
-    try:
-        enforce_active_project_limit(projects, attempting_new_project=True)
-    except CompletionViolation as cv:
-        raise HTTPException(status_code=409, detail=cv.to_payload()) from cv
-
-
-# ==================== FAZA A0 — Architektura Marzenia ====================
-
-
-_DAILY_QUESTIONS_PL: tuple[str, ...] = (
-    "Co jest dziś najmniejszym krokiem, który przybliża Cię do tego, czego naprawdę chcesz?",
-    "Czego unikasz nazwanie na głos — i jak jednym zdaniem byś to nazwał?",
-    "Kim jesteś, gdy nikt nie patrzy — i czego ten moment Cię uczy?",
-    "Co byś zrobił jutro, gdybyś nie bał się rozczarować nikogo?",
-    "Jaki sygnał z ciała najbardziej Ci teraz ufa?",
-    "Czego potrzebujesz od siebie dziś bardziej niż od innych?",
-    "Co jest jedyną rzeczą do odhaczenia w najbliższej godzinie?",
-)
-_DAILY_QUESTIONS_EN: tuple[str, ...] = (
-    "What is the smallest step today that moves you toward what you actually want?",
-    "What are you avoiding naming out loud — and how would you name it in one sentence?",
-    "Who are you when no one is watching — and what does that teach you?",
-    "What would you do tomorrow if you weren't afraid to disappoint anyone?",
-    "Which signal from your body do you trust most right now?",
-    "What do you need from yourself today more than from anyone else?",
-    "What is the one thing to tick off within the next hour?",
-)
-
-
-def _daily_checkin_question(language: str) -> str:
-    i = date.today().toordinal() % len(_DAILY_QUESTIONS_PL)
-    return _DAILY_QUESTIONS_EN[i] if language == "en" else _DAILY_QUESTIONS_PL[i]
-
-
-def _mode_decorator_for_dream(mode: str, language: str = "pl") -> str:
-    """
-    Dodaje krótkie wzmocnienie do briefu przed destylacją marzenia, zależnie
-    od trybu (AKSJOMAT 1 — tryb Marzeń = pełna ekspansja przed kompresją).
-
-    Tryb codzienny: check-in ~5 min — bez pełnej debaty; krótkie głosy agentów.
-    """
-    if mode == "codzienny":
-        q = _daily_checkin_question(language)
-        if language == "en":
-            return (
-                "\n\n[DAILY MODE — ~5 minute check-in, NOT a full Council debate]\n"
-                "Each agent: max 2 sentences; concrete, warm, no preamble.\n"
-                "Focus on today's anchor question:\n"
-                f"→ {q}\n"
-            )
-        return (
-            "\n\n[Tryb codzienny — check-in ~5 min, to nie pełna debata Rady]\n"
-            "Każdy agent: maks. 2 zdania; konkret, życzliwość, bez wstępów.\n"
-            "Oś dzisiejszego pytania:\n"
-            f"→ {q}\n"
-        )
-    if mode == "marzen":
-        return (
-            "\n\n[Tryb Marzeń] Najpierw pełna ekspansja wizji — NIE redukuj do realizmu, "
-            "póki nie nazwiesz pełnej wersji."
-        )
-    if mode == "schematy":
-        if language == "en":
-            return (
-                "\n\n[Pattern-Breaking Mode] Under the brief, find the abandonment or escape "
-                "pattern — name the dream it hides.\n"
-                "MANDATORY OUTPUT: end your voice with exactly one sentence starting with "
-                "\"Today I will...\" that the user can say aloud or write down right now. "
-                "No abstractions — one concrete action ≤60 minutes."
-            )
-        return (
-            "\n\n[Tryb Przełamywania Schematów] Pod briefem szukaj wzorca porzucania "
-            "lub ucieczki — nazwij marzenie, które ten schemat zasłania.\n"
-            "OBOWIĄZKOWY OUTPUT: zakończ swój głos dokładnie jednym zdaniem zaczynającym się "
-            "od \"Dziś zrobię...\" które użytkownik może powiedzieć głośno lub zapisać teraz. "
-            "Żadnych abstrakcji — jedna konkretna akcja ≤60 minut."
-        )
-    return ""
-
-
-def _build_council_context(brief: Brief) -> str:
-    parts = [f"Brief Patryka ({brief.category}, tryb={brief.mode}): {brief.description}"]
-    if brief.intention:
-        parts.append(f"Intencja: {brief.intention}")
-    if brief.extra_context:
-        parts.append(f"Dodatkowy kontekst: {brief.extra_context}")
-    if brief.scale or brief.budget:
-        parts.append(
-            f"(legacy) Skala: {brief.scale or '—'} | Budżet: {brief.budget or '—'}"
-        )
-    return "\n".join(parts)
-
-
-def _agent_evolution_enabled() -> bool:
-    """P5: rolling notatki per agent — wyłącz `AW_AGENT_EVOLUTION=0` (np. testy / prywatność)."""
-    v = (os.getenv("AW_AGENT_EVOLUTION") or "1").strip().lower()
-    return v not in ("0", "false", "no", "off")
-
-
-# ==================== ORKIESTRACJA SSE ====================
-
-
-# Lista agentów w trybie codziennym (4–5 + Syez). Wybór ma sens: logika (Kogit),
-# emocja (Emojy), ciało (Smaty), meta-perspektywa (Obver) — pokrywa 4 osie spec.
-_LIGHT_MODE_AGENTS: tuple[str, ...] = ("Kogit", "Emojy", "Smaty", "Obver")
-
-
-def _select_council_for_mode(mode: str) -> list[Any]:
-    if not RADA_AVAILABLE:
-        return []
-    if mode == "codzienny":
-        return [a for a in COUNCIL if a.name in _LIGHT_MODE_AGENTS]
-    return list(COUNCIL)
-
-
-async def _stream_debate(
-    brief: Brief,
-    *,
-    continuation_parent_id: Optional[int] = None,
-) -> AsyncIterator[str]:
-    """
-    Generator SSE: A0 (Architektura Marzenia) → 9 agentów → Syez (z walidacją
-    completion_audit) → zapis do DB.
-
-    Zdarzenia:
-      dream_architecture     – szkielet marzenia (AKSJOMAT 1)
-      project_state          – aktualny stan projektu marzenia (AKSJOMAT 2)
-      debate_start           – metadane debaty (+ continuation_parent_id przy kontynuacji)
-      agent_start / chunk / done
-      live_tensions          – heurystyka par agentów przed syntezą (napięcia leksykalne)
-      synthesis_start / chunk / done
-      synthesis_structured   – wyłącznie gdy synteza zawierała parsowalny JSON (legacy)
-      completion_audit_violation – brak audytu po re-prompcie Syeza
-      budget_warning          – próg DAILY_BUDGET_USD przekroczony (cost_log.jsonl)
-      stream_error            – nieobsłużony wyjątek (graceful koniec, bez retry)
-      debate_done             – koniec (z debate_id po zapisie SQLite)
-    """
-    try:
-        async for evt in _stream_debate_inner(brief, continuation_parent_id):
-            yield evt
-    except Exception as e:
-        logger.exception("_stream_debate crashed: %s", e)
-        yield _sse(
-            "stream_error",
-            {
-                "message": "Strumień debaty pękł — sprawdź logi serwera.",
-                "error": str(e)[:300],
-            },
-        )
-        yield _sse(
-            "debate_done",
-            {
-                "debate_id": None,
-                "agent_count": 0,
-                "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
-                "timestamp": datetime.now(UTC).isoformat(),
-                "error": True,
-            },
-        )
-
-
-async def _stream_debate_inner(
-    brief: Brief,
-    continuation_parent_id: Optional[int],
-) -> AsyncIterator[str]:
-    """Właściwa orkiestracja — wywoływana zawsze przez `_stream_debate` w safety-net."""
-    council = _select_council_for_mode(brief.mode)
-    council_names = [a.name for a in council]
-    raw_brief = _build_council_context(brief) + _mode_decorator_for_dream(
-        brief.mode, brief.language
-    )
-    _cost_start = _spent_today_usd_logged()
-
-    # ── A0: Architektura Marzenia ──────────────────────────────────────────
-    dream: Optional[Any] = None
-    project_id: Optional[int] = None
-    if CORE_AVAILABLE:
-        try:
-            # codzienny: bez LLM destylacji — jedna oszczędna ścieżka kosztowa (~1 wywołanie Sonnet mniej).
-            if brief.mode == "codzienny":
-                from core.dream_architect import _fallback_dream
-
-                dream = _fallback_dream(raw_brief, language=brief.language)
-            else:
-                dream = await adistill_dream(raw_brief, language=brief.language)
-            yield _sse(
-                "dream_architecture",
-                {
-                    "dream_id": dream.dream_id,
-                    "core_dream": dream.core_dream,
-                    "value_anchor": dream.value_anchor,
-                    "pillars": dream.pillars,
-                    "milestones": [m.model_dump() for m in dream.milestones],
-                    "next_move": dream.next_move.model_dump(),
-                    "completion_criteria": dream.completion_criteria,
-                    "functionality_checklist": dream.functionality_checklist,
-                },
-            )
-        except Exception as e:
-            logger.warning("A0 dream distillation failed: %s", e)
-            yield _sse("dream_architecture_error", {"error": str(e)})
-
-    # Zapis marzenia + projektu (tylko gdy mamy DB)
-    debate_id: Optional[int] = None
-    from db.backend import optional_debate_db
-    from db.connection import DB_PATH as _STREAM_DB_PATH
-
-    async with optional_debate_db(_STREAM_DB_PATH, DB_AVAILABLE) as db:
-        if db is not None and dream is not None:
-            try:
-                await repo.insert_dream(db, dream)
-                project_id = await repo.ensure_project_for_dream(
-                    db, dream.dream_id, dream.functionality_checklist
-                )
-                debate_id = await repo.insert_debate(
-                    db,
-                    category=brief.category,
-                    mode=brief.mode,
-                    brief_description=brief.description,
-                    intention=brief.intention,
-                    extra_context=brief.extra_context,
-                    dream_id=dream.dream_id,
-                    parent_debate_id=continuation_parent_id,
-                )
-                await repo.link_dream_debate(db, dream.dream_id, debate_id)
-                await db.commit()
-
-                if project_id is not None:
-                    proj_row = await repo.get_project(db, project_id)
-                    yield _sse("project_state", proj_row or {})
-            except Exception as e:
-                logger.warning("Persistence A0 step failed: %s", e)
-
-        budget_evt = _maybe_budget_warning_sse()
-        if budget_evt:
-            try:
-                from core.cost_tracking import maybe_fire_cost_webhook
-
-                asyncio.create_task(
-                    maybe_fire_cost_webhook({"event": "budget_soft_warning_sse"})
-                )
-            except Exception:
-                pass
-            yield budget_evt
-
-        yield _sse(
-            "debate_start",
-            {
-                "agents": council_names,
-                "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
-                "context_preview": raw_brief[:120],
-                "mode": brief.mode,
-                "category": brief.category,
-                "dream_id": dream.dream_id if dream is not None else None,
-                "continuation_parent_id": continuation_parent_id,
-            },
-        )
-
-        if not council:
-            yield _sse(
-                "synthesis_done",
-                {"full_text": "Rada niedostępna — brak pakietu agents/"},
-            )
-            yield _sse(
-                "debate_done",
-                {
-                    "debate_id": debate_id,
-                    "agent_count": 0,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                },
-            )
-            return
-
-        agent_queues: dict[str, asyncio.Queue] = {a.name: asyncio.Queue() for a in council}
-        full_voices: dict[str, str] = {}
-
-        evolution_by_agent: dict[str, str] = {}
-        if db is not None and _agent_evolution_enabled():
-            try:
-                evolution_by_agent = await repo.list_agent_evolution(db)
-            except Exception as e:
-                logger.warning("agent evolution load failed: %s", e)
-
-        lang = brief.language
-
-
-        async def run_agent(agent, queue: asyncio.Queue):
-            try:
-                evo = evolution_by_agent.get(agent.name) if evolution_by_agent else None
-                response = await agent.acontribute(
-                    raw_brief,
-                    dream=dream,
-                    language=lang,
-                    debate_mode=brief.mode,
-                    evolution_note=(evo.strip() if evo and evo.strip() else None),
-                )
-                words = response.split()
-                buf: list[str] = []
-                for w in words:
-                    buf.append(w)
-                    if len(buf) >= 4:
-                        await queue.put((" ".join(buf) + " ", False))
-                        buf = []
-                        await asyncio.sleep(0.03)
-                if buf:
-                    await queue.put((" ".join(buf), False))
-                await queue.put((response, True))
-            except Exception as e:
-                await queue.put((f"[błąd: {e}]", True))
-
-        for a in council:
-            yield _sse("agent_start", {"agent": a.name})
-
-        tasks = [asyncio.create_task(run_agent(a, agent_queues[a.name])) for a in council]
-        done_agents: set[str] = set()
-        while len(done_agents) < len(council):
-            for a in council:
-                if a.name in done_agents:
-                    continue
-                q = agent_queues[a.name]
-                try:
-                    text, is_final = q.get_nowait()
-                    if is_final:
-                        done_agents.add(a.name)
-                        full_voices[a.name] = text
-                        yield _sse("agent_done", {"agent": a.name, "full_text": text})
-                    else:
-                        yield _sse("agent_chunk", {"agent": a.name, "chunk": text})
-                except asyncio.QueueEmpty:
-                    pass
-            await asyncio.sleep(0.01)
-        await asyncio.gather(*tasks)
-
-        pairs: list[dict[str, Any]] = []
-        if compute_live_pair_frictions is not None:
-            try:
-                pairs = compute_live_pair_frictions(council_names, full_voices)
-            except Exception as e:
-                logger.warning("live_tensions compute failed: %s", e)
-        yield _sse("live_tensions", {"pairs": pairs})
-
-        # ── Faza 2: Syez (z wymuszeniem completion_audit) ──────────────────────
-        yield _sse(
-            "synthesis_start",
-            {"synthesizer": SYNTHESIZER.name},
-        )
-
-        bundle = "\n\n".join(f"[{name}]\n{voice}" for name, voice in full_voices.items())
-        syez_payload = _build_syez_payload(raw_brief, bundle, dream, brief, live_pairs=pairs)
-
-        try:
-            synthesis = await SYNTHESIZER.acontribute(syez_payload, dream=dream, language=lang)
-        except Exception as e:
-            synthesis = f"[błąd syntezy: {e}]" if lang == "pl" else f"[synthesis error: {e}]"
-
-        # Stream syntezy tekstowej
-        for chunk in _chunk_words(synthesis, 5):
-            yield _sse("synthesis_chunk", {"chunk": chunk})
-            await asyncio.sleep(0.025)
-        yield _sse("synthesis_done", {"full_text": synthesis})
-
-        synthesis_final = synthesis
-        parsed_final: Optional[dict[str, Any]] = _try_parse_synthesis_json(synthesis_final)
-
-        audit_violation_payload: Optional[dict[str, Any]] = None
-        audit_for_db: Optional[dict[str, Any]] = None
-
-        if CORE_AVAILABLE and not (
-            synthesis_final.startswith("[błąd syntezy")
-            or synthesis_final.startswith("[synthesis error")
-        ):
-            try:
-                if parsed_final is not None and isinstance(
-                    parsed_final.get("completion_audit"), dict
-                ):
-                    audit_for_db = require_completion_audit(parsed_final)
-                else:
-                    validate_syez_prose_completion_audit(synthesis_final)
-                    audit_for_db = extract_completion_audit_from_prose(synthesis_final)
-
-                if db is not None and project_id is not None and debate_id is not None:
-                    await repo.save_completion_audit(db, project_id, debate_id, audit_for_db)
-                    await db.commit()
-
-                if parsed_final is not None:
-                    yield _sse("synthesis_structured", parsed_final)
-
-            except CompletionViolation as cv:
-                logger.warning("Syez audit violation, re-prompting: %s", cv)
-                audit_violation_payload = cv.to_payload()
-                if lang == "en":
-                    fix_prompt = (
-                        "The previous synthesis does not satisfy AXIOM 2 (completion audit).\n"
-                        "Rewrite IT ALL as PURE ENGLISH PROSE — no JSON; the only "
-                        "permitted code block is ```mermaid … ``` (agent relation diagram).\n"
-                        "Weave clearly three things: what remains in the functionality "
-                        "checklist, what blocks the first outstanding item, and the "
-                        "smallest concrete move (≈60 minutes).\n\n"
-                        f"Previous version:\n---\n{synthesis_final}\n---"
-                    )
-                else:
-                    fix_prompt = (
-                        "Poprzednia synteza nie spełnia AKSJOMATU 2 (audyt domknięcia).\n"
-                        "Przepisz CAŁOŚĆ jako CZYSTĄ POLSKĄ PROZĘ — bez JSON-a; jedyny "
-                        "dozwolony blok kodu to ```mermaid … ``` (diagram relacji agentów).\n"
-                        "Wpleć wyraźnie trzy rzeczy: co zostało z checklisty funkcjonalności, "
-                        "co blokuje pierwszą zaległą pozycję, oraz najmniejszy konkretny ruch "
-                        "(około 60 minut).\n\n"
-                        f"Poprzednia wersja:\n---\n{synthesis_final}\n---"
-                    )
-                try:
-                    fixed = await SYNTHESIZER.acontribute(
-                        fix_prompt, dream=dream, language=lang, debate_mode=brief.mode
-                    )
-                    synthesis_final = fixed
-                    parsed_fix = _try_parse_synthesis_json(fixed)
-                    if parsed_fix is not None and isinstance(
-                        parsed_fix.get("completion_audit"), dict
-                    ):
-                        audit_for_db = require_completion_audit(parsed_fix)
-                        parsed_final = parsed_fix
-                    else:
-                        validate_syez_prose_completion_audit(fixed)
-                        audit_for_db = extract_completion_audit_from_prose(fixed)
-                        parsed_final = parsed_fix
-
-                    if db is not None and project_id is not None and debate_id is not None:
-                        await repo.save_completion_audit(db, project_id, debate_id, audit_for_db)
-                        await db.commit()
-
-                    if parsed_final is not None:
-                        yield _sse("synthesis_structured", parsed_final)
-                    audit_violation_payload = None
-                except CompletionViolation as cv2:
-                    audit_violation_payload = cv2.to_payload()
-                except Exception as e:
-                    logger.warning("Re-prompt audit failed: %s", e)
-
-        if audit_violation_payload is not None:
-            yield _sse("completion_audit_violation", audit_violation_payload)
-
-        # Zapis pełnej syntezy + głosów
-        if db is not None and debate_id is not None:
-            try:
-                for name, voice in full_voices.items():
-                    await repo.save_voice(db, debate_id, name, voice)
-                if _agent_evolution_enabled():
-                    for name, voice in full_voices.items():
-                        await repo.merge_agent_evolution_snippet(db, name, voice)
-                await repo.save_synthesis(db, debate_id, synthesis_final, parsed_final)
-                await db.commit()
-            except Exception as e:
-                logger.warning("Persistence synthesis step failed: %s", e)
-
-        # Faza 2 / AKSJOMAT 2: tryb `schematy` — automatyczne zobowiązanie z follow-up 72h (ton przygotowawczy; prefix Szowa dokleja maintenance po terminie).
-        if (
-            db is not None
-            and debate_id is not None
-            and brief.mode == "schematy"
-            and project_id is not None
-        ):
-            try:
-                fu = (datetime.now(UTC) + timedelta(hours=72)).isoformat()
-                body = _auto_72h_schematy_body(brief.language)
-                cid = await repo.insert_commitment(
-                    db,
-                    text=body,
-                    debate_id=debate_id,
-                    project_id=project_id,
-                    follow_up_at=fu,
-                    trigger_type="auto_72h",
-                )
-                await repo.touch_project_last_progress(db, project_id)
-                await db.commit()
-                yield _sse(
-                    "commitment_created",
-                    {
-                        "id": cid,
-                        "debate_id": debate_id,
-                        "project_id": project_id,
-                        "follow_up_at": fu,
-                        "trigger_type": "auto_72h",
-                        "text": body,
-                    },
-                )
-            except Exception as e:
-                logger.warning("auto 72h schematy commitment failed: %s", e)
-
-        _debate_cost = round(_spent_today_usd_logged() - _cost_start, 6)
-        yield _sse(
-            "debate_done",
-            {
-                "debate_id": debate_id,
-                "agent_count": len(council),
-                "synthesizer": SYNTHESIZER.name,
-                "timestamp": datetime.now(UTC).isoformat(),
-                "dream_id": dream.dream_id if dream is not None else None,
-                "project_id": project_id,
-                "continuation_parent_id": continuation_parent_id,
-                "cost_usd": _debate_cost,
-            },
-        )
-
-
-def _chunk_words(text: str, group: int = 5) -> AsyncIterator[str]:  # type: ignore[override]
-    """Pomocniczy generator dzielący tekst na grupy słów (do streamingu)."""
-    words = (text or "").split()
-    buf: list[str] = []
-    out: list[str] = []
-    for w in words:
-        buf.append(w)
-        if len(buf) >= group:
-            out.append(" ".join(buf) + " ")
-            buf = []
-    if buf:
-        out.append(" ".join(buf))
-    # zwracamy zwykłą listę — nasz konsument iteruje synchronicznie wewnątrz async gen
-    return out  # type: ignore[return-value]
-
-
-def _build_syez_payload(
-    raw_brief: str,
-    voices_bundle: str,
-    dream: Optional[Any],
-    brief: Brief,
-    *,
-    live_pairs: Optional[list[dict[str, Any]]] = None,
-) -> str:
-    lang = brief.language
-    parts: list[str] = []
-    if lang == "en":
-        if dream is not None:
-            parts.append("[DREAM ARCHITECTURE — top-level context]\n" + dream.for_syez())
-        parts.append("[Council voices before synthesis]\n" + voices_bundle)
-        parts.append("[Original brief]\n" + raw_brief)
-        parts.append("Debate mode: " + brief.mode + " | Category: " + brief.category)
-        if live_pairs:
-            lines = [
-                "[Tension monitor — lexical heuristic; higher value ≈ broader topical divergence between the pair]"
-            ]
-            for p in live_pairs[:14]:
-                lines.append(f"  • {p['a']} ↔ {p['b']}: {p['intensity']}")
-            parts.append("\n".join(lines))
-        if CORE_AVAILABLE:
-            from core.completion_enforcer import SYEZ_AKSJOMAT2_PROSE_APPEND
-
-            parts.append(SYEZ_AKSJOMAT2_PROSE_APPEND)
-        parts.append(
-            "RESPONSE FORMAT — final contract:\n"
-            "• Write ONLY fluent English prose + exactly one ```mermaid … ``` block "
-            "showing the network of agent relations/tensions.\n"
-            "• FORBIDDEN: JSON, ```json or any ``` other than ```mermaid, "
-            "structures with keys like `insights_per_agent`, `completion_audit`, code tables.\n"
-            "• No markdown headers (# / ##); paragraphs and short dash lists are fine.\n"
-            "• Required: an interpretation of the tension monitor (conflicts between "
-            "specific Council members), the Mermaid diagram, and a section of open "
-            "questions for Patryk.\n"
-            "• You are the mirror of the 9 voices + the Dream Architecture — you do "
-            "not add a perspective beyond what emerges from them.\n"
-            "• The AXIOM 2 completion audit MUST be readable INSIDE the prose."
-        )
-        if brief.mode == "codzienny":
-            parts.append(
-                "[DAILY MODE — compact synthesis]\n"
-                "Keep total length modest (~650–900 words). Agents gave short replies — "
-                "mirror that density.\n"
-                "Still satisfy ALL format rules including tension monitor, one compact "
-                "`mermaid` diagram (≤12 nodes), four short open questions, and "
-                "completion audit woven into prose."
-            )
-        return "\n\n".join(parts)
-
-    if dream is not None:
-        parts.append("[ARCHITEKTURA MARZENIA — kontekst nadrzędny]\n" + dream.for_syez())
-    parts.append("[Głosy Rady przed syntezą]\n" + voices_bundle)
-    parts.append("[Oryginalny brief]\n" + raw_brief)
-    parts.append("Tryb debaty: " + brief.mode + " | Kategoria: " + brief.category)
-    if live_pairs:
-        lines = [
-            "[Monitor napięć — heurystyka leksykalna; wyższa wartość ≈ większe rozjechanie tematów między parami]"
-        ]
-        for p in live_pairs[:14]:
-            lines.append(f"  • {p['a']} ↔ {p['b']}: {p['intensity']}")
-        parts.append("\n".join(lines))
-    if CORE_AVAILABLE:
-        from core.completion_enforcer import SYEZ_AKSJOMAT2_PROSE_APPEND
-
-        parts.append(SYEZ_AKSJOMAT2_PROSE_APPEND)
-    parts.append(
-        "FORMAT ODPOWIEDZI — kontrakt końcowy:\n"
-        "• Piszesz WYŁĄCZNIE płynną polską prozą + dokładnie jeden blok "
-        "```mermaid … ``` ukazujący sieć relacji/napięć między agentami.\n"
-        "• ZAKAZ: JSON, bloki ```json lub jakiekolwiek ``` poza ```mermaid, "
-        "struktury z kluczami typu `insights_per_agent`, `completion_audit`, "
-        "tabele kodu.\n"
-        "• Nie używaj nagłówków markdown (# / ##); akapity i krótkie listy "
-        "myślnikiem są dozwolone.\n"
-        "• Obowiązkowo: interpretacja monitoru napięć (konflikty między "
-        "konkretnymi członkami Rady), diagram Mermaid, oraz sekcja pytań "
-        "otwartych do Patryka.\n"
-        "• Jesteś lustrem dziewięciu głosów + Architektury Marzenia — nie dodajesz "
-        "osobnej perspektywy ponad to, co z nich wynika.\n"
-        "• Audyt domknięcia z protokołu AKSJOMATU 2 musi być czytelny WEWNĄTRZ prozy."
-    )
-    if brief.mode == "codzienny":
-        parts.append(
-            "[Tryb codzienny — zwarta synteza]\n"
-            "Utrzymaj skromną objętość (~650–900 słów). Agenci mieli krótkie głosy — "
-            "lustruj to zwięźle.\n"
-            "Nadal spełnij WSZYSTKIE zasady formatu: monitor napięć, jeden zwięzły "
-            "diagram `mermaid` (≤12 węzłów), cztery krótkie pytania otwarte oraz "
-            "audyt domknięcia wpisany w prozę."
-        )
-    return "\n\n".join(parts)
-
-
-def _try_parse_synthesis_json(text: str) -> Optional[dict[str, Any]]:
-    block = _extract_json_block(text)
-    if not block:
-        return None
-    try:
-        data = json.loads(block)
-        return data if isinstance(data, dict) else None
-    except Exception:
-        return None
-
-
-# ==================== ENDPOINTY ====================
 
 
 @app.post("/debate/stream")
@@ -1215,8 +393,9 @@ async def debate_stream(request: Request, brief: Brief):
         async with acquire_http_db(_DB) as db:
             await _enforce_active_project_limit_for_brief(brief, db)
 
+    cm = _council_mode_from_request(request)
     return StreamingResponse(
-        _stream_debate(brief),
+        _stream_debate(brief, council_mode=cm),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1284,8 +463,13 @@ async def debate_continue_stream(request: Request, payload: DebateContinueReques
         async with acquire_http_db(_DB) as db:
             await _enforce_active_project_limit_for_brief(brief, db)
 
+    cm = _council_mode_from_request(request)
     return StreamingResponse(
-        _stream_debate(brief, continuation_parent_id=payload.previous_debate_id),
+        _stream_debate(
+            brief,
+            continuation_parent_id=payload.previous_debate_id,
+            council_mode=cm,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -1415,7 +599,7 @@ class CommitmentCreate(BaseModel):
 
 
 class CommitmentReleasePayload(BaseModel):
-    """Siła cienia: nie da się „zwolnić” zobowiązania bez uzasadnienia (AKSJOMAT 2)."""
+    """Siła cienia: nie da się „zwolnić" zobowiązania bez uzasadnienia (AKSJOMAT 2)."""
 
     reason: str = Field(..., min_length=MIN_COMMITMENT_RELEASE_REASON_LEN, max_length=2000)
 
@@ -1426,44 +610,15 @@ class CommitmentCompletePayload(BaseModel):
 
 
 @app.post("/commitment")
-async def create_commitment(payload: CommitmentCreate, db=Depends(get_db)):
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="baza niedostępna")
-    debate_row: Optional[dict[str, Any]] = None
-    if payload.debate_id is not None:
-        debate_row = await repo.get_debate_row_minimal(db, int(payload.debate_id))
-        if debate_row is None:
-            raise HTTPException(status_code=404, detail="debata nie istnieje")
-
-    resolved_project = payload.project_id
-    dream_id = (debate_row or {}).get("dream_id")
-    if resolved_project is None and dream_id:
-        resolved_project = await repo.project_id_for_dream(db, str(dream_id))
-
-    mode = str((debate_row or {}).get("mode") or "pelna")
-    follow_up = payload.follow_up_at
-    if mode == "schematy" and not follow_up:
-        follow_up = (datetime.now(UTC) + timedelta(hours=72)).isoformat()
-
-    new_id = await repo.insert_commitment(
-        db,
-        text=payload.text.strip(),
+async def create_commitment_endpoint(payload: CommitmentCreate, db=Depends(get_db)):
+    return await _create_commitment_svc(
+        text=payload.text,
         debate_id=payload.debate_id,
-        project_id=resolved_project,
+        project_id=payload.project_id,
         due_at=payload.due_at,
-        follow_up_at=follow_up,
-        trigger_type="manual",
+        follow_up_at=payload.follow_up_at,
+        db=db,
     )
-    if resolved_project is not None:
-        await repo.touch_project_last_progress(db, int(resolved_project))
-    await db.commit()
-    return {
-        "id": new_id,
-        "status": "open",
-        "follow_up_at": follow_up,
-        "trigger_type": "manual",
-        "project_id": resolved_project,
-    }
 
 
 @app.get("/commitments/due")
@@ -1481,7 +636,7 @@ async def admin_trigger_followups(
     authorization: Optional[str] = Header(None),
 ):
     """
-    Idempotentny „kopniak” Fazy 2: przeterminowane follow-upy + synchronizacja projektów.
+    Idempotentny „kopniak" Fazy 2: przeterminowane follow-upy + synchronizacja projektów.
 
     Gdy ustawiono `ARCHITEKT_ADMIN_TOKEN`, wymagany jest nagłówek
     `Authorization: Bearer <token>` (ochrona przed publicznym otwartym adminem).
@@ -1489,7 +644,7 @@ async def admin_trigger_followups(
     admin_tok = (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip()
     if admin_tok:
         auth = (authorization or "").strip()
-        if auth != f"Bearer {admin_tok}":
+        if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
             raise HTTPException(
                 status_code=401,
                 detail="Invalid or missing Authorization bearer for admin",
@@ -1499,25 +654,12 @@ async def admin_trigger_followups(
 
 
 @app.post("/commitment/{commitment_id}/release")
-async def release_commitment(
+async def release_commitment_endpoint(
     commitment_id: int,
     payload: CommitmentReleasePayload,
     db=Depends(get_db),
 ):
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="baza niedostępna")
-    row = await repo.get_commitment(db, commitment_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="nie znaleziono")
-    if str(row.get("status")) != "open":
-        raise HTTPException(status_code=409, detail="zobowiązanie nie jest otwarte")
-    ok = await repo.release_commitment(
-        db, commitment_id, reason=payload.reason.strip()
-    )
-    if not ok:
-        raise HTTPException(status_code=409, detail="nie udało się zwolnić")
-    await db.commit()
-    return {"ok": True, "id": commitment_id, "status": "released"}
+    return await _release_commitment_svc(db, commitment_id, payload.reason)
 
 
 @app.patch("/commitment/{commitment_id}/complete")
@@ -1527,42 +669,15 @@ async def complete_commitment_endpoint(
     db=Depends(get_db),
 ):
     """Odhaczenie zobowiązania + aktualizacja postępu projektu (AKSJOMAT 2)."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="baza niedostępna")
-    row = await repo.get_commitment(db, commitment_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="nie znaleziono")
-    pid = row.get("project_id")
-    ok = await repo.complete_commitment(
-        db,
-        commitment_id,
-        evidence_note=payload.evidence_note,
-        evidence_url=payload.evidence_url,
+    return await _complete_commitment_svc(
+        db, commitment_id, payload.evidence_note, payload.evidence_url
     )
-    if not ok:
-        raise HTTPException(status_code=409, detail="nie udało się odhaczyć")
-    if pid is not None:
-        await repo.touch_project_last_progress(db, int(pid))
-    await db.commit()
-    return {"ok": True, "id": commitment_id, "status": "completed"}
 
 
 @app.delete("/commitment/{commitment_id}")
 async def commitment_delete_forbidden(commitment_id: int):  # noqa: ARG001
-    """
-    Siła cienia: HTTP DELETE jest celowo zablokowany — AKSJOMAT 2 nie pozwala
-    „znikać po cichu”. Świadome zwolnienie wymaga jawnego uzasadnienia.
-    """
-    raise HTTPException(
-        status_code=422,
-        detail={
-            "kind": "shadow_no_silent_release",
-            "message_pl": SHADOW_NO_SILENT_RELEASE_PL,
-            "message_en": SHADOW_NO_SILENT_RELEASE_EN,
-            "use_endpoint": f"POST /commitment/{commitment_id}/release",
-            "min_reason_chars": MIN_COMMITMENT_RELEASE_REASON_LEN,
-        },
-    )
+    """AKSJOMAT 2: DELETE zablokowany - wymagane POST /release z uzasadnieniem."""
+    raise HTTPException(status_code=422, detail=_delete_forbidden_payload(commitment_id))
 
 
 # ── Dreams / Projects API ──────────────────────────────────────────────────
@@ -1570,17 +685,43 @@ async def commitment_delete_forbidden(commitment_id: int):  # noqa: ARG001
 
 @app.get("/dreams")
 async def list_dreams(limit: int = 50, db=Depends(get_db)):
-    """Lista wszystkich marzeń (pełne DreamArchitecture z metadanymi)."""
+    """Lista wszystkich marzeń (pełne DreamArchitecture z metadanymi).
+
+    Jeden JOIN zastępuje poprzednie N+1 zapytania (4 query per dream → 1 total).
+    """
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="baza niedostępna")
     lim = max(1, min(limit, 100))
-    cur = await db.execute(
-        "SELECT * FROM dreams ORDER BY created_at DESC LIMIT ?", (lim,)
+    from db.tenant import current_tenant_id as _tid
+    tid = _tid()
+    # Single query: dreams LEFT JOIN projects + aggregated commitment stats
+    cur = await db.execute(  # allow-raw-execute: dreams not in _Repo yet; tenant_id enforced below
+        """
+        SELECT
+            d.*,
+            p.id            AS _proj_id,
+            p.status        AS _proj_status,
+            p.started_at    AS _proj_started_at,
+            p.last_progress_at AS _proj_last_progress_at,
+            COUNT(CASE WHEN c.completed_at IS NULL AND c.archived_at IS NULL THEN 1 END)
+                            AS _open_commitments_count,
+            MIN(CASE WHEN c.completed_at IS NULL AND c.archived_at IS NULL THEN c.follow_up_at END)
+                            AS _next_follow_up_at
+        FROM dreams d
+        LEFT JOIN projects p ON p.dream_id = d.id AND p.tenant_id = d.tenant_id
+        LEFT JOIN commitments c ON c.project_id = p.id AND c.tenant_id = d.tenant_id
+        WHERE d.tenant_id = ?
+        GROUP BY d.id
+        ORDER BY d.created_at DESC
+        LIMIT ?
+        """,
+        (tid, lim),
     )
     rows = await cur.fetchall()
     dreams = []
     for row in rows:
         r = dict(row)
+        # Parse JSON blobs
         try:
             r["pillars"] = json.loads(r.get("pillars_json") or "[]")
             r["milestones"] = json.loads(r.get("milestones_json") or "[]")
@@ -1589,26 +730,18 @@ async def list_dreams(limit: int = 50, db=Depends(get_db)):
             r["functionality_checklist"] = json.loads(r.get("functionality_checklist_json") or "[]")
         except json.JSONDecodeError:
             pass
-        pid = await repo.project_id_for_dream(db, str(r["id"]))
-        if pid is not None:
-            full = await repo.get_project(db, pid)
+        # Lift aggregated project fields; remove internal prefixed keys
+        proj_id = r.pop("_proj_id", None)
+        proj_status = r.pop("_proj_status", None)
+        proj_started = r.pop("_proj_started_at", None)
+        proj_last_progress = r.pop("_proj_last_progress_at", None)
+        r["open_commitments_count"] = r.pop("_open_commitments_count", 0) or 0
+        r["next_follow_up_at"] = r.pop("_next_follow_up_at", None)
+        if proj_id is not None:
+            from api.services.project_service import enrich_dream_with_project
+            full = await repo.get_project(db, str(proj_id))
             if full:
-                r["project"] = full
-                r["open_commitments_count"] = await repo.count_open_commitments_for_project(
-                    db, pid
-                )
-                r["next_follow_up_at"] = await repo.next_open_followup_iso(db, pid)
-                if CORE_AVAILABLE:
-                    items = [FunctionalityItem(**f) for f in full["functionality"]]
-                    pdom = Project(
-                        id=int(full["id"]),
-                        dream_id=str(full["dream_id"]),
-                        status=ProjectStatus(full["status"]),
-                        started_at=full.get("started_at"),
-                        last_progress_at=full.get("last_progress_at"),
-                        functionality=items,
-                    )
-                    r["days_since_progress"] = pdom.days_since_progress()
+                enrich_dream_with_project(r, full)
         dreams.append(r)
     return {"dreams": dreams}
 
@@ -1618,7 +751,11 @@ async def get_dream_detail(dream_id: str, db=Depends(get_db)):
     """Pełne szczegóły marzenia: architektura, powiązane projekty, debaty."""
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="baza niedostępna")
-    cur = await db.execute("SELECT * FROM dreams WHERE id = ?", (dream_id,))
+    from db.tenant import current_tenant_id as _tid
+    _current_tid = _tid()
+    cur = await db.execute(  # allow-raw-execute: dreams not in _Repo yet; tenant_id enforced above
+        "SELECT * FROM dreams WHERE id = ? AND tenant_id = ?", (dream_id, _current_tid)
+    )
     row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Marzenie nie znalezione")
@@ -1631,12 +768,17 @@ async def get_dream_detail(dream_id: str, db=Depends(get_db)):
         dream["functionality_checklist"] = json.loads(dream.get("functionality_checklist_json") or "[]")
     except json.JSONDecodeError:
         pass
-    cur = await db.execute("SELECT * FROM projects WHERE dream_id = ?", (dream_id,))
+    cur = await db.execute(  # allow-raw-execute: dreams not in _Repo yet; tenant_id enforced above
+        "SELECT * FROM projects WHERE dream_id = ? AND tenant_id = ?", (dream_id, _current_tid)
+    )
     project_row = await cur.fetchone()
     project = dict(project_row) if project_row else None
-    cur = await db.execute(
-        "SELECT d.* FROM debates d JOIN dream_debate_link l ON l.debate_id = d.id WHERE l.dream_id = ? ORDER BY d.created_at DESC LIMIT 10",
-        (dream_id,)
+    cur = await db.execute(  # allow-raw-execute: dreams not in _Repo yet; tenant_id enforced above
+        "SELECT d.* FROM debates d "
+        "JOIN dream_debate_link l ON l.debate_id = d.id "
+        "WHERE l.dream_id = ? AND d.tenant_id = ? "
+        "ORDER BY d.created_at DESC LIMIT 10",
+        (dream_id, _current_tid),
     )
     debate_rows = await cur.fetchall()
     debates = [dict(d) for d in debate_rows]
@@ -1646,58 +788,21 @@ async def get_dream_detail(dream_id: str, db=Depends(get_db)):
 @app.get("/projects")
 async def list_projects(db=Depends(get_db)):
     """Lista aktywnych projektów + agregat completion_ratio + dni bez postępu."""
-    if not (CORE_AVAILABLE and DB_AVAILABLE):
-        raise HTTPException(status_code=503, detail="core lub db niedostępne")
-    rows = await repo.list_active_projects(db)
-    out: list[dict[str, Any]] = []
-    for r in rows:
-        full = await repo.get_project(db, int(r["id"]))
-        if not full:
-            continue
-        items = [FunctionalityItem(**f) for f in full["functionality"]]
-        proj = Project(
-            id=int(full["id"]),
-            dream_id=str(full["dream_id"]),
-            status=ProjectStatus(full["status"]),
-            started_at=full.get("started_at"),
-            last_progress_at=full.get("last_progress_at"),
-            functionality=items,
-        )
-        out.append(
-            {
-                "id": proj.id,
-                "dream_id": proj.dream_id,
-                "core_dream": r.get("core_dream"),
-                "status": proj.status.value,
-                "completion_ratio": round(proj.completion_ratio(), 3),
-                "days_since_progress": proj.days_since_progress(),
-                "remaining": [f.description for f in proj.remaining_items()],
-                "total_items": len(proj.functionality),
-            }
-        )
-    return {"projects": out, "limit": MAX_ACTIVE_PROJECTS}
+    from api.services.project_service import list_projects_with_stats
+    return await list_projects_with_stats(db)
 
 
 @app.get("/projects/{project_id}")
 async def get_project_detail(project_id: int, db=Depends(get_db)):
-    if not (CORE_AVAILABLE and DB_AVAILABLE):
-        raise HTTPException(status_code=503, detail="core lub db niedostępne")
-    proj = await repo.get_project(db, project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Projekt nie znaleziony")
-    return proj
+    from api.services.project_service import get_project
+    return await get_project(db, project_id)
 
 
 @app.get("/projects/{project_id}/commitments")
 async def list_project_commitments(project_id: int, db=Depends(get_db)):
     """Chronologiczna oś zobowiązań projektu (UI: CommitmentsTimeline)."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="baza niedostępna")
-    row = await repo.get_project(db, project_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Projekt nie znaleziony")
-    rows = await repo.list_commitments_for_project(db, project_id, limit=80)
-    return {"commitments": rows}
+    from api.services.project_service import get_project_commitments
+    return await get_project_commitments(db, project_id)
 
 
 class FunctionalityCheckPayload(BaseModel):
@@ -1705,60 +810,25 @@ class FunctionalityCheckPayload(BaseModel):
 
 
 @app.patch("/projects/{project_id}/functionality/{item_id}")
-async def check_functionality_item(
+async def check_functionality_item_endpoint(
     project_id: int,
     item_id: int,
     payload: FunctionalityCheckPayload,
     db=Depends(get_db),
 ):
     """Odhacza pozycję functionality_checklist (z opcjonalnym dowodem)."""
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="db niedostępne")
-    affected_project = await repo.mark_functionality_done(
-        db, item_id, evidence_url=payload.evidence_url
-    )
-    if affected_project is None:
-        raise HTTPException(status_code=404, detail="Pozycja nie znaleziona")
-    if affected_project != project_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Pozycja {item_id} nie należy do projektu {project_id}",
-        )
-    await db.commit()
-    proj = await repo.get_project(db, project_id)
-    return {"ok": True, "project": proj}
+    from api.services.project_service import check_functionality_item
+    return await check_functionality_item(db, project_id, item_id, payload.evidence_url)
 
 
 @app.post("/projects/{project_id}/complete")
-async def complete_project(project_id: int, db=Depends(get_db)):
+async def complete_project_endpoint(project_id: int, db=Depends(get_db)):
     """
     Oznacza projekt jako COMPLETED — TYLKO gdy `functionality_checklist` jest 100% ✓.
     Inaczej HTTP 422 z konkretną listą pozycji do zrealizowania.
     """
-    if not (CORE_AVAILABLE and DB_AVAILABLE):
-        raise HTTPException(status_code=503, detail="core lub db niedostępne")
-    raw = await repo.get_project(db, project_id)
-    if not raw:
-        raise HTTPException(status_code=404, detail="Projekt nie znaleziony")
-    items = [FunctionalityItem(**f) for f in raw["functionality"]]
-    project = Project(
-        id=int(raw["id"]),
-        dream_id=str(raw["dream_id"]),
-        status=ProjectStatus(raw["status"]),
-        functionality=items,
-    )
-    try:
-        assert_full_functionality(project)
-    except CompletionViolation as cv:
-        raise HTTPException(status_code=422, detail=cv.to_payload()) from cv
-    await repo.update_project_status(
-        db,
-        project_id,
-        ProjectStatus.COMPLETED.value,
-        completed_at=datetime.now(UTC).isoformat(),
-    )
-    await db.commit()
-    return {"ok": True, "status": ProjectStatus.COMPLETED.value}
+    from api.services.project_service import complete_project
+    return await complete_project(db, project_id)
 
 
 class ArchivePayload(BaseModel):
@@ -1769,7 +839,7 @@ class ArchivePayload(BaseModel):
 
 
 @app.post("/projects/{project_id}/archive")
-async def archive_project(
+async def archive_project_endpoint(
     project_id: int,
     payload: ArchivePayload,
     db=Depends(get_db),
@@ -1778,24 +848,38 @@ async def archive_project(
     Archiwizuje projekt jako ARCHIVED_CONSCIOUSLY z wymogiem uzasadnienia
     (AKSJOMAT 2). Bez uzasadnienia HTTP 422.
     """
-    if not (CORE_AVAILABLE and DB_AVAILABLE):
-        raise HTTPException(status_code=503, detail="core lub db niedostępne")
+    from api.services.project_service import archive_project
+    return await archive_project(db, project_id, payload.reason)
+
+
+# ── Faza 3: personalizacja agentów — rebuild evolution ───────────────────────
+
+
+@app.post("/admin/rebuild-evolution")
+async def admin_rebuild_evolution(
+    authorization: Optional[str] = Header(None),
+    db=Depends(get_db),
+):
+    """Przebudowuje rolling notatki ewolucyjne dla wszystkich agentów."""
+    admin_tok = (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip()
+    if admin_tok:
+        auth = (authorization or "").strip()
+        if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
+            raise HTTPException(status_code=401, detail="Invalid admin token")
+
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="DB niedostępna")
+
     try:
-        reason = validate_archive_reason(payload.reason)
-    except CompletionViolation as cv:
-        raise HTTPException(status_code=422, detail=cv.to_payload()) from cv
-    proj = await repo.get_project(db, project_id)
-    if not proj:
-        raise HTTPException(status_code=404, detail="Projekt nie znaleziony")
-    await repo.update_project_status(
-        db,
-        project_id,
-        ProjectStatus.ARCHIVED_CONSCIOUSLY.value,
-        archived_reason=reason,
-        archived_at=datetime.now(UTC).isoformat(),
-    )
-    await db.commit()
-    return {"ok": True, "status": ProjectStatus.ARCHIVED_CONSCIOUSLY.value}
+        from core.agent_learner import run_full_evolution_cycle
+
+        agent_names = [a.name for a in COUNCIL] if RADA_AVAILABLE else []
+        results = await run_full_evolution_cycle(db, repo, agent_names)
+        await db.commit()
+        return {"ok": True, "agents_updated": list(results.keys())}
+    except Exception as e:
+        logger.warning("rebuild-evolution failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Legacy endpoint — zachowany dla kompatybilności wstecznej z v3.1.

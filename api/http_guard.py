@@ -13,7 +13,8 @@ from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
 from api import settings
-from api.auth_identity import decode_user_jwt
+from api.auth_identity import decode_user_jwt_checked
+from db.tenant import DEFAULT_TENANT, set_current_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,16 @@ async def architekt_http_guard(
         return await call_next(request)
 
     path = request.url.path
-    if path in _public_paths() or path.startswith("/assets/"):
+    if path in _public_paths() or path.startswith("/assets/") or path.startswith("/auth/"):
         return await call_next(request)
+
+    # Faza 4 — multi-user: ustaw ContextVar tenant_id na podstawie auth.
+    # Ważne: ContextVar działa per-asyncio-Task. call_next uruchamia handler
+    # w tym samym Task, więc wartość jest widoczna w handlerze i w generatorach
+    # SSE, które działają wewnątrz tego samego Task.  NIE resetujemy w finally
+    # — reset byłby wykonany zanim generator SSE wyprodukuje jakikolwiek chunk.
+    # Wartość i tak jest izolowana per-Task dzięki mechanizmowi ContextVar.
+    set_current_tenant_id(DEFAULT_TENANT)
 
     api_key = settings.api_key_legacy()
     jwt_on = settings.jwt_secret_configured()
@@ -61,15 +70,19 @@ async def architekt_http_guard(
         bearer = auth[7:].strip()
 
     if bearer and jwt_on:
-        payload = decode_user_jwt(bearer)
+        payload = await decode_user_jwt_checked(bearer)
         if payload:
             request.state.architekt_auth = "jwt"
-            request.state.architekt_subject = payload.get("sub")
-            request.state.architekt_tenant_id = payload.get("tenant_id")
+            sub = payload.get("sub")
+            tid = payload.get("tenant_id")
+            request.state.architekt_subject = sub
+            request.state.architekt_tenant_id = tid
+            # Faza 4: tenant_id z JWT → ContextVar; fallback: sub.
+            set_current_tenant_id(str(tid or sub or DEFAULT_TENANT))
             if settings.enforce_tenant_header_match():
                 th = settings.tenant_header_name()
                 hdr_tid = (request.headers.get(th) or "").strip()
-                claim_tid = str(payload.get("tenant_id") or "").strip()
+                claim_tid = str(tid or "").strip()
                 if hdr_tid and claim_tid and hdr_tid != claim_tid:
                     return JSONResponse(
                         {"detail": "tenant mismatch — nagłówek vs JWT"},
@@ -79,7 +92,13 @@ async def architekt_http_guard(
 
     if api_key and bearer == api_key:
         request.state.architekt_auth = "legacy_bearer"
-        return await call_next(request)
+        response = await call_next(request)
+        response.headers["Deprecation"] = "true"
+        response.headers["X-Auth-Warning"] = (
+            "Shared ARCHITEKT_API_KEY is deprecated. "
+            "Use per-user JWT via POST /auth/login instead."
+        )
+        return response
 
     return JSONResponse(
         {

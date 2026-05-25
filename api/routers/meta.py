@@ -32,6 +32,8 @@ async def health():
         "core_status": "aktywne" if m.CORE_AVAILABLE else "niedostępne",
         "max_active_projects": m.MAX_ACTIVE_PROJECTS if m.CORE_AVAILABLE else None,
         "llm_backend": llm_b,
+        # Debata biznesowa: nagłówek X-Council-Mode: fa2 (ramowanie w main._stream_debate_inner).
+        "fa2_via_header": True,
         "sse_endpoint": "POST /debate/stream",
         "sse_continue_endpoint": "POST /debate/continue/stream",
         "history_endpoint": "GET /history",

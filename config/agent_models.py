@@ -1,10 +1,8 @@
 """
 Mapa modeli per agent — werdykt Rady „Mój Świat".
 
-Filozofia:
-  Opus 4.7  → Syez (synteza całości) + Szow (Cień — brutalnie szczery, bez autocenzury)
-  Sonnet 4.6 → większość Rady (stabilna głębia + ekonomia)
-  Haiku 4.6  → Kidi (spontaniczność) + Smaty (somatyczny instynkt)
+Filozofia (v3.4):
+  Sonnet 4.6 → wszyscy agenci + Syez (jednolity model — spójność jakości i kosztów)
 """
 
 from __future__ import annotations
@@ -25,31 +23,23 @@ HYBRID_MODELS_ENABLED: bool = (
     os.getenv("HYBRID_MODELS_ENABLED", "true").lower() == "true"
 )
 
-# Aliasy modeli — jedno miejsce do podmiany, gdy Anthropic wypuści nowsze.
-_OPUS    = os.getenv("MODEL_OPUS",    "claude-opus-4-7")
+# Alias modelu — jedno miejsce do podmiany przy zmianie wersji.
 _SONNET  = os.getenv("MODEL_SONNET",  "claude-sonnet-4-6")
-_HAIKU   = os.getenv("MODEL_HAIKU",   "claude-haiku-4-6")
 
 
 AGENT_MODEL_CONFIG: dict[str, ModelCfg] = {
-    # Stabilna baza (Sonnet) dla agentów nie wymienionych jawnie
+    # Sonnet 4.6 — wszyscy agenci i Syez
     "default":  {"model": _SONNET, "temperature": 0.8, "max_tokens": 2000},
-
-    # Sonnet 4.6 — Rada (głębia + ekonomia)
     "kogit":    {"model": _SONNET, "temperature": 0.7, "max_tokens": 4000},
     "tai":      {"model": _SONNET, "temperature": 0.6, "max_tokens": 4000},
     "deega":    {"model": _SONNET, "temperature": 0.0, "max_tokens": 2000},
     "relacjan": {"model": _SONNET, "temperature": 0.8, "max_tokens": 2000},
     "emojy":    {"model": _SONNET, "temperature": 0.8, "max_tokens": 2000},
     "obver":    {"model": _SONNET, "temperature": 0.8, "max_tokens": 2000},
-
-    # Opus 4.7 — synteza i cień (miejsca gdzie liczy się absolutna jakość)
-    "syez":     {"model": _OPUS,   "temperature": 0.5, "max_tokens": 3000},
-    "szow":     {"model": _OPUS,   "temperature": 1.0, "max_tokens": 1500},
-
-    # Haiku 4.6 — instynkt i spontaniczność
-    "kidi":     {"model": _HAIKU,  "temperature": 1.0, "max_tokens": 1500},
-    "smaty":    {"model": _HAIKU,  "temperature": 1.0, "max_tokens": 1500},
+    "syez":     {"model": _SONNET, "temperature": 0.5, "max_tokens": 3000},
+    "szow":     {"model": _SONNET, "temperature": 1.0, "max_tokens": 1500},
+    "kidi":     {"model": _SONNET, "temperature": 1.0, "max_tokens": 1500},
+    "smaty":    {"model": _SONNET, "temperature": 1.0, "max_tokens": 1500},
 }
 
 
@@ -64,12 +54,21 @@ def _validate(cfg: ModelCfg, agent_name: str) -> ModelCfg:
     return cfg
 
 
-def get_model_config(agent_name: str) -> ModelCfg:
+# FA2: Syez z podniesionym max_tokens dla dłuższej analizy biznesowej.
+AGENT_MODEL_CONFIG_FA2: dict[str, ModelCfg] = {
+    **AGENT_MODEL_CONFIG,
+    "syez": {"model": _SONNET, "temperature": 0.6, "max_tokens": 5000},
+}
+
+
+def get_model_config(agent_name: str, council_mode: str = "personal") -> ModelCfg:
     """
     Zwraca config dla agenta po jego `name` (case-insensitive).
     Gdy HYBRID_MODELS_ENABLED=False — wszyscy lecą na default (Sonnet).
+    FA2: Syez na Sonnet (unika timeout przy długiej syntezie).
     """
     if not HYBRID_MODELS_ENABLED:
         return _validate(AGENT_MODEL_CONFIG["default"], "default")
-    cfg = AGENT_MODEL_CONFIG.get(agent_name.lower(), AGENT_MODEL_CONFIG["default"])
+    table = AGENT_MODEL_CONFIG_FA2 if council_mode == "fa2" else AGENT_MODEL_CONFIG
+    cfg = table.get(agent_name.lower(), AGENT_MODEL_CONFIG["default"])
     return _validate(cfg, agent_name)

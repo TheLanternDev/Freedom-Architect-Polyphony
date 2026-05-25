@@ -86,15 +86,22 @@ def test_debate_stream_persists_dream_and_debate(client_no_redis, fresh_db_path)
 def test_debate_stream_creates_project_only_for_category_projekt(
     client_no_redis, fresh_db_path
 ):
+    """
+    v3.3: persist_dream_and_project tworzy projekt przy każdej debacie z marzeniem
+    (także category=decyzja). category=projekt przy MAX_ACTIVE_PROJECTS=1 → 409,
+    dopóki poprzedni projekt nie jest świadomie zarchiwizowany.
+    """
     import sqlite3
 
-    # AKSJOMAT 2: każda debata z marzeniem tworzy projekt (checklist funkcjonalności).
+    from core import MAX_ACTIVE_PROJECTS
+
     decision_payload = {
-        "description": "Test kategorii decyzja w trybie fallback bez tworzenia projektu",
+        "description": "Test kategorii decyzja w trybie fallback — marzenie i projekt",
         "category": "decyzja",
         "mode": "pelna",
     }
     with client_no_redis.stream("POST", "/debate/stream", json=decision_payload) as r:
+        assert r.status_code == 200
         for _ in r.iter_text():
             pass
 
@@ -102,15 +109,50 @@ def test_debate_stream_creates_project_only_for_category_projekt(
         n_projects_after_decision = conn.execute(
             "SELECT COUNT(*) FROM projects"
         ).fetchone()[0]
+        n_active_after_decision = conn.execute(
+            """
+            SELECT COUNT(*) FROM projects
+             WHERE status IN ('dreaming','in_progress','at_risk','stuck')
+            """
+        ).fetchone()[0]
     assert n_projects_after_decision == 1
+    assert n_active_after_decision == 1
 
-    # 2) druga debata (projekt) → drugi projekt / marzenie
+    # Drugi POST (projekt) przy pełnym limicie aktywnych → hard-lock 409, bez nowego projektu.
     project_payload = {
         "description": "Test kategorii projekt w trybie fallback z utworzeniem rekordu",
         "category": "projekt",
         "mode": "pelna",
     }
+    blocked = client_no_redis.post("/debate/stream", json=project_payload)
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["kind"] == "active_project_limit"
+
+    with sqlite3.connect(str(fresh_db_path)) as conn:
+        n_projects = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+        n_active = conn.execute(
+            """
+            SELECT COUNT(*) FROM projects
+             WHERE status IN ('dreaming','in_progress','at_risk','stuck')
+            """
+        ).fetchone()[0]
+    assert n_projects == 1
+    assert n_active == MAX_ACTIVE_PROJECTS
+
+    # Po świadomej archiwizacji — kolejna debata projekt może założyć drugi rekord.
+    with sqlite3.connect(str(fresh_db_path)) as conn:
+        first_pid = conn.execute("SELECT id FROM projects ORDER BY id LIMIT 1").fetchone()[0]
+    archive_reason = (
+        "Świadomie archiwizuję projekt po teście smoke, aby zwolnić slot na nowy "
+        "projekt zgodnie z AKSJOMATEM 2 i limitem aktywnych projektów."
+    )
+    ar = client_no_redis.post(
+        f"/projects/{first_pid}/archive", json={"reason": archive_reason}
+    )
+    assert ar.status_code == 200
+
     with client_no_redis.stream("POST", "/debate/stream", json=project_payload) as r:
+        assert r.status_code == 200
         for _ in r.iter_text():
             pass
 
@@ -119,6 +161,12 @@ def test_debate_stream_creates_project_only_for_category_projekt(
         n_items = conn.execute(
             "SELECT COUNT(*) FROM functionality_items"
         ).fetchone()[0]
+        n_active = conn.execute(
+            """
+            SELECT COUNT(*) FROM projects
+             WHERE status IN ('dreaming','in_progress','at_risk','stuck')
+            """
+        ).fetchone()[0]
     assert n_projects == 2
-    # functionality_checklist z fallbacku ma co najmniej jedną pozycję na projekt
+    assert n_active == 1
     assert n_items >= 2

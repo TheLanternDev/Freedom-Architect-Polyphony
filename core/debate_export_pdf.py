@@ -35,38 +35,38 @@ def render_debate_pdf_bytes(
     pdf.add_page()
     if _FONT.is_file():
         pdf.add_font("DejaVu", "", str(_FONT))
-        pdf.set_font("DejaVu", size=9)
+        pdf.set_font("DejaVu", size=11)
     else:
-        pdf.set_font("Helvetica", size=9)
+        pdf.set_font("Helvetica", size=11)
 
     for raw_line in md.split("\n"):
         line = raw_line.rstrip()
         pdf.set_x(left)
         if not line.strip():
-            pdf.ln(3)
+            pdf.ln(4)
             continue
         if line.startswith("# "):
-            pdf.set_font_size(14)
-            pdf.multi_cell(0, 8, line[2:].strip())
-            pdf.ln(2)
-            pdf.set_font_size(9)
+            pdf.set_font_size(18)
+            pdf.multi_cell(0, 10, line[2:].strip())
+            pdf.ln(3)
+            pdf.set_font_size(11)
             continue
         if line.startswith("## "):
+            pdf.set_font_size(14)
+            pdf.multi_cell(0, 8, line[3:].strip())
+            pdf.ln(2)
             pdf.set_font_size(11)
-            pdf.multi_cell(0, 7, line[3:].strip())
-            pdf.ln(1)
-            pdf.set_font_size(9)
             continue
         if line.startswith("### "):
-            pdf.set_font_size(10)
-            pdf.multi_cell(0, 6, line[4:].strip())
+            pdf.set_font_size(12)
+            pdf.multi_cell(0, 7, line[4:].strip())
             pdf.ln(1)
-            pdf.set_font_size(9)
+            pdf.set_font_size(11)
             continue
         chunk = line
         if len(chunk) > 4000:
             chunk = chunk[:4000] + "\n…"
-        pdf.multi_cell(0, 5, chunk)
+        pdf.multi_cell(0, 6, chunk)
 
     out = pdf.output()
     return bytes(out) if isinstance(out, bytearray) else out

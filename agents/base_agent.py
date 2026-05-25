@@ -46,6 +46,11 @@ if False:  # TYPE_CHECKING bez kosztu runtime
 
 logger = logging.getLogger(__name__)
 
+try:
+    from business_fa2.config.roles import FA2_BUSINESS_ROLES as _FA2_BUSINESS_ROLES
+except ImportError:
+    _FA2_BUSINESS_ROLES = {}  # type: ignore[assignment]
+
 # ── Lazy / opcjonalne zależności ────────────────────────────────────────────
 # Importy wewnątrz try/except, żeby BaseAgent działał w trybie fallback
 # nawet gdy anthropic / tenacity / redis nie są zainstalowane (testy, dev).
@@ -148,6 +153,7 @@ class BaseAgent(ABC):
         language: str = "pl",
         debate_mode: str = "pelna",
         evolution_note: Optional[str] = None,
+        council_mode: str = "personal",
     ) -> str:
         """
         Asynchroniczna wersja: realne wywołanie LLM (z cache + retry).
@@ -184,11 +190,13 @@ class BaseAgent(ABC):
                 + context
             )
         return await self._call_llm(
-            ctx, dream=dream, language=language, debate_mode=debate_mode
+            ctx, dream=dream, language=language, debate_mode=debate_mode,
+            council_mode=council_mode,
         )
 
     def get_full_instruction(
-        self, dream: Optional[Any] = None, *, language: str = "pl"
+        self, dream: Optional[Any] = None, *, language: str = "pl",
+        council_mode: str = "personal",
     ) -> str:
         """
         Składa pełną instrukcję systemową:
@@ -200,20 +208,53 @@ class BaseAgent(ABC):
         "Respond ONLY in English." — Claude świetnie sobie z tym radzi.
         """
         parts: list[str] = []
-        if dream is not None:
-            try:
-                parts.append(dream.as_agent_context())
-            except Exception as e:  # pragma: no cover
-                logger.warning("Dream context skipped for %s: %s", self.name, e)
 
-        if language == "en":
+        if council_mode == "fa2":
+            fa2_role = _FA2_BUSINESS_ROLES.get(self.name, "")
+            if fa2_role:
+                parts.append(
+                    "═══ TRYB FREEDOM ARCHITECT (FA2) — ANALITYK BIZNESOWY ═══\n"
+                    + fa2_role
+                )
+            # FA2 Syez ma własną instrukcję
+            fa2_instr = getattr(self, "instruction_fa2_pl", None)
+            if fa2_instr:
+                parts.append(fa2_instr)
+                # pomiń dalsze bloki — FA2 instruction jest kompletna
+                if language == "en":
+                    parts.append(
+                        "═══ LANGUAGE DIRECTIVE ═══\n"
+                        "Respond ONLY in fluent, natural English. Stay in character."
+                    )
+                else:
+                    parts.append(
+                        "═══ DYREKTYWA JĘZYKOWA ═══\n"
+                        "Odpowiadaj WYŁĄCZNIE po polsku. Pozostań w roli."
+                    )
+                return "\n\n".join(p for p in parts if p)
+        else:
+            if dream is not None:
+                try:
+                    parts.append(dream.as_agent_context())
+                except Exception as e:  # pragma: no cover
+                    logger.warning("Dream context skipped for %s: %s", self.name, e)
+
+        if language == "en" and council_mode != "fa2":
             instr = getattr(self, "instruction_en", None) or self.instruction
         else:
             instr = getattr(self, "instruction_pl", None) or self.instruction
         parts.append(instr)
 
-        if AGENT_COMPLETION_POSTSCRIPT:
-            parts.append(AGENT_COMPLETION_POSTSCRIPT)
+        if language == "en":
+            try:
+                from core.completion_enforcer import AGENT_COMPLETION_POSTSCRIPT_EN
+                _postscript = AGENT_COMPLETION_POSTSCRIPT_EN
+            except Exception:
+                _postscript = AGENT_COMPLETION_POSTSCRIPT
+        else:
+            _postscript = AGENT_COMPLETION_POSTSCRIPT
+        if _postscript:
+            parts.append(_postscript)
 
         if language == "en":
             parts.append(
@@ -228,8 +269,8 @@ class BaseAgent(ABC):
             )
         return "\n\n".join(p for p in parts if p)
 
-    def get_model_config(self) -> ModelCfg:
-        return get_model_config(self.name)
+    def get_model_config(self, council_mode: str = "personal") -> ModelCfg:
+        return get_model_config(self.name, council_mode=council_mode)
 
     def identity(self) -> str:
         return f"{self.emoji} {self.name} — {self.role}"
@@ -261,8 +302,34 @@ class BaseAgent(ABC):
             cls._redis = aioredis.from_url(
                 os.getenv("REDIS_URL", "redis://localhost:6379"),
                 decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
             )
         return cls._redis
+
+    @staticmethod
+    async def _redis_op(coro, *, attempts: int = 2, timeout: float = 2.0):
+        """Wykonaj operację Redis z krótkim timeoutem i max 2 próbami.
+
+        Nigdy nie rzuca wyjątku — zwraca None przy błędzie (caller sprawdza).
+        Łapie asyncio.TimeoutError, ConnectionError i każdy inny Exception."""
+        import asyncio
+        last_err = None
+        for attempt in range(attempts):
+            try:
+                return await asyncio.wait_for(coro(), timeout=timeout)
+            except (asyncio.TimeoutError, OSError, Exception) as e:
+                last_err = e
+                if attempt < attempts - 1:
+                    continue
+        # Wyczerpano próby — loguj i zwróć None (nie rzucaj)
+        if last_err is not None:
+            logger.warning(
+                "Redis op failed after %d attempts: %s: %s",
+                attempts, type(last_err).__name__, last_err,
+            )
+            logger.debug("Redis op traceback:", exc_info=last_err)
+        return None
 
     @staticmethod
     def _calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
@@ -281,12 +348,24 @@ class BaseAgent(ABC):
         dream_id: Optional[str] = None,
         language: str = "pl",
         debate_mode: str = "pelna",
+        council_mode: str = "personal",
     ) -> str:
-        # v6: izolacja cache per debate_mode (codzienny vs pełna Rada).
+        # v7: izolacja cache per council_mode (personal vs fa2).
+        #
+        # Dlaczego council_mode jest częścią klucza:
+        # Ten sam agent (np. Syez) generuje zupełnie różne odpowiedzi w trybie
+        # "personal" (synteza Rady osobistej) i "fa2" (analiza biznesowa FA2).
+        # Używają innych system promptów, innych user-message templates i innych
+        # max_tokens. Bez council_mode w kluczu Redis zwróciłby odpowiedź
+        # z trybu osobistego na zapytanie FA2 (i odwrotnie), co łamie kontrakt
+        # obu trybów. Izolacja jest gwarantowana przez włączenie council_mode
+        # do hasha — identyczny context + model + temperature w dwóch trybach
+        # daje dwa różne klucze cache.
         raw = (
-            f"{context[:400]}:{model}:{temperature}:{dream_id or ''}:{language}:{debate_mode}"
+            f"{context[:400]}:{model}:{temperature}:{dream_id or ''}:"
+            f"{language}:{debate_mode}:{council_mode}"
         ).encode("utf-8")
-        return f"llm:v6:{name}:{hashlib.sha256(raw).hexdigest()}"
+        return f"llm:v7:{name}:{hashlib.sha256(raw).hexdigest()}"
 
     @retry(
         stop=stop_after_attempt(5),
@@ -302,8 +381,9 @@ class BaseAgent(ABC):
         *,
         language: str = "pl",
         debate_mode: str = "pelna",
+        council_mode: str = "personal",
     ) -> str:
-        cfg = dict(self.get_model_config())
+        cfg = dict(self.get_model_config(council_mode=council_mode))
         if debate_mode == "codzienny":
             if self.name == "Syez":
                 cfg["max_tokens"] = min(int(cfg["max_tokens"]), 1400)
@@ -323,18 +403,23 @@ class BaseAgent(ABC):
             dream_id=dream_id,
             language=language,
             debate_mode=debate_mode,
+            council_mode=council_mode,
         )
         redis = await self._get_redis()
         if redis is not None:
             try:
-                cached = await redis.get(cache_key)
+                cached = await self._redis_op(lambda: redis.get(cache_key))
                 if cached:
                     return cached
             except Exception as e:  # cache nigdy nie blokuje ścieżki głównej
                 logger.warning("Cache read failed for %s: %s", self.name, e)
 
-        system_prompt = self.get_full_instruction(dream=dream, language=language)
-        user_msg = self._build_user_message(context, language=language)
+        system_prompt = self.get_full_instruction(
+            dream=dream, language=language, council_mode=council_mode
+        )
+        user_msg = self._build_user_message(
+            context, language=language, council_mode=council_mode
+        )
 
         try:
             if backend == "xai":
@@ -393,7 +478,9 @@ class BaseAgent(ABC):
 
             if redis is not None:
                 try:
-                    await redis.setex(cache_key, 3600, response_text)
+                    await self._redis_op(
+                        lambda: redis.setex(cache_key, 3600, response_text)
+                    )
                 except Exception as e:
                     logger.warning("Cache write failed for %s: %s", self.name, e)
 
@@ -410,13 +497,63 @@ class BaseAgent(ABC):
             logger.error("LLM unrecoverable for %s: %s", self.name, e)
             return self._fallback_contribute(context)
 
-    def _build_user_message(self, context: str, *, language: str = "pl") -> str:
+    def _build_user_message(self, context: str, *, language: str = "pl",
+                            council_mode: str = "personal") -> str:
         """
         Składa user-message dostosowany do roli agenta i języka odpowiedzi.
 
         Syez: żądanie czystej prozy (jeden blok ```mermaid` jako wyjątek).
         Reszta: 3 zdania, konkret, bez autoprezentacji.
         """
+        if self.name == "Syez" and council_mode == "fa2":
+            if language == "en":
+                return (
+                    f"Business briefing and Council Analysts' reports:\n"
+                    f"---\n{context}\n---\n\n"
+                    f"SYNTHESIS RULES (FA2):\n"
+                    f"1. Choose ONE best idea/niche from the analysts' proposals "
+                    f"and justify with concrete data (market size, margins, CAC/LTV, time to profitability).\n"
+                    f"2. For the chosen idea write a READY BUSINESS ARCHITECTURE:\n"
+                    f"   - Tech stack + platforms (concrete names: Shopify/WooCommerce/custom, "
+                    f"     Stripe/PayU, AWS/Vercel, ops tools)\n"
+                    f"   - Operational model step by step (day 0 to day 90)\n"
+                    f"   - Cost and revenue structure (in prose, table-style)\n"
+                    f"3. Three scenarios:\n"
+                    f"   - BASE SCENARIO: realistic, 12 months\n"
+                    f"   - BULL SCENARIO: everything goes well, 12 months\n"
+                    f"   - BEAR SCENARIO: main risk materialises — how to survive\n"
+                    f"4. Mermaid diagram — flowchart of system architecture or sales process.\n"
+                    f"5. Step-by-step implementation guide: Week 1 / Month 1 / Month 3 / Month 6.\n"
+                    f"6. At the end: 3 open questions for the founder that must be answered "
+                    f"before the first dollar is spent.\n\n"
+                    f"Format: pure English prose + numbered lists where helpful + one Mermaid diagram. "
+                    f"No JSON. Length: 800–1600 words.\n\n"
+                    f"Write the synthesis now."
+                )
+            return (
+                f"Briefing biznesowy i analizy Rady Analityków:\n"
+                f"---\n{context}\n---\n\n"
+                f"ZASADY SYNTEZY FA2:\n"
+                f"1. Wybierz JEDEN najlepszy pomysł/niszę spośród zaproponowanych przez analityków "
+                f"i uzasadnij wybór konkretnymi danymi (rynek, marże, CAC/LTV, czas do rentowności).\n"
+                f"2. Dla wybranego pomysłu napisz GOTOWĄ ARCHITEKTURĘ BIZNESOWĄ:\n"
+                f"   - Stack technologiczny + platformy (konkretne nazwy: Shopify/WooCommerce/custom, "
+                f"     Stripe/PayU, AWS/Vercel, narzędzia ops)\n"
+                f"   - Model operacyjny krok po kroku (od dnia 0 do dnia 90)\n"
+                f"   - Struktura kosztów i przychodów (tabelarycznie w prozie)\n"
+                f"3. Trzy scenariusze:\n"
+                f"   - SCENARIUSZ BASE: realistyczny, 12 miesięcy\n"
+                f"   - SCENARIUSZ BULL: wszystko idzie dobrze, 12 miesięcy\n"
+                f"   - SCENARIUSZ BEAR: główne ryzyko materializuje się — jak przeżyć\n"
+                f"4. Diagram Mermaid — flowchart architektury systemu lub procesu sprzedaży.\n"
+                f"5. Instrukcja wdrożenia krok po kroku: Tydzień 1 / Miesiąc 1 / Miesiąc 3 / Miesiąc 6.\n"
+                f"6. Na końcu: 3 pytania otwarte do założyciela, które muszą mieć odpowiedź zanim "
+                f"zostanie wydana pierwsza złotówka.\n\n"
+                f"Format: czysta polska proza + listy numerowane gdzie pomagają + jeden diagram mermaid. "
+                f"Zakaz JSON. Długość: 800–1600 słów.\n\n"
+                f"Napisz syntezę teraz."
+            )
+
         if self.name == "Syez":
             if language == "en":
                 return (
@@ -452,6 +589,21 @@ class BaseAgent(ABC):
                 f"≤60 min) WPLEĆ w prozę.\n"
                 f"6. Długość: 4–10 akapitów; listy myślnikiem tylko gdy pomagają.\n\n"
                 f"Napisz syntezę."
+            )
+
+        # FA2 — analitycy biznesowi: dłuższa, strukturalna analiza
+        if council_mode == "fa2":
+            return (
+                f"Zapytanie biznesowe:\n"
+                f"---\n{context}\n---\n\n"
+                f"ZASADY TWOJEJ ANALIZY:\n"
+                f"1. Zacznij dokładnie tak: '{self.emoji} {self.name}: '\n"
+                f"2. Twoja odpowiedź to analiza z Twojej specjalizacji — konkretne liczby, "
+                f"nazwy platform, przedziały kosztów, metryki rynkowe.\n"
+                f"3. Zaproponuj 1–2 konkretne nisze/pomysły pasujące do briefu, "
+                f"z krótkim uzasadnieniem dlaczego właśnie te.\n"
+                f"4. Długość: 4–8 zdań. Bez autoprezentacji i bez ogólników.\n\n"
+                f"Odpowiedz teraz."
             )
 
         # 9 członków Rady — krótka proza
@@ -527,51 +679,32 @@ class BaseAgent(ABC):
 
         # usuń nagi obiekt JSON (gdy model dolepił bez fence)
         def _strip_naked_json(s: str) -> str:
-            # Szukamy potencjalnych bloków JSON: { ... } na poziomie 0 zagnieżdżenia
+            # Prostsze podejście: iterujemy po pozycjach '{', próbujemy json.loads
+            # od każdej z nich do najbliższego '}' od końca. Usuwamy tylko valid dict.
+            result = s
             i = 0
-            out = []
-            while i < len(s):
-                if s[i] == "{":
-                    # Spróbuj znaleźć pasujący }
-                    depth = 0
-                    j = i
-                    in_string = False
-                    escape = False
-                    while j < len(s):
-                        c = s[j]
-                        if escape:
-                            escape = False
-                        elif c == "\\":
-                            escape = True
-                        elif c == '"' and not escape:
-                            in_string = not in_string
-                        elif not in_string:
-                            if c == "{":
-                                depth += 1
-                            elif c == "}":
-                                depth -= 1
-                                if depth == 0:
-                                    candidate = s[i:j + 1]
-                                    # Wycinaj tylko jeśli to faktycznie JSON-y
-                                    # z kluczami w cudzysłowiu (heurystyka)
-                                    try:
-                                        parsed = json.loads(candidate)
-                                        if isinstance(parsed, dict) and parsed:
-                                            i = j + 1
-                                            break
-                                    except json.JSONDecodeError:
-                                        pass
-                                    out.append(s[i])
-                                    i += 1
-                                    break
-                        j += 1
-                    else:
-                        out.append(s[i])
-                        i += 1
-                else:
-                    out.append(s[i])
+            while i < len(result):
+                if result[i] != "{":
                     i += 1
-            return "".join(out)
+                    continue
+                # Szukaj ostatniego '}' — próbuj coraz krótsze podciągi
+                last_brace = result.rfind("}", i + 1)
+                removed = False
+                while last_brace > i:
+                    candidate = result[i:last_brace + 1]
+                    try:
+                        parsed = json.loads(candidate)
+                        if isinstance(parsed, dict) and parsed:
+                            # Usuwamy ten fragment
+                            result = result[:i] + result[last_brace + 1:]
+                            removed = True
+                            break
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    last_brace = result.rfind("}", i + 1, last_brace)
+                if not removed:
+                    i += 1
+            return result
 
         cleaned = _strip_naked_json(cleaned)
 

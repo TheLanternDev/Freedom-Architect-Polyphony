@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import main as main_module
+import api.services.budget_guard as budget_guard
 from core.cost_tracking import BudgetSnapshot
 
 
@@ -21,7 +21,7 @@ def test_debate_stream_402_when_daily_hard_exceeded(
 ):
     monkeypatch.setenv("DAILY_BUDGET_HARD_USD", "1.0")
     monkeypatch.setattr(
-        main_module,
+        budget_guard,
         "load_budget_snapshot",
         lambda: BudgetSnapshot(
             spent_today_usd=100.0,

@@ -17,16 +17,23 @@ const AGENT_META: Record<string, { color: string; initials: string }> = {
 
 interface Props {
   agent: AgentState;
+  councilMode?: string;
 }
 
-export function AgentCard({ agent }: Props) {
+export function AgentCard({ agent, councilMode }: Props) {
   const { t } = useLang();
   const meta = AGENT_META[agent.name] ?? {
     color: "bg-navy-800 border-white/10",
     initials: agent.name.slice(0, 2).toUpperCase(),
   };
-  const roleKey = `agent.role.${agent.name}`;
-  const role = AGENT_META[agent.name] ? t(roleKey) : t("agent.fallback_role");
+  const baseRoleKey = `agent.role.${agent.name}`;
+  const fa2RoleKey = `agent.role.fa2.${agent.name}`;
+  const fa2Label = t(fa2RoleKey);
+  const role = AGENT_META[agent.name]
+    ? councilMode === "fa2" && fa2Label !== fa2RoleKey
+      ? fa2Label
+      : t(baseRoleKey)
+    : t("agent.fallback_role");
   const bio = t(`agent.bio.${agent.name}`);
   const hasBio = bio !== `agent.bio.${agent.name}`;
 

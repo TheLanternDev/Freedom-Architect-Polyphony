@@ -4,6 +4,7 @@
 @tailwind utilities;
 
 @layer base {
+  html { font-size: 112%; }
   * { box-sizing: border-box; }
   body { margin: 0; -webkit-font-smoothing: antialiased; }
   select option { background: #1E293B; color: white; }

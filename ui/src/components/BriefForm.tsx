@@ -35,6 +35,17 @@ export function BriefForm({
     }
   }, []);
 
+  // Auto-link mode → category
+  useEffect(() => {
+    const map: Record<NonNullable<Brief["mode"]>, NonNullable<Brief["category"]>> = {
+      pelna: "decyzja",
+      marzen: "marzenie",
+      schematy: "schemat",
+      codzienny: "decyzja",
+    };
+    if (selectedMode) setCategory(map[selectedMode]);
+  }, [selectedMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const MAX_LEN = 8000;
   const charCount = description.length;
   const overLimit = charCount > MAX_LEN;

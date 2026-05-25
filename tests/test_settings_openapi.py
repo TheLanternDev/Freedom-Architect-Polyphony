@@ -34,6 +34,7 @@ def test_openapi_visible_in_development(monkeypatch):
 
 def test_cors_explicit_origins(monkeypatch):
     monkeypatch.setenv("AW_CORS_ORIGINS", "https://a.example,https://b.example")
+    monkeypatch.setenv("AW_ENV", "production")
     from api.settings import cors_allow_origins
 
     assert cors_allow_origins() == ["https://a.example", "https://b.example"]

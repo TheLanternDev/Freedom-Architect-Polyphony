@@ -7,8 +7,10 @@
 PRAGMA foreign_keys = ON;
 
 -- AKSJOMAT 1: marzenia żyją przez wiele debat.
+-- Faza 4 (multi-user): każdy wiersz ma tenant_id. Domyślnie 'default' (tryb single-user wstecznie kompatybilny).
 CREATE TABLE IF NOT EXISTS dreams (
     id                          TEXT PRIMARY KEY,          -- UUID v4
+    tenant_id                   TEXT NOT NULL DEFAULT 'default',
     created_at                  TEXT NOT NULL DEFAULT (datetime('now')),
     raw_brief                   TEXT NOT NULL,
     core_dream                  TEXT NOT NULL,
@@ -26,6 +28,7 @@ CREATE TABLE IF NOT EXISTS dreams (
 -- Debata = jeden cykl Rady (9 głosów + Syez).
 CREATE TABLE IF NOT EXISTS debates (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id           TEXT NOT NULL DEFAULT 'default',
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     category            TEXT NOT NULL CHECK (category IN ('decyzja','projekt','marzenie','schemat')),
     mode                TEXT NOT NULL CHECK (mode IN ('pelna','marzen','schematy','codzienny')),
@@ -50,6 +53,7 @@ CREATE TABLE IF NOT EXISTS dream_debate_link (
 
 CREATE TABLE IF NOT EXISTS agent_voices (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id    TEXT NOT NULL DEFAULT 'default',
     debate_id    INTEGER NOT NULL REFERENCES debates(id) ON DELETE CASCADE,
     agent_name   TEXT NOT NULL,
     voice_text   TEXT NOT NULL,
@@ -64,6 +68,7 @@ CREATE INDEX IF NOT EXISTS idx_voices_debate_id ON agent_voices(debate_id);
 -- ARCHIVED_CONSCIOUSLY (z `archived_reason` ≥ MIN_ARCHIVE_REASON_LEN znaków).
 CREATE TABLE IF NOT EXISTS projects (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id         TEXT NOT NULL DEFAULT 'default',
     dream_id          TEXT NOT NULL REFERENCES dreams(id) ON DELETE CASCADE,
     status            TEXT NOT NULL DEFAULT 'dreaming'
         CHECK (status IN ('dreaming','in_progress','at_risk','stuck','completed','archived_consciously')),
@@ -79,6 +84,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 
 CREATE TABLE IF NOT EXISTS functionality_items (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id     TEXT NOT NULL DEFAULT 'default',
     project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     description   TEXT NOT NULL,
     is_done       INTEGER NOT NULL DEFAULT 0 CHECK (is_done IN (0,1)),
@@ -90,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_fitems_project_id ON functionality_items(project_
 
 CREATE TABLE IF NOT EXISTS completion_audits (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id      TEXT NOT NULL DEFAULT 'default',
     project_id     INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     debate_id      INTEGER NULL REFERENCES debates(id) ON DELETE SET NULL,
     remaining_json TEXT NOT NULL,
@@ -100,6 +107,7 @@ CREATE INDEX IF NOT EXISTS idx_audits_project_id ON completion_audits(project_id
 
 CREATE TABLE IF NOT EXISTS commitments (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id     TEXT NOT NULL DEFAULT 'default',
     debate_id     INTEGER NULL REFERENCES debates(id) ON DELETE SET NULL,
     project_id    INTEGER NULL REFERENCES projects(id) ON DELETE SET NULL,
     text          TEXT NOT NULL,
@@ -122,7 +130,19 @@ CREATE INDEX IF NOT EXISTS idx_commitments_follow_up ON commitments(follow_up_at
 
 -- P5 / Faza 3 (MVP): rolling notatka per agent z ostatnich debat → kolejne prompty.
 CREATE TABLE IF NOT EXISTS agent_evolution (
-    agent_name  TEXT PRIMARY KEY,
+    agent_name  TEXT NOT NULL,
+    tenant_id   TEXT NOT NULL DEFAULT 'default',
     note_md     TEXT NOT NULL DEFAULT '',
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (agent_name, tenant_id)
+);
+
+-- Faza 4: użytkownicy (multi-user auth).
+CREATE TABLE IF NOT EXISTS users (
+    username     TEXT PRIMARY KEY,
+    pw_hash      TEXT NOT NULL,
+    salt         TEXT NOT NULL,
+    tenant_id    TEXT NOT NULL,
+    display_name TEXT,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );

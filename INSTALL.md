@@ -89,10 +89,28 @@ Po uruchomieniu Tauri / Vite: przycisk **Połączenie** w nagłówku — **Test 
 - [`docs/SECURITY_LOCAL.md`](docs/SECURITY_LOCAL.md) — sekrety, sieć, telemetria, backup.
 - [`docs/SUPPORT_PLAYBOOK.md`](docs/SUPPORT_PLAYBOOK.md) — szablony odpowiedzi dla kanału supportu.
 
-## 8. Smoke przed wydaniem / wysyłką binarki
+## 8. Struktura backendu (v3.3+)
 
-```bash
-./scripts/smoke_week1.sh
+```
+main.py                         ← routing FastAPI (thin wrappers)
+api/services/
+  debate_orchestrator.py        ← orkiestracja SSE debaty
+  dream_service.py              ← faza A0 (destylacja marzenia)
+  completion_service.py         ← AKSJOMAT 2 (stale, follow-upy)
+  budget_guard.py               ← twardy budżet LLM
+  project_service.py            ← CRUD projektów
+  _sse.py                       ← shared SSE helper
+core/                           ← logika domenowa (bez HTTP)
+db/                             ← persistencja (repo pattern)
+agents/                         ← 9 agentów + Syez
 ```
 
-Bez wywołań sieciowych do modeli — tylko testy jednostkowe.
+> Refaktoryzacja modularna w toku (v3.3+). Pełna specyfikacja: [`docs/spec/SPEC_CURRENT.md`](docs/spec/SPEC_CURRENT.md).
+
+## 9. Smoke przed wydaniem / wysyłką binarki
+
+```bash
+./_tools/scripts/smoke_week1.sh
+```
+
+Bez wywołań sieciowych do modeli — tylko testy jednostkowe + AKSJOMATY v3.3.

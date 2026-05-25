@@ -92,8 +92,7 @@ def test_active_project_limit_allows_when_below():
     active = [
         Project(id=1, dream_id="d1", status=ProjectStatus.IN_PROGRESS),
     ]
-    # nie powinno rzucić
-    enforce_active_project_limit(active, attempting_new_project=True)
+    enforce_active_project_limit(active, attempting_new_project=True, limit=3)
 
 
 def test_active_project_limit_allows_when_not_attempting_new():
