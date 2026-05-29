@@ -38,6 +38,8 @@ SHADOW_NO_SILENT_RELEASE_EN = (
 
 MIN_COMMITMENT_RELEASE_REASON_LEN = 30
 
+_background_tasks: set[asyncio.Task] = set()
+
 
 # ── Service functions ─────────────────────────────────────────────────────────
 
@@ -87,13 +89,15 @@ async def create_commitment(
         await repo.touch_project_last_progress(db, int(resolved_project))
     await db.commit()
     from db.tenant import current_tenant_id as _tid_now
-    asyncio.ensure_future(
+    _t = asyncio.create_task(
         _track(
             "commitment_created", _tid_now(),
             commitment_id=new_id, debate_id=debate_id,
             project_id=resolved_project, trigger_type="manual",
         )
     )
+    _background_tasks.add(_t)
+    _t.add_done_callback(_background_tasks.discard)
     return {
         "id": new_id,
         "status": "open",
@@ -142,9 +146,11 @@ async def complete_commitment(
         await repo.touch_project_last_progress(db, int(pid))
     await db.commit()
     from db.tenant import current_tenant_id as _tid_now
-    asyncio.ensure_future(
+    _t = asyncio.create_task(
         _track("commitment_completed", _tid_now(), commitment_id=commitment_id, project_id=pid)
     )
+    _background_tasks.add(_t)
+    _t.add_done_callback(_background_tasks.discard)
     return {"ok": True, "id": commitment_id, "status": "completed"}
 
 

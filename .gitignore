@@ -1,61 +1,67 @@
-# Sekrety — nie commituj kluczy API (backend: `ui/.env` lub katalog główny)
+# Sekrety i dane wrażliwe
 .env
 .env.*
 !.env.example
+config/patryk_identity.json
 
-# Dane lokalne / runtime (nie do repo)
-data/*.db
-data/benchmark_results.json
-data/cost_log.jsonl
+# Bazy danych i logi runtime
+data/
+*.db
+*.db.bak
 cost_log.jsonl
+events.jsonl
+data/benchmark_results.json
 data/.fuse_hidden*
 
-# Artefakty pakowania / dystrybucji
+# Artefakty budowania i pakowania
 dist/
 *.tar.gz
+build/
 
-# Python (korzeń)
-venv/
-.venv/
+# Python cache i środowiska
 __pycache__/
 *.py[cod]
+*.pyc
+.venv/
+venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+.pdm.toml
+uv.lock
 
-# IDE / OS
+# Node.js / Tauri / Frontend
+**/node_modules/
+**/dist/
+**/.vite/
+src/src-tauri/target/
+src-tauri/target/
+**/*.tsbuildinfo
+
+# IDE i systemowe
 .idea/
 .vscode/
 .DS_Store
+Thumbs.db
 
-# Frontend (szczegóły także w `ui/.gitignore`)
-ui/node_modules/
-ui/dist/
-ui/src-tauri/target/
-
-# Frontend po refaktorze v3.3 (przeniesiony ui/ -> src/) — artefakty budowania
-src/node_modules/
-src/dist/
-src/src-tauri/target/
-src/.vite/
-**/node_modules/
-**/.vite/
-
-# Claude / lokalne narzędzia
+# Lokalne narzędzia AI i workspace'y
 .claude/
-
-# Workspace narzędziowy (evale skilli, raporty audytowe, .skill) — nie kod aplikacji
+.grok/
 _tools/
-
-# Integracje sprzedażowe (Aimfox/Smartlead) — osobna domena, nie kod aplikacji
+personal_v1/
 marketing/
-
-# Dokumenty sprzedażowe — osobna domena, nie kod aplikacji
 SOP-LinkedIn-Sales-Channel.md
 
-# Prywatne dane tożsamości użytkownika (wrażliwe, psychologiczne) — out of repo.
-# Wersjonujemy tylko strukturę-przykład (config/patryk_identity.example.json).
-config/patryk_identity.json
-
-data/
+# Duże dokumenty binarne (zachowujemy tylko te niezbędne)
 docs/Architekt_Wolnosci_Specyfikacja_Pelna_v3.3.pdf
+
+# Paczka beta sponsorowana (generowane lokalnie / w staging)
+config/sponsor_payload.py
+BETA_SPONSOR.marker
+
+# Tymczasowe pliki testowe i generowane
+ab_out/
+eval-reviewer.skill
+fa-lead-finder.skill

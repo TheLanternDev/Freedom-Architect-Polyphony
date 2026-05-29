@@ -15,13 +15,15 @@ router = APIRouter(tags=["meta"])
 async def health():
     import main as m
 
+    from api.settings import demo_config_public
+
     try:
         from config.llm_providers import effective_llm_backend
 
         llm_b = effective_llm_backend() if m.CORE_AVAILABLE else "none"
     except Exception:
         llm_b = "none"
-    return {
+    payload: dict[str, object] = {
         "status": "alive",
         "council_agents": len(m.COUNCIL) if m.RADA_AVAILABLE else 0,
         "synthesizer": m.SYNTHESIZER.name if m.RADA_AVAILABLE else None,
@@ -41,6 +43,10 @@ async def health():
         "commitment_endpoint": "POST /commitment",
         "ready_endpoint": "GET /health/ready",
     }
+    demo_cfg = demo_config_public()
+    if demo_cfg.get("enabled"):
+        payload["demo"] = demo_cfg
+    return payload
 
 
 @router.get("/health/ready")

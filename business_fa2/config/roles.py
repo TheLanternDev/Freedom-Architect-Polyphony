@@ -122,12 +122,115 @@ _FA2_BASE_ROLES: dict[str, str] = {
     ),
 }
 
+# ---------------------------------------------------------------------------
+# Wersje angielskie (mirror PL — ten sam poziom konkretu)
+# ---------------------------------------------------------------------------
+
+_SMATY_KONTEKST_EN: dict[str, str] = {
+    "produkt fizyczny": (
+        "Focus on: suppliers and MOQ, fulfillment chain (warehouse/dropshipping/3PL), "
+        "fixed costs (storage, packaging) and variable costs (COGS per unit), "
+        "MVP budget for the first batch of goods, time to first sale."
+    ),
+    "usługa B2B": (
+        "Focus on: delivery infrastructure (tools, processes, templates), client "
+        "onboarding time, cost per engagement (man-hours, licenses), minimal startup "
+        "outlay (no employees), time from signed contract to first invoice."
+    ),
+    "SaaS": (
+        "Focus on: technical infrastructure (hosting, CI/CD, monitoring), cost per "
+        "user/tenant at scale (cloud, API, support), time-to-first-paying-customer, "
+        "operational churn risk (what breaks at 100 vs 1000 users), minimal runway "
+        "to first MRR."
+    ),
+    "marketplace": (
+        "Focus on: onboarding processes on the supply and demand sides, moderation and "
+        "verification costs, fulfillment of transaction validation, minimal cold-start "
+        "outlay (by side), time to the first completed transaction between strangers."
+    ),
+}
+
+_OBVER_KONTEKST_EN: dict[str, str] = {
+    "produkt fizyczny": (
+        "Give TAM/SAM/SOM for the product category, average gross margins in the segment "
+        "(typically 30–60% for consumer goods, 50–80% for premium), compare with analogous "
+        "DTC or private-label brands and judge the feasibility of $1M–$10M ARR in 3 years."
+    ),
+    "usługa B2B": (
+        "Give TAM/SAM/SOM for the service segment, market rates for similar services "
+        "(retainer/project/hourly), typical EV/Revenue multiples for boutique consulting "
+        "(0.5–2x) and judge the feasibility of $500K–$5M revenue in 3 years given the resources."
+    ),
+    "SaaS": (
+        "Give TAM/SAM/SOM, ARR growth benchmarks (good SaaS: 3x year 1, 2x year 2), "
+        "median NRR (>110% = product-market fit), CAC/LTV ratio (target: >3x), "
+        "typical exit ARR multiples (5–15x ARR for B2B SaaS) and judge the feasibility of "
+        "$1M ARR in 24 months in this niche."
+    ),
+    "marketplace": (
+        "Give TAM/SAM/SOM, industry take rates (5–30% depending on category), "
+        "GMV growth benchmarks for analogous marketplaces in years 1–3, typical exit "
+        "multiples (1–3x GMV or 10–20x revenue) and judge when network effects start to "
+        "drive growth on their own."
+    ),
+}
+
+_FA2_BASE_ROLES_EN: dict[str, str] = {
+    "Relacjan": (
+        "You are a market and B2B/B2C relationship analyst. Your role: investigate who BUYS "
+        "in the analyzed niche — customer profile, ICP, acquisition channels, customer "
+        "acquisition cost (CAC), lifetime value (LTV). Give concrete numbers or ranges where possible."
+    ),
+    "Kogit": (
+        "You are a business-logic and monetization-model analyst. Your role: propose a "
+        "concrete revenue model (subscription/marketplace/white-label/dropshipping etc.), "
+        "unit economics, break-even, the main systemic risks and how to mitigate them."
+    ),
+    "Emojy": (
+        "You are a consumer-trend and demand-validation analyst. Your role: assess the "
+        "emotional pull of the niche — why customers pay, what pain you solve, which trends "
+        "(Google Trends, TikTok, Reddit) confirm rising demand."
+    ),
+    "Deega": (
+        "You are a competition and positioning analyst. Your role: identify the top 3–5 "
+        "players in the niche, their weaknesses, the market gap that can be seized, and a "
+        "unique value proposition (USP) for a new entrant."
+    ),
+    "Smaty": (
+        "You are an operations and logistics analyst. Your role: describe the operations "
+        "needed to launch the business — suppliers, fulfillment, fixed/variable costs, "
+        "minimal startup outlay (MVP budget), time to first sale."
+    ),
+    "Szow": (
+        "You are a risk and due-diligence analyst. Your role: list the 3–5 biggest risks "
+        "(regulatory, competitive, market, technological), the worst-case scenario, and the "
+        "warning signs (red flags) to monitor."
+    ),
+    "Tai": (
+        "You are a timing and go-to-market analyst. Your role: propose a 0–3–6–12 month "
+        "timeline, milestones, when the business should reach profitability and what must "
+        "happen in each phase."
+    ),
+    "Obver": (
+        "You are a macro and industry-benchmark analyst. Your role: assess market size "
+        "(TAM/SAM/SOM), average industry margins, compare with analogous businesses and "
+        "judge the realistic scale that can be aspired to within 3 years."
+    ),
+    "Kidi": (
+        "You are an innovation and creative-positioning analyst. Your role: propose a "
+        "non-obvious market-entry angle, a niche within the niche, an original distribution "
+        "channel or viral mechanism that sets this business apart from standard players."
+    ),
+}
+
 
 # ---------------------------------------------------------------------------
 # Publiczne API
 # ---------------------------------------------------------------------------
 
-def get_fa2_roles(kontekst_biznesu: KontekstBiznesu) -> dict[str, str]:
+def get_fa2_roles(
+    kontekst_biznesu: KontekstBiznesu, language: str = "pl"
+) -> dict[str, str]:
     """Zwraca słownik ról FA2 dostosowany do kontekstu biznesowego.
 
     Smaty (analityk operacyjny) i Obver (analityk makro) otrzymują
@@ -149,12 +252,16 @@ def get_fa2_roles(kontekst_biznesu: KontekstBiznesu) -> dict[str, str]:
         # roles["Smaty"] zawiera teraz wskazówki dot. infrastruktury,
         # churn risk i runway zamiast dostawców i fulfillmentu.
     """
-    roles = dict(_FA2_BASE_ROLES)
-    roles["Smaty"] = _FA2_BASE_ROLES["Smaty"] + " " + _SMATY_KONTEKST[kontekst_biznesu]
-    roles["Obver"] = _FA2_BASE_ROLES["Obver"] + " " + _OBVER_KONTEKST[kontekst_biznesu]
+    base = _FA2_BASE_ROLES_EN if language == "en" else _FA2_BASE_ROLES
+    smaty_ctx = _SMATY_KONTEKST_EN if language == "en" else _SMATY_KONTEKST
+    obver_ctx = _OBVER_KONTEKST_EN if language == "en" else _OBVER_KONTEKST
+    roles = dict(base)
+    roles["Smaty"] = base["Smaty"] + " " + smaty_ctx[kontekst_biznesu]
+    roles["Obver"] = base["Obver"] + " " + obver_ctx[kontekst_biznesu]
     return roles
 
 
 # Backward-compat — dla kodu używającego FA2_BUSINESS_ROLES bezpośrednio.
 # Nie używa kontekstu; preferuj get_fa2_roles() w nowym kodzie.
 FA2_BUSINESS_ROLES: dict[str, str] = _FA2_BASE_ROLES
+FA2_BUSINESS_ROLES_EN: dict[str, str] = _FA2_BASE_ROLES_EN

@@ -465,10 +465,13 @@ class _Repo:
             (_tid(), debate_id, agent_name, voice_text),
         )
 
-    async def list_agent_evolution(self, db: Any) -> dict[str, str]:
+    async def list_agent_evolution(self, db: Any, council_mode: str = "personal") -> dict[str, str]:
+        # Izolacja ewolucji per tryb: fa2 używa wirtualnego tenanta (sufiks),
+        # by notatki biznesowe nie mieszały się z osobistymi. Zero migracji PK.
+        tid = f"{_tid()}:fa2" if council_mode == "fa2" else _tid()
         cur = await db.execute(
             "SELECT agent_name, note_md FROM agent_evolution WHERE tenant_id = ?",
-            (_tid(),),
+            (tid,),
         )
         rows = await cur.fetchall()
         return {str(r[0]): str(r[1] or "") for r in rows}
@@ -481,6 +484,7 @@ class _Repo:
         *,
         snippet_cap: int = 380,
         total_cap: int = 2600,
+        council_mode: str = "personal",
     ) -> None:
         raw = " ".join((voice_text or "").split())
         if not raw or raw.startswith("[błąd") or raw.startswith("[error"):
@@ -488,9 +492,11 @@ class _Repo:
         snippet = raw[:snippet_cap].strip()
         if not snippet:
             return
+        # Izolacja per tryb — patrz list_agent_evolution.
+        tid = f"{_tid()}:fa2" if council_mode == "fa2" else _tid()
         cur = await db.execute(
             "SELECT note_md FROM agent_evolution WHERE agent_name = ? AND tenant_id = ?",
-            (agent_name, _tid()),
+            (agent_name, tid),
         )
         row = await cur.fetchone()
         prev = str(row[0] or "") if row else ""
@@ -511,7 +517,7 @@ class _Repo:
                 note_md = excluded.note_md,
                 updated_at = excluded.updated_at
             """,
-            (agent_name, _tid(), merged),
+            (agent_name, tid, merged),
         )
 
     async def list_recent_voices_for_agent(
@@ -683,6 +689,49 @@ class _Repo:
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+    async def list_debate_chain(
+        self,
+        db: Any,
+        leaf_debate_id: int,
+        *,
+        max_turns: int = 4,
+    ) -> list[dict[str, Any]]:
+        """Ostatnie max_turns tur wątku (najstarsza → najnowsza), po parent_debate_id."""
+        visited: set[int] = set()
+        newest_first: list[dict[str, Any]] = []
+        current_id: Optional[int] = leaf_debate_id
+
+        while current_id is not None and len(newest_first) < max_turns:
+            if current_id in visited:
+                break
+            visited.add(current_id)
+
+            cur = await db.execute(
+                """
+                SELECT id, brief_description, synthesis_text, parent_debate_id
+                  FROM debates
+                 WHERE id = ? AND tenant_id = ?
+                """,
+                (current_id, _tid()),
+            )
+            row = await cur.fetchone()
+            if not row:
+                break
+
+            row_d = dict(row)
+            newest_first.append(
+                {
+                    "id": int(row_d["id"]),
+                    "brief_description": row_d["brief_description"],
+                    "synthesis_text": row_d.get("synthesis_text"),
+                }
+            )
+            parent = row_d.get("parent_debate_id")
+            current_id = int(parent) if parent is not None else None
+
+        newest_first.reverse()
+        return newest_first
 
     async def get_commitment(self, db: Any, commitment_id: int) -> Optional[dict[str, Any]]:
         cur = await db.execute(
@@ -923,6 +972,136 @@ class _Repo:
         )
         row = await cur.fetchone()
         return str(row[0]) if row and row[0] else None
+
+    async def _table_exists(self, db: Any, name: str) -> bool:
+        cur = await db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (name,),
+        )
+        if await cur.fetchone():
+            return True
+        # Postgres / inne backendy
+        try:
+            cur = await db.execute(
+                "SELECT 1 FROM information_schema.tables WHERE table_name = ?",
+                (name,),
+            )
+            return await cur.fetchone() is not None
+        except Exception:
+            return False
+
+    async def _rows_to_dicts(self, db: Any, sql: str, params: tuple) -> list[dict[str, Any]]:
+        cur = await db.execute(sql, params)
+        rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def export_tenant_data(self, db: Any, *, tenant_id: str) -> dict[str, Any]:
+        """Eksport wszystkich danych tenanta (RODO — prawo dostępu)."""
+        tid = tenant_id
+        dream_debate_link = await self._rows_to_dicts(
+            db,
+            """
+            SELECT dream_id, debate_id
+              FROM dream_debate_link
+             WHERE dream_id IN (SELECT id FROM dreams WHERE tenant_id = ?)
+                OR debate_id IN (SELECT id FROM debates WHERE tenant_id = ?)
+            """,
+            (tid, tid),
+        )
+        return {
+            "tenant_id": tid,
+            "dreams": await self._rows_to_dicts(
+                db, "SELECT * FROM dreams WHERE tenant_id = ?", (tid,)
+            ),
+            "debates": await self._rows_to_dicts(
+                db, "SELECT * FROM debates WHERE tenant_id = ?", (tid,)
+            ),
+            "dream_debate_link": dream_debate_link,
+            "agent_voices": await self._rows_to_dicts(
+                db, "SELECT * FROM agent_voices WHERE tenant_id = ?", (tid,)
+            ),
+            "projects": await self._rows_to_dicts(
+                db, "SELECT * FROM projects WHERE tenant_id = ?", (tid,)
+            ),
+            "functionality_items": await self._rows_to_dicts(
+                db, "SELECT * FROM functionality_items WHERE tenant_id = ?", (tid,)
+            ),
+            "completion_audits": await self._rows_to_dicts(
+                db, "SELECT * FROM completion_audits WHERE tenant_id = ?", (tid,)
+            ),
+            "commitments": await self._rows_to_dicts(
+                db, "SELECT * FROM commitments WHERE tenant_id = ?", (tid,)
+            ),
+            "agent_evolution": await self._rows_to_dicts(
+                db, "SELECT * FROM agent_evolution WHERE tenant_id = ?", (tid,)
+            ),
+            "users": await self._rows_to_dicts(
+                db, "SELECT username, tenant_id, display_name, created_at FROM users WHERE tenant_id = ?",
+                (tid,),
+            ),
+        }
+
+    async def _delete_where_tenant(
+        self, db: Any, table: str, tenant_id: str
+    ) -> int:
+        cur = await db.execute(
+            f"DELETE FROM {table} WHERE tenant_id = ?",
+            (tenant_id,),
+        )
+        return int(cur.rowcount or 0)
+
+    async def _purge_debates_for_tenant(self, db: Any, tenant_id: str) -> int:
+        """Usuwa debaty tenanta; FTS5 synchronizuje triggery AFTER DELETE na debates."""
+        try:
+            cur = await db.execute(
+                "DELETE FROM debates WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+            return int(cur.rowcount or 0)
+        except Exception:
+            cur = await db.execute(
+                "SELECT id FROM debates WHERE tenant_id = ?",
+                (tenant_id,),
+            )
+            debate_ids = [int(r[0]) for r in await cur.fetchall()]
+            for debate_id in debate_ids:
+                await db.execute(
+                    "DELETE FROM debates WHERE id = ? AND tenant_id = ?",
+                    (debate_id, tenant_id),
+                )
+            return len(debate_ids)
+
+    async def purge_tenant_data(self, db: Any, *, tenant_id: str) -> dict[str, int]:
+        """Trwałe usunięcie wszystkich danych tenanta (RODO). Zwraca liczniki per tabela."""
+        tid = tenant_id
+        deleted: dict[str, int] = {}
+
+        cur = await db.execute(
+            """
+            DELETE FROM dream_debate_link
+             WHERE dream_id IN (SELECT id FROM dreams WHERE tenant_id = ?)
+                OR debate_id IN (SELECT id FROM debates WHERE tenant_id = ?)
+            """,
+            (tid, tid),
+        )
+        deleted["dream_debate_link"] = int(cur.rowcount or 0)
+
+        for table in (
+            "agent_voices",
+            "completion_audits",
+            "commitments",
+            "functionality_items",
+            "projects",
+        ):
+            deleted[table] = await self._delete_where_tenant(db, table, tid)
+
+        deleted["debates"] = await self._purge_debates_for_tenant(db, tid)
+        deleted["dreams"] = await self._delete_where_tenant(db, "dreams", tid)
+        deleted["agent_evolution"] = await self._delete_where_tenant(
+            db, "agent_evolution", tid
+        )
+        deleted["users"] = await self._delete_where_tenant(db, "users", tid)
+        return deleted
 
 
 repo = _Repo()

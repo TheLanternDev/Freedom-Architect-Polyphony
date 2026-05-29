@@ -28,7 +28,9 @@ from config.llm_providers import (
     anthropic_api_key,
     anthropic_omits_temperature,
     effective_llm_backend,
+    map_claude_model_to_ollama,
     map_claude_model_to_xai,
+    ollama_chat_completion,
     xai_chat_completion,
 )
 
@@ -48,8 +50,10 @@ logger = logging.getLogger(__name__)
 
 try:
     from business_fa2.config.roles import FA2_BUSINESS_ROLES as _FA2_BUSINESS_ROLES
+    from business_fa2.config.roles import FA2_BUSINESS_ROLES_EN as _FA2_BUSINESS_ROLES_EN
 except ImportError:
     _FA2_BUSINESS_ROLES = {}  # type: ignore[assignment]
+    _FA2_BUSINESS_ROLES_EN = {}  # type: ignore[assignment]
 
 # ── Lazy / opcjonalne zależności ────────────────────────────────────────────
 # Importy wewnątrz try/except, żeby BaseAgent działał w trybie fallback
@@ -192,11 +196,13 @@ class BaseAgent(ABC):
         return await self._call_llm(
             ctx, dream=dream, language=language, debate_mode=debate_mode,
             council_mode=council_mode,
+            has_evolution_note=bool(evolution_note and evolution_note.strip()),
         )
 
     def get_full_instruction(
         self, dream: Optional[Any] = None, *, language: str = "pl",
         council_mode: str = "personal",
+        has_evolution_note: bool = False,
     ) -> str:
         """
         Składa pełną instrukcję systemową:
@@ -210,12 +216,30 @@ class BaseAgent(ABC):
         parts: list[str] = []
 
         if council_mode == "fa2":
-            fa2_role = _FA2_BUSINESS_ROLES.get(self.name, "")
+            # Kotwica tożsamości — tylko agenci Rady (nie Syez). Nie nadpisuje
+            # oryginalnej instrukcji agenta (ta dochodzi niżej jako `instr`).
+            if self.name != "Syez":
+                if language == "en":
+                    parts.append(
+                        "You are a member of the Freedom Architect Supervisory Council "
+                        "operating in a business context. Keep your original perspective and "
+                        "philosophy — do not turn into a generic business consultant."
+                    )
+                else:
+                    parts.append(
+                        "Jesteś członkiem Rady Nadzorczej Architekta Wolności działającym "
+                        "w kontekście biznesowym. Zachowaj swoją oryginalną perspektywę i "
+                        "filozofię — nie zamieniaj się w ogólnego konsultanta biznesowego."
+                    )
+            _fa2_roles = _FA2_BUSINESS_ROLES_EN if language == "en" else _FA2_BUSINESS_ROLES
+            fa2_role = _fa2_roles.get(self.name, "")
             if fa2_role:
-                parts.append(
-                    "═══ TRYB FREEDOM ARCHITECT (FA2) — ANALITYK BIZNESOWY ═══\n"
-                    + fa2_role
+                _fa2_header = (
+                    "═══ FREEDOM ARCHITECT MODE (FA2) — BUSINESS ANALYST ═══\n"
+                    if language == "en"
+                    else "═══ TRYB FREEDOM ARCHITECT (FA2) — ANALITYK BIZNESOWY ═══\n"
                 )
+                parts.append(_fa2_header + fa2_role)
             # FA2 Syez ma własną instrukcję
             fa2_instr = getattr(self, "instruction_fa2_pl", None)
             if fa2_instr:
@@ -234,12 +258,18 @@ class BaseAgent(ABC):
                 return "\n\n".join(p for p in parts if p)
         else:
             if dream is not None:
+                # AKSJOMAT 0 (Filozofia Fragmentu) jest wstrzykiwany TUTAJ, na
+                # czele kontekstu agenta — `dream.as_agent_context()` poprzedza
+                # Architekturę Marzenia blokiem Fragmentu (Uśmiech ↔ Perspektywa
+                # ↔ Droga). Hierarchia: AKSJOMAT 0 > AKSJOMAT 1 > AKSJOMAT 2.
+                # Fragment jest osadzony w DreamArchitecture, więc nie wymaga
+                # osobnego wstrzykiwania — płynie tym samym kanałem co marzenie.
                 try:
                     parts.append(dream.as_agent_context())
                 except Exception as e:  # pragma: no cover
                     logger.warning("Dream context skipped for %s: %s", self.name, e)
 
-        if language == "en" and council_mode != "fa2":
+        if language == "en":
             instr = getattr(self, "instruction_en", None) or self.instruction
         else:
             instr = getattr(self, "instruction_pl", None) or self.instruction
@@ -255,6 +285,21 @@ class BaseAgent(ABC):
             _postscript = AGENT_COMPLETION_POSTSCRIPT
         if _postscript:
             parts.append(_postscript)
+
+        # Instrukcja o notatce ewolucyjnej — tylko agenci Rady (nie Syez w personal).
+        if has_evolution_note and not (self.name == "Syez" and council_mode != "fa2"):
+            if language == "en":
+                parts.append(
+                    "Your evolution note is at the start of the user message. Engage with it "
+                    "consciously — either confirm continuity or deliberately revise your stance. "
+                    "Do not ignore it."
+                )
+            else:
+                parts.append(
+                    "Twoja notatka ewolucyjna znajduje się na początku wiadomości użytkownika. "
+                    "Odnieś się do niej świadomie — albo potwierdź ciągłość, albo świadomie zmień "
+                    "stanowisko. Nie ignoruj jej."
+                )
 
         if language == "en":
             parts.append(
@@ -382,6 +427,7 @@ class BaseAgent(ABC):
         language: str = "pl",
         debate_mode: str = "pelna",
         council_mode: str = "personal",
+        has_evolution_note: bool = False,
     ) -> str:
         cfg = dict(self.get_model_config(council_mode=council_mode))
         if debate_mode == "codzienny":
@@ -415,7 +461,8 @@ class BaseAgent(ABC):
                 logger.warning("Cache read failed for %s: %s", self.name, e)
 
         system_prompt = self.get_full_instruction(
-            dream=dream, language=language, council_mode=council_mode
+            dream=dream, language=language, council_mode=council_mode,
+            has_evolution_note=has_evolution_note,
         )
         user_msg = self._build_user_message(
             context, language=language, council_mode=council_mode
@@ -432,6 +479,16 @@ class BaseAgent(ABC):
                     temperature=float(cfg["temperature"]),
                 )
                 log_model = x_model
+            elif backend == "ollama":
+                o_model = map_claude_model_to_ollama(cfg["model"])
+                response_text, in_tok, out_tok = await ollama_chat_completion(
+                    system=system_prompt,
+                    user=user_msg,
+                    model=o_model,
+                    max_tokens=int(cfg["max_tokens"]),
+                    temperature=float(cfg["temperature"]),
+                )
+                log_model = o_model
             else:
                 assert client is not None
                 create_kw: dict = {
@@ -668,6 +725,14 @@ class BaseAgent(ABC):
             flags=re.DOTALL | re.IGNORECASE,
         )
 
+        # Jawne bloki ```json … ``` (także wewnątrz prozy) — usuń przed regułą ogólną.
+        cleaned = re.sub(
+            r"```json\b.*?```",
+            "",
+            cleaned,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
         cleaned = re.sub(
             r"```[a-zA-Z0-9_-]*\n?.*?```",
             "",
@@ -676,6 +741,15 @@ class BaseAgent(ABC):
         )
 
         cleaned = re.sub(r"^\s*```[a-zA-Z0-9_-]*\s*$", "", cleaned, flags=re.MULTILINE)
+
+        # Linie wyglądające na surowy JSON ({...} lub [...] na początku linii).
+        # Mermaid jest już ostashowany do placeholderów, więc go nie ruszamy.
+        cleaned = re.sub(
+            r'^\s*[{\[].*?[}\]],?\s*$',
+            "",
+            cleaned,
+            flags=re.MULTILINE,
+        )
 
         # usuń nagi obiekt JSON (gdy model dolepił bez fence)
         def _strip_naked_json(s: str) -> str:
@@ -708,14 +782,19 @@ class BaseAgent(ABC):
 
         cleaned = _strip_naked_json(cleaned)
 
+        # Próg sensownej prozy liczymy PRZED przywróceniem mermaid (sam tekst).
+        prose_only = re.sub(r"__SYEZ_PRESERVED_MERMAID_\d+__", "", cleaned)
+        prose_len = len(re.sub(r"\s+", " ", prose_only).strip())
+
         for i, block in enumerate(placeholders):
             cleaned = cleaned.replace(f"__SYEZ_PRESERVED_MERMAID_{i}__", block)
 
         # Krok 4: posprzątaj wiele pustych linii pod rząd
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
-        # Krok 5: jeśli zostało puste — graceful degradation
-        if not cleaned or len(cleaned) < 20:
+        # Krok 5: mniej niż 20 znaków sensownej prozy → graceful degradation.
+        # Wyjątek: zachowany diagram mermaid jest sam w sobie wartościową treścią.
+        if not cleaned or (prose_len < 20 and not placeholders):
             return (
                 "⚪ Syez: Synteza nie została wygenerowana w czytelnej formie. "
                 "Powtórz debatę lub uprość brief."

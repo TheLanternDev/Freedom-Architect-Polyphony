@@ -57,3 +57,25 @@ def test_agent_evolution_table_after_app_init(client_no_redis, fresh_db_path):
             assert await cur.fetchone()
 
     asyncio.run(chk())
+
+
+def test_agent_evolution_isolated_per_council_mode(fresh_db_path, monkeypatch):
+    """fa2 i personal nie mieszają notatek (izolacja przez sufiks tenanta)."""
+    monkeypatch.setenv("ARCHITEKT_DB_PATH", str(fresh_db_path))
+    import db.connection as dbc
+
+    monkeypatch.setattr(dbc, "DB_PATH", fresh_db_path)
+
+    async def inner():
+        await dbc.init_db(fresh_db_path)
+        async with aiosqlite.connect(str(fresh_db_path)) as db:
+            await repo.merge_agent_evolution_snippet(
+                db, "Kogit", "notatka biznesowa o metrykach NRR", council_mode="fa2"
+            )
+            await db.commit()
+            personal = await repo.list_agent_evolution(db, "personal")
+            fa2 = await repo.list_agent_evolution(db, "fa2")
+            assert "Kogit" not in personal           # personal nie widzi fa2
+            assert "Kogit" in fa2 and "NRR" in fa2["Kogit"]
+
+    asyncio.run(inner())

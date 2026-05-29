@@ -8,7 +8,7 @@ Dziękuję za zgłoszenie. Proszę po kolei:
 
 1. Backend: `uvicorn main:app --host 127.0.0.1 --port 8000` z aktywowanego `venv` (por. `INSTALL.md`).
 2. W UI: przycisk **Połączenie** → **Test /health** — czy jest zielony komunikat?
-3. Klucz: `ANTHROPIC_API_KEY` w pliku **`ui/.env`**, potem restart backendu.
+3. Klucz: `ANTHROPIC_API_KEY` w pliku **`src/.env`**, potem restart backendu.
 4. Jeśli zmieniali Państwo port — w tym samym oknie ustaw adres API i **Zastosuj**.
 
 ## „Load failed” / brak debaty

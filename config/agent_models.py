@@ -1,7 +1,7 @@
 """
 Mapa modeli per agent — werdykt Rady „Mój Świat".
 
-Filozofia (v3.4):
+Filozofia modeli (iteracja „jednolity model", app v3.3):
   Sonnet 4.6 → wszyscy agenci + Syez (jednolity model — spójność jakości i kosztów)
 """
 

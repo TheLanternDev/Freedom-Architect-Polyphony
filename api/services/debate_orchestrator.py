@@ -14,6 +14,35 @@ from api.services._types import BriefLike, PhaseCouncilResult, PhaseSynthesisRes
 
 logger = logging.getLogger(__name__)
 
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _log_orchestrator_issue(
+    step: str,
+    exc: BaseException,
+    *,
+    level: str = "warning",
+    debate_id: Optional[int] = None,
+    project_id: Optional[int] = None,
+) -> None:
+    """Log operacyjny bez PII — tylko metadane (tenant, debate_id, typ błędu)."""
+    from db.tenant import current_tenant_id as _tid
+
+    extra: dict[str, Any] = {
+        "orchestrator_step": step,
+        "error_type": type(exc).__name__,
+        "tenant_id": _tid(),
+    }
+    if debate_id is not None:
+        extra["debate_id"] = debate_id
+    if project_id is not None:
+        extra["project_id"] = project_id
+    msg = f"{step} failed: {type(exc).__name__}"
+    if level == "error":
+        logger.error(msg, exc_info=exc, extra=extra)
+    else:
+        logger.warning(msg, exc_info=exc, extra=extra)
+
 try:
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # pragma: no cover
@@ -113,7 +142,16 @@ def _agent_evolution_enabled() -> bool:
 
 
 def _extract_json_block(text: str) -> Optional[str]:
-    """Wyciąga pierwszy kompletny blok JSON z tekstu (obsługuje fenced code)."""
+    """Wyciąga pierwszy kompletny blok JSON. Jedno źródło prawdy: core
+    (balansowanie nawiasów). Naiwny find/rfind tylko jako ostateczny fallback,
+    gdy core niedostępne — żeby uniknąć rozjazdu logiki (#2)."""
+    try:
+        from core.dream_architect import _extract_json_block as _core_extract
+        return _core_extract(text)
+    except ImportError:
+        pass
+    except ValueError:
+        return None
     t = (text or "").strip()
     if t.startswith("```"):
         t = re.sub(r"^```[a-zA-Z0-9]*\s*", "", t)
@@ -274,9 +312,9 @@ async def _phase_council(
     evolution_by_agent: dict[str, str] = {}
     if db is not None and _agent_evolution_enabled():
         try:
-            evolution_by_agent = await repo.list_agent_evolution(db)
+            evolution_by_agent = await repo.list_agent_evolution(db, council_mode)
         except Exception as e:
-            logger.warning("agent evolution load failed: %s", e)
+            _log_orchestrator_issue("agent_evolution_load", e)
 
     lang = brief.language
 
@@ -305,6 +343,9 @@ async def _phase_council(
         except Exception as e:
             await queue.put((f"[błąd: {e}]", True))
 
+    def _is_error_voice(text: str) -> bool:
+        return text.startswith("[błąd") or text.startswith("[error")
+
     for a in council:
         yield _sse("agent_start", {"agent": a.name})
 
@@ -319,8 +360,13 @@ async def _phase_council(
                 text, is_final = q.get_nowait()
                 if is_final:
                     done_agents.add(a.name)
-                    full_voices[a.name] = text
-                    yield _sse("agent_done", {"agent": a.name, "full_text": text})
+                    if _is_error_voice(text):
+                        # AKSJOMAT 1: integralność Rady. Uszkodzony głos NIE trafia
+                        # do Syeza jako pełnoprawny — i degradacja jest WIDOCZNA (#3).
+                        yield _sse("agent_error", {"agent": a.name, "error": text})
+                    else:
+                        full_voices[a.name] = text
+                        yield _sse("agent_done", {"agent": a.name, "full_text": text})
                 else:
                     yield _sse("agent_chunk", {"agent": a.name, "chunk": text})
             except asyncio.QueueEmpty:
@@ -400,7 +446,7 @@ async def _attempt_completion_audit(
         except CompletionViolation as cv2:
             return synthesis_final, parsed_final, cv2.to_payload(), events
         except Exception as e:
-            logger.warning("Re-prompt audit failed: %s", e)
+            _log_orchestrator_issue("syez_audit_reprompt", e, debate_id=debate_id)
             return synthesis_final, parsed_final, cv.to_payload(), events
 
 
@@ -476,12 +522,33 @@ async def _phase_commit_and_finalize(
             for name, voice in full_voices.items():
                 await repo.save_voice(db, debate_id, name, voice)
             if _agent_evolution_enabled():
+                try:
+                    from core.agent_learner import extract_evolution_snippet
+                except ImportError:
+                    extract_evolution_snippet = None  # type: ignore[assignment]
                 for name, voice in full_voices.items():
-                    await repo.merge_agent_evolution_snippet(db, name, voice)
+                    # Kompresja zdaniowa (pierwsze + ostatnie zdanie, ~200 zn.)
+                    # PRZED zapisem do repo — spójna z rebuild_evolution_for_agent.
+                    # Bez tego repo.merge_agent_evolution_snippet obcinał surowy
+                    # głos „twardo" na snippet_cap (380 zn.), często w połowie
+                    # zdania. Repo nadal nakłada własny cap/dedup — to OK.
+                    snippet = (
+                        extract_evolution_snippet(name, voice)
+                        if extract_evolution_snippet is not None
+                        else voice
+                    )
+                    if snippet:
+                        await repo.merge_agent_evolution_snippet(db, name, snippet, council_mode=council_mode)
             await repo.save_synthesis(db, debate_id, synthesis_final, parsed_final)
             await db.commit()
         except Exception as e:
-            logger.warning("Persistence synthesis step failed: %s", e)
+            _log_orchestrator_issue(
+                "persistence_synthesis",
+                e,
+                level="error",
+                debate_id=debate_id,
+                project_id=project_id,
+            )
 
     # ── Auto-commitment (tryb schematy) ──────────────────────────────────
     if db is not None and debate_id is not None and brief.mode == "schematy" and project_id is not None:
@@ -502,12 +569,17 @@ async def _phase_commit_and_finalize(
                 },
             )
         except Exception as e:
-            logger.warning("auto 72h schematy commitment failed: %s", e)
+            _log_orchestrator_issue(
+                "auto_72h_commitment",
+                e,
+                debate_id=debate_id,
+                project_id=project_id,
+            )
 
     # ── Finał ────────────────────────────────────────────────────────────
     _debate_cost = round(spent_today_usd() - cost_start, 6)
     from db.tenant import current_tenant_id as _tid_analytics
-    asyncio.ensure_future(
+    _t = asyncio.create_task(
         _track(
             "debate_done", _tid_analytics(),
             debate_id=debate_id, mode=brief.mode, category=brief.category,
@@ -516,6 +588,8 @@ async def _phase_commit_and_finalize(
             project_id=project_id,
         )
     )
+    _background_tasks.add(_t)
+    _t.add_done_callback(_background_tasks.discard)
     yield _sse(
         "debate_done",
         {
@@ -595,7 +669,7 @@ async def _stream_debate_inner(
             if dream is not None:
                 yield dream_architecture_sse(dream)
         except Exception as e:
-            logger.warning("A0 dream distillation failed: %s", e)
+            _log_orchestrator_issue("a0_dream_distillation", e)
             yield _sse("dream_architecture_error", {"error": str(e)})
 
     # ── Zapis marzenia + projektu ────────────────────────────────────────────
@@ -613,14 +687,22 @@ async def _stream_debate_inner(
                     proj_row = await repo.get_project(db, project_id)
                     yield _sse("project_state", proj_row or {})
             except Exception as e:
-                logger.warning("Persistence A0 step failed: %s", e)
+                _log_orchestrator_issue(
+                    "persistence_a0",
+                    e,
+                    level="error",
+                    debate_id=debate_id,
+                    project_id=project_id,
+                )
 
         # ── Budget warning ───────────────────────────────────────────────────
         budget_evt = maybe_budget_warning_sse()
         if budget_evt:
             try:
                 from core.cost_tracking import maybe_fire_cost_webhook as _fw
-                asyncio.create_task(_fw({"event": "budget_soft_warning_sse"}))
+                _t = asyncio.create_task(_fw({"event": "budget_soft_warning_sse"}))
+                _background_tasks.add(_t)
+                _t.add_done_callback(_background_tasks.discard)
             except Exception:
                 pass
             yield budget_evt
@@ -662,7 +744,7 @@ async def _stream_debate_inner(
             try:
                 pairs = compute_live_pair_frictions(council_names, full_voices)
             except Exception as e:
-                logger.warning("live_tensions compute failed: %s", e)
+                _log_orchestrator_issue("live_tensions", e, debate_id=debate_id)
         yield _sse("live_tensions", {"pairs": pairs})
 
         # ── Phase 2: Synthesis (Syez + audit) ────────────────────────────────

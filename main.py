@@ -35,6 +35,7 @@ try:  # pragma: no cover
 except Exception:
     pass
 
+import asyncio
 import hmac
 import json
 import logging
@@ -53,7 +54,7 @@ from typing import Any, Literal, Optional
 import redis.asyncio as aioredis
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -63,6 +64,61 @@ from starlette.staticfiles import StaticFiles
 # ==================== KONFIG ====================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ArchitektWolnosci")
+
+
+def _init_sentry() -> None:
+    """Opcjonalny Sentry — tylko gdy SENTRY_DSN w ENV; bez DSN = no-op."""
+    dsn = (os.getenv("SENTRY_DSN") or "").strip()
+    if not dsn:
+        return
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+    except ImportError:
+        logger.warning(
+            "SENTRY_DSN ustawione, ale sentry-sdk niezainstalowane — Sentry pominięte"
+        )
+        return
+
+    traces_raw = (os.getenv("SENTRY_TRACES_SAMPLE_RATE") or "0").strip()
+    try:
+        traces_sample_rate = float(traces_raw)
+    except ValueError:
+        traces_sample_rate = 0.0
+
+    environment = (
+        os.getenv("SENTRY_ENVIRONMENT") or os.getenv("AW_ENV") or "development"
+    ).strip()
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=environment,
+        traces_sample_rate=traces_sample_rate,
+        integrations=[
+            StarletteIntegration(),
+            FastApiIntegration(),
+        ],
+        send_default_pii=False,
+    )
+    logger.info("Sentry aktywne (environment=%s)", environment)
+
+
+def _http_obs_context(request: Request) -> dict[str, str]:
+    """Metadane żądania do logów/Sentry — bez treści debat ani briefów (PII)."""
+    ctx: dict[str, str] = {
+        "http_method": request.method,
+        "http_path": request.url.path,
+    }
+    tid = getattr(request.state, "architekt_tenant_id", None)
+    if tid:
+        ctx["tenant_id"] = str(tid)
+    sub = getattr(request.state, "architekt_subject", None)
+    if sub:
+        ctx["subject"] = str(sub)
+    return ctx
+
+
+_init_sentry()
 
 # Rada Nadzorcza
 try:
@@ -108,7 +164,7 @@ except ImportError as e:
 
 redis_client: Optional[aioredis.Redis] = None
 
-from api.settings import cors_allow_origins, debate_rate_limit, openapi_urls, rate_limit_enabled
+from api.settings import cors_allow_origins, debate_rate_limit, openapi_urls, rate_limit_enabled, write_rate_limit
 from api.http_guard import architekt_http_guard
 from api.routers.meta import router as meta_router
 
@@ -133,35 +189,44 @@ try:
 except ImportError:
     voice_router = None  # type: ignore[assignment]
 
+try:
+    from api.routers.attachment import router as attachment_router
+except ImportError:
+    attachment_router = None  # type: ignore[assignment]
+
+try:
+    from api.routers.account import router as account_router
+except ImportError:
+    account_router = None  # type: ignore[assignment]
+
+try:
+    from api.routers.demo import router as demo_router
+except ImportError:
+    demo_router = None  # type: ignore[assignment]
+
 
 def _production_startup_checks() -> None:
-    """Blokuje start w AW_ENV=production bez wymaganych sekretów."""
-    from api.settings import is_production, api_key_legacy, jwt_secret_configured
+    """Preflight produkcyjny: brak krytycznych ENV → odmowa startu (fail-fast)."""
+    from api.settings import api_key_legacy, is_production, jwt_secret_configured, production_preflight_errors
+
     if not is_production():
         return
-    errors: list[str] = []
-    if not api_key_legacy() and not jwt_secret_configured():
-        errors.append(
-            "ARCHITEKT_API_KEY lub ARCHITEKT_JWT_SECRET musi być ustawiony w produkcji "
-            "(bez tego API jest całkowicie otwarte)."
-        )
+
     if api_key_legacy() and not jwt_secret_configured():
         logger.warning(
             "⚠️  ARCHITEKT_API_KEY (shared legacy key) jest ustawiony bez ARCHITEKT_JWT_SECRET. "
             "Shared key dzieli jeden tenant między wszystkich klientów i jest deprecated — "
             "ustaw ARCHITEKT_JWT_SECRET i przełącz klientów na /auth/login (per-user JWT)."
         )
-    if not (os.getenv("ANTHROPIC_API_KEY") or "").strip():
-        errors.append("ANTHROPIC_API_KEY wymagany w produkcji.")
-    if not (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip():
-        errors.append(
-            "ARCHITEKT_ADMIN_TOKEN wymagany w produkcji — bez niego /admin/* jest dostępny "
-            "dla każdego uwierzytelnionego użytkownika."
-        )
+
+    errors = production_preflight_errors()
     if errors:
         for e in errors:
             logger.critical("🛑 %s", e)
-        raise SystemExit("Startup zablokowany — brakujące sekrety produkcyjne. Patrz logi powyżej.")
+        raise SystemExit(
+            "Startup zablokowany — niebezpieczna konfiguracja produkcyjna. "
+            "Ustaw wymagane zmienne ENV (patrz logi powyżej)."
+        )
 
 
 @asynccontextmanager
@@ -206,7 +271,32 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error("⚠️ init_db failed: %s", e)
 
+    # Auto-scheduler Fazy 2 (AKSJOMAT 2): okresowy stale-sync + follow-upy.
+    # ENV AW_MAINTENANCE_INTERVAL_SEC: 0/brak = wyłączone (default), >0 = co N sekund.
+    _maint_task: Optional[asyncio.Task] = None
+    _maint_interval = int(os.getenv("AW_MAINTENANCE_INTERVAL_SEC", "0") or "0")
+    if DB_AVAILABLE and _maint_interval > 0:
+        async def _maintenance_loop() -> None:
+            while True:
+                await asyncio.sleep(_maint_interval)
+                logger.info("[Maintenance] Running scheduled tasks...")
+                try:
+                    await _run_phase2_startup_tasks()
+                except Exception as e:  # pętla nigdy nie wywala aplikacji
+                    logger.warning("[Maintenance] failed: %s", e)
+        _maint_task = asyncio.create_task(_maintenance_loop())
+        logger.info("✅ Maintenance włączone — interwał %ss", _maint_interval)
+    else:
+        logger.info("ℹ️ Maintenance wyłączone (AW_MAINTENANCE_INTERVAL_SEC=0 lub brak DB)")
+
+    from api.settings import demo_mode_enabled
+
+    if demo_mode_enabled():
+        logger.info("🎭 AW_DEMO_MODE=1 — interaktywne demo (sesje gościa, limity debat)")
+
     yield
+    if _maint_task is not None:
+        _maint_task.cancel()
     try:
         from db.backend import shutdown_database
 
@@ -232,9 +322,43 @@ app = FastAPI(
     openapi_url=_openapi_url,
 )
 
-limiter = Limiter(key_func=get_remote_address, enabled=rate_limit_enabled())
+# Storage rate-limitu: Redis (globalny przy wielu instancjach) lub in-memory
+# fallback (pojedynczy proces). Bez storage_uri slowapi liczy per-proces.
+_rl_storage = (os.getenv("REDIS_URL") or "").strip() or "memory://"
+limiter = Limiter(
+    key_func=get_remote_address,
+    enabled=rate_limit_enabled(),
+    storage_uri=_rl_storage,
+)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Nieobsłużone wyjątki: log + Sentry, klient dostaje generyczny 500 (bez stacktrace)."""
+    ctx = _http_obs_context(request)
+    logger.error(
+        "Unhandled exception: %s",
+        type(exc).__name__,
+        exc_info=exc,
+        extra=ctx,
+    )
+    try:
+        import sentry_sdk
+
+        with sentry_sdk.push_scope() as scope:
+            for key, value in ctx.items():
+                scope.set_tag(key, value)
+            sentry_sdk.capture_exception(exc)
+    except ImportError:
+        pass
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Wewnętrzny błąd serwera."},
+    )
+
 
 app.include_router(meta_router)
 if personal_router:
@@ -245,6 +369,12 @@ if auth_router:
     app.include_router(auth_router)
 if voice_router:
     app.include_router(voice_router)
+if attachment_router:
+    app.include_router(attachment_router)
+if account_router:
+    app.include_router(account_router)
+if demo_router:
+    app.include_router(demo_router)
 
 # ── Dwa Tryby (spec v1.0): osobisty (ten program) + biznesowy (business_fa2) ──
 # Mount sub-aplikacji `Freedom Architect 2.0` pod prefiksem /business. Lazy
@@ -262,11 +392,17 @@ except Exception as _biz_err:  # noqa: BLE001
 @app.get("/edition", tags=["meta"])
 async def _editions() -> dict[str, object]:
     """Spec v1.0 §3: przełącznik między trybami dostępny w każdej chwili."""
-    return {
+    from api.settings import demo_config_public
+
+    out: dict[str, object] = {
         "current": "personal",
         "available": list(_editions_available),
         "business_mount": "/business" if "business" in _editions_available else None,
     }
+    demo_cfg = demo_config_public()
+    if demo_cfg.get("enabled"):
+        out["demo"] = demo_cfg
+    return out
 
 
 app.add_middleware(
@@ -311,7 +447,7 @@ class Brief(BaseModel):
     mode: Literal["pelna", "marzen", "schematy", "codzienny"] = "pelna"
     language: Literal["pl", "en"] = "pl"
     intention: Optional[str] = Field(default=None, max_length=400)
-    extra_context: Optional[str] = Field(default=None, max_length=2000)
+    extra_context: Optional[str] = Field(default=None, max_length=8000)
 
     # legacy
     scale: Optional[Literal["startup", "enterprise", "small"]] = None
@@ -341,6 +477,69 @@ class DebateContinueRequest(BaseModel):
 
 
 # ==================== SSE HELPERS ====================
+
+_CONTINUATION_EXTRA_CTX_LIMIT = 2000
+
+
+def _build_continuation_extra_ctx(
+    chain: list[dict],
+    voices: list[dict],
+    leaf_debate_id: int,
+    *,
+    limit: int = _CONTINUATION_EXTRA_CTX_LIMIT,
+) -> str:
+    """Kontekst wątku dla kontynuacji: jedna tura = format jak dotąd; wiele tur = budżet ważony."""
+    if len(chain) == 1:
+        parent_row = chain[0]
+        synthesis_prior = (parent_row.get("synthesis_text") or "").strip()
+        lines = [
+            f"--- Kontynuacja wątku po debacie #{leaf_debate_id} ---",
+            f"Wcześniejszy brief:\n{parent_row['brief_description'][:900]}",
+            "--- Poprzednia synteza Syeza (wycinamy środek jeśli długa) ---",
+            synthesis_prior[:1600] if synthesis_prior else "(brak zapisanej syntezy)",
+            "--- Skrót poprzednich głosów ---",
+        ]
+        for v in voices:
+            raw_txt = (v.get("voice_text") or "").strip()
+            snippet = raw_txt[:400] + ("…" if len(raw_txt) > 400 else "")
+            lines.append(f"[{v.get('agent_name', '?')}]: {snippet}")
+        return "\n".join(lines)[:limit]
+
+    voice_lines = ["--- Skrót głosów z ostatniej tury ---"]
+    for v in voices:
+        raw_txt = (v.get("voice_text") or "").strip()
+        snippet = raw_txt[:400] + ("…" if len(raw_txt) > 400 else "")
+        voice_lines.append(f"[{v.get('agent_name', '?')}]: {snippet}")
+    voices_block = "\n".join(voice_lines)
+
+    header = f"--- Kontynuacja wątku ({len(chain)} tur, liść #{leaf_debate_id}) ---"
+    overhead = len(header) + 1 + len(voices_block) + 1
+    turn_budget = max(0, limit - overhead)
+
+    n = len(chain)
+    weights = list(range(1, n + 1))
+    weight_sum = sum(weights)
+
+    turn_parts: list[str] = []
+    for i, turn in enumerate(chain):
+        share = (
+            max(40, int(turn_budget * weights[i] / weight_sum))
+            if turn_budget
+            else 40
+        )
+        brief = (turn.get("brief_description") or "").strip()
+        synth = (turn.get("synthesis_text") or "").strip()
+        brief_cap = max(16, (share * 2) // 5)
+        synth_cap = max(16, share - brief_cap - 40)
+        turn_parts.append(
+            f"--- Tura #{turn['id']} ---\n"
+            f"Brief:\n{brief[:brief_cap]}\n"
+            f"Synteza:\n{synth[:synth_cap] if synth else '(brak zapisanej syntezy)'}"
+        )
+
+    combined = "\n".join([header, *turn_parts, voices_block])
+    return combined[:limit]
+
 
 from api.services._sse import sse as _sse
 
@@ -385,6 +584,15 @@ async def debate_stream(request: Request, brief: Brief):
         return StreamingResponse(fallback(), media_type="text/event-stream")
 
     await _ensure_hard_budget_or_raise()
+
+    if DB_AVAILABLE:
+        from api.services.demo_guard import ensure_demo_can_start_debate
+        from db.backend import acquire_http_db
+        from db.connection import DB_PATH as _DB
+        from db.tenant import current_tenant_id as _tid
+
+        async with acquire_http_db(_DB) as db:
+            await ensure_demo_can_start_debate(db, _tid(), brief)
 
     if brief.category == "projekt" and CORE_AVAILABLE and DB_AVAILABLE:
         from db.backend import acquire_http_db
@@ -432,24 +640,19 @@ async def debate_continue_stream(request: Request, payload: DebateContinueReques
     from db.connection import DB_PATH as _DB
 
     async with acquire_http_db(_DB) as db:
+        chain = await repo.list_debate_chain(
+            db, payload.previous_debate_id, max_turns=4
+        )
+        if not chain:
+            raise HTTPException(status_code=404, detail="Debata źródłowa nie istnieje")
         parent_row = await repo.get_debate_row(db, payload.previous_debate_id)
         if not parent_row:
             raise HTTPException(status_code=404, detail="Debata źródłowa nie istnieje")
         voices = await repo.list_voices_for_debate(db, payload.previous_debate_id)
 
-    synthesis_prior = (parent_row.get("synthesis_text") or "").strip()
-    lines = [
-        f"--- Kontynuacja wątku po debacie #{payload.previous_debate_id} ---",
-        f"Wcześniejszy brief:\n{parent_row['brief_description'][:900]}",
-        "--- Poprzednia synteza Syeza (wycinamy środek jeśli długa) ---",
-        synthesis_prior[:1600] if synthesis_prior else "(brak zapisanej syntezy)",
-        "--- Skrót poprzednich głosów ---",
-    ]
-    for v in voices:
-        raw_txt = (v.get("voice_text") or "").strip()
-        snippet = raw_txt[:400] + ("…" if len(raw_txt) > 400 else "")
-        lines.append(f"[{v.get('agent_name', '?')}]: {snippet}")
-    extra_ctx = "\n".join(lines)[:2000]
+    extra_ctx = _build_continuation_extra_ctx(
+        chain, voices, payload.previous_debate_id
+    )
 
     brief = Brief(
         description=payload.follow_up.strip(),
@@ -458,6 +661,17 @@ async def debate_continue_stream(request: Request, payload: DebateContinueReques
         intention=parent_row.get("intention"),
         extra_context=extra_ctx,
     )
+
+    if DB_AVAILABLE:
+        from api.services.demo_guard import ensure_demo_can_start_debate
+        from db.backend import acquire_http_db
+        from db.connection import DB_PATH as _DB
+        from db.tenant import current_tenant_id as _tid
+
+        async with acquire_http_db(_DB) as db:
+            await ensure_demo_can_start_debate(
+                db, _tid(), brief, is_continuation=True
+            )
 
     if brief.category == "projekt" and CORE_AVAILABLE and DB_AVAILABLE:
         async with acquire_http_db(_DB) as db:
@@ -610,7 +824,8 @@ class CommitmentCompletePayload(BaseModel):
 
 
 @app.post("/commitment")
-async def create_commitment_endpoint(payload: CommitmentCreate, db=Depends(get_db)):
+@limiter.limit(write_rate_limit())
+async def create_commitment_endpoint(request: Request, payload: CommitmentCreate, db=Depends(get_db)):
     return await _create_commitment_svc(
         text=payload.text,
         debate_id=payload.debate_id,

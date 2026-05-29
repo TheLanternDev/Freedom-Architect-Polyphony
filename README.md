@@ -72,20 +72,22 @@ Rdzeń domenowy: `core/` (dream_architect, completion_enforcer, safety, live_ten
 
 **Publiczna produkcja:** opcjonalny klucz HTTP `ARCHITEKT_API_KEY` (Bearer na API), token `ARCHITEKT_ADMIN_TOKEN` dla `/admin/trigger-followups`, rate limit debat (`AW_RATE_DEBATE_PER_MINUTE`) — szczegóły: [`docs/SECURITY_PRODUCTION.md`](docs/SECURITY_PRODUCTION.md).
 
+**Demo interaktywne (wersja próbna z własnym briefem):** [`docs/DEMO.md`](docs/DEMO.md) — `AW_DEMO_MODE=1`, sesje gościa `/auth/demo`, limity debat.
+
 ## Frontend (Tauri / przeglądarka)
 
 ```bash
-cd ui
+cd src
 npm install
 npm run dev              # sam Vite — proxy API: VITE_API_URL=http://127.0.0.1:8000
 npm run tauri:dev        # okno desktopowe Tauri (backend musi działać osobno)
 ```
 
-Plik **`ui/.env`** trzyma sekrety i ustawienia wspólne dla UI i backendu: m.in. **`VITE_API_URL`** (adres FastAPI; domyślnie `http://localhost:8000`), **`ANTHROPIC_API_KEY`**, **`XAI_API_KEY`**. Python ładuje ten plik przy starcie (`env_bootstrap.py`); opcjonalnie drugi plik `.env` w korzeniu repo uzupełnia tylko puste klucze, albo ustaw **`AW_ENV_FILE`** na własną ścieżkę. Przy **`npm run build`** bez `VITE_API_URL`, frontend w produkcji używa pustego base URL — działa z API pod tą samą domeną.
+Plik **`src/.env`** trzyma sekrety i ustawienia wspólne dla UI i backendu: m.in. **`VITE_API_URL`** (adres FastAPI; domyślnie `http://localhost:8000`), **`ANTHROPIC_API_KEY`**, **`XAI_API_KEY`**. Python ładuje ten plik przy starcie (`env_bootstrap.py`); opcjonalnie drugi plik `.env` w korzeniu repo uzupełnia tylko puste klucze, albo ustaw **`AW_ENV_FILE`** na własną ścieżkę. Przy **`npm run build`** bez `VITE_API_URL`, frontend w produkcji używa pustego base URL — działa z API pod tą samą domeną.
 
 ### Jedna witryna: API + zbudowany React (`AW_SERVE_UI`)
 
-Po `npm run build` w `ui/` ustaw `AW_SERVE_UI=1` i uruchom backend — FastAPI obsłuży `GET /` oraz `/assets/*` z `ui/dist` (jedna origin dla przeglądarki). Opcjonalnie `AW_UI_DIST=/ścieżka/do/dist`.
+Po `npm run build` w `src/` ustaw `AW_SERVE_UI=1` i uruchom backend — FastAPI obsłuży `GET /` oraz `/assets/*` z `src/dist` (jedna origin dla przeglądarki). Opcjonalnie `AW_UI_DIST=/ścieżka/do/dist`.
 
 Stripe/sign-in nie są w kodzie — ten punkt to fundament wdrożenia web bez osobnego serwera plików.
 

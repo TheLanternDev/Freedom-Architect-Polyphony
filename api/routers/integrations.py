@@ -35,7 +35,6 @@ class CalendarConfig(BaseModel):
 
 class ExportRequest(BaseModel):
     commitment_ids: list[int] = Field(default_factory=list)
-    milestone_ids: list[int] = Field(default_factory=list)
     dream_id: Optional[str] = None
 
 
@@ -105,6 +104,7 @@ async def export_to_notion(req: ExportRequest):
             rows = await repo.list_commitments_due(db, within_hours=8760)
             row = next((r for r in rows if r["id"] == cid), None)
             if not row:
+                results.append({"commitment_id": cid, "ok": False, "error": "poza horyzontem follow-up"})
                 continue
             props = {
                 "Name": {"title": [{"text": {"content": row["text"][:200]}}]},
@@ -158,6 +158,7 @@ async def export_to_todoist(req: ExportRequest):
             rows = await repo.list_commitments_due(db, within_hours=8760)
             row = next((r for r in rows if r["id"] == cid), None)
             if not row:
+                results.append({"commitment_id": cid, "ok": False, "error": "poza horyzontem follow-up"})
                 continue
             due = row.get("due_at", "")[:10] if row.get("due_at") else None
             try:
@@ -187,6 +188,7 @@ async def export_to_gcal(req: ExportRequest):
             rows = await repo.list_commitments_due(db, within_hours=8760)
             row = next((r for r in rows if r["id"] == cid), None)
             if not row:
+                results.append({"commitment_id": cid, "ok": False, "error": "poza horyzontem follow-up"})
                 continue
             due = row.get("due_at") or row.get("follow_up_at")
             if not due:

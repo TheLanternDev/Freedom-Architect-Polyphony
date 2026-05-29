@@ -462,6 +462,22 @@ export const DICT: Record<string, Phrase> = {
     en: "No Web Speech API — recording audio (Whisper fallback).",
   },
 
+  // Załączniki (tekstowe → extra_context)
+  "brief.attach.btn": { pl: "Dołącz plik", en: "Attach file" },
+  "brief.attach.hint": {
+    pl: "Pliki tekstowe oraz .pdf / .docx — treść trafia do kontekstu briefu.",
+    en: "Text files plus .pdf / .docx — content is added to the brief context.",
+  },
+  "brief.attach.remove": { pl: "Usuń", en: "Remove" },
+  "brief.attach.unsupported": {
+    pl: "Pominięto (nieobsługiwany typ): ",
+    en: "Skipped (unsupported type): ",
+  },
+  "brief.attach.truncated": {
+    pl: "Załączniki przycięto do limitu kontekstu (8000 znaków).",
+    en: "Attachments truncated to the context limit (8000 chars).",
+  },
+
   // Dream Wizard (#1 v2)
   "wizard.title": { pl: "Architekt Marzenia", en: "Dream Architect" },
   "wizard.step.dream": { pl: "Twoje marzenie", en: "Your dream" },
@@ -555,6 +571,38 @@ export const DICT: Record<string, Phrase> = {
     en: "Continue without login (single-user mode)",
   },
   "login.logout": { pl: "Wyloguj", en: "Log out" },
+
+  "demo.badge": { pl: "Wersja demo", en: "Demo version" },
+  "demo.intro": {
+    pl: "Uruchom interaktywną debatę Rady z własnym briefem. Sesja jest tymczasowa — bez rejestracji.",
+    en: "Run an interactive Council debate with your own brief. Temporary session — no sign-up.",
+  },
+  "demo.limit_debates": {
+    pl: "Do {n} debat na sesję",
+    en: "Up to {n} debates per session",
+  },
+  "demo.limit_chars": {
+    pl: "Brief do {n} znaków",
+    en: "Brief up to {n} characters",
+  },
+  "demo.limit_ephemeral": {
+    pl: "Dane sesji nie są trwałe",
+    en: "Session data is not permanent",
+  },
+  "demo.btn_start": { pl: "Rozpocznij demo", en: "Start demo" },
+  "demo.footer": {
+    pl: "Pełna wersja (founders / lokalna instalacja) — bez limitów, z własnym kontem.",
+    en: "Full version (founders / local install) — no limits, your own account.",
+  },
+  "demo.banner": {
+    pl: "Demo — pozostało debat: {n}. Dane sesji są tymczasowe.",
+    en: "Demo — debates remaining: {n}. Session data is temporary.",
+  },
+  "demo.banner_exhausted": {
+    pl: "Limit demo wyczerpany. Pełna wersja: instalacja lokalna / founders.",
+    en: "Demo limit reached. Full version: local install / founders.",
+  },
+  "demo.new_session": { pl: "Nowa sesja demo", en: "New demo session" },
 };
 
 export function t(lang: Lang, key: string): string {

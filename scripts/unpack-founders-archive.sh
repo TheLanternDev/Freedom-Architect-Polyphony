@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# unpack-founders-archive.sh — rozpakowuje archiwum founders (architekt-wolnosci-*.tar.gz).
+# unpack-founders-archive.sh — rozpakowuje archiwum founders / beta (architekt-wolnosci-*.tar.gz).
 #
 # Użycie:
 #   ./scripts/unpack-founders-archive.sh plik.tar.gz [katalog_docelowy]
 #   make unpack ARCHIVE=plik.tar.gz [DEST=katalog]
 #
-# Wyklucza: ui/, node_modules/, dist/, .DS_Store, ._*, .pytest_cache/, .ruff_cache/
-# Czyści metadane Apple po rozpakowaniu. Sprawdza core/, agents/, api/, db/.
+# Wyklucza przy rozpakowaniu (legacy): node_modules/, dist/, cache Apple.
+# Sprawdza core/, agents/, api/, db/, src/package.json.
 set -euo pipefail
 
 ARCHIVE="${1:-}"
@@ -29,7 +29,6 @@ DEST="$(cd "$DEST" && pwd)"
 ARCHIVE="$(cd "$(dirname "$ARCHIVE")" && pwd)/$(basename "$ARCHIVE")"
 
 EXCLUDES=(
-  --exclude='ui'
   --exclude='node_modules'
   --exclude='dist'
   --exclude='.DS_Store'
@@ -84,6 +83,13 @@ for dir in core agents api db; do
     echo "  ✓ $dir/"
   fi
 done
+
+if [[ ! -f "$ROOT/src/package.json" ]]; then
+  echo "  ✗ brak: src/package.json" >&2
+  missing=1
+else
+  echo "  ✓ src/package.json"
+fi
 
 if (( missing )); then
   echo "Walidacja nie powiodła się." >&2

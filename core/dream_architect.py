@@ -33,7 +33,9 @@ from config.llm_providers import (
     anthropic_api_key,
     anthropic_omits_temperature,
     effective_llm_backend,
+    map_claude_model_to_ollama,
     map_claude_model_to_xai,
+    ollama_chat_completion,
     xai_chat_completion,
 )
 
@@ -79,8 +81,97 @@ class NextMove(BaseModel):
     )
 
 
+class Fragment(BaseModel):
+    """AKSJOMAT 0 — Filozofia Fragmentu (Uśmiech ↔ Perspektywa ↔ Droga).
+
+    NAJBARDZIEJ FUNDAMENTALNA warstwa systemu — głębsza i NADRZĘDNA względem
+    AKSJOMATU 1 (Architektura Marzenia) i AKSJOMATU 2 (Domknięcie). Tamte dwa
+    są narzędziami SŁUŻĄCYMI temu żywemu, samopodtrzymującemu się układowi —
+    nigdy odwrotnie.
+
+    Trzy elementy tworzą symetryczny system (kompas, nie mapa):
+      • Uśmiech     — postawa ciekawości skierowanej w siebie.
+      • Perspektywa — „jak patrzeć” zamiast „gdzie dojść”; nieskończona.
+      • Droga       — codzienne, rzeczywiste poruszanie się.
+
+    Na tym etapie pola przechowują stan w prostej formie tekstowej (szkielet).
+    Świadomie NIE budujemy tu zaawansowanego zarządzania stanem — struktura ma
+    być solidna i rozszerzalna (np. pod Daily Signal), nie rozbudowana.
+    """
+
+    usmiech: str = Field(default="", description="Aktualna postawa Uśmiechu (ciekawość ku sobie).")
+    perspektywa: str = Field(default="", description="Aktualny kierunek patrzenia (nie cel docelowy).")
+    droga: str = Field(default="", description="Co realnie podtrzymuje ruch na co dzień.")
+
+    def update(
+        self,
+        *,
+        usmiech: Optional[str] = None,
+        perspektywa: Optional[str] = None,
+        droga: Optional[str] = None,
+    ) -> "Fragment":
+        """Prosta, świadoma aktualizacja stanu trzech elementów. Zwraca self."""
+        if usmiech is not None:
+            self.usmiech = usmiech.strip()
+        if perspektywa is not None:
+            self.perspektywa = perspektywa.strip()
+        if droga is not None:
+            self.droga = droga.strip()
+        return self
+
+    def weakest_element(self) -> str:
+        """Zwraca etykietę elementu z najsłabszym lub pustym stanem ('Uśmiech', 'Perspektywa' lub 'Droga')."""
+        elementy = (
+            ("Uśmiech", self.usmiech),
+            ("Perspektywa", self.perspektywa),
+            ("Droga", self.droga),
+        )
+        # Puste pole jest zawsze najsłabsze; przy remisie wygrywa kolejność
+        # Uśmiech → Perspektywa → Droga. Bez pustych: najkrótszy (najmniej nazwany).
+        return min(elementy, key=lambda e: len(e[1].strip()))[0]
+
+    def get_fragment_context(self) -> str:
+        """Sformatowany nagłówek AKSJOMATU 0 — najwyższy filtr dla Rady i Syeza.
+
+        Frame trzech elementów renderuje się ZAWSZE (sama filozofia jest
+        wartością); stan wpisywany jest tam, gdzie został nazwany. Puste pole =
+        szkielet do nazwania, nie błąd.
+        """
+
+        def _line(label: str, val: str, hint: str) -> str:
+            v = (val or "").strip()
+            return f"  • {label}: {v}" if v else f"  • {label}: (do nazwania — {hint})"
+
+        return (
+            "═══ AKSJOMAT 0 — FILOZOFIA FRAGMENTU (FILTR NAJWYŻSZY) ═══\n"
+            "Warstwa NADRZĘDNA względem Architektury Marzenia (AKSJOMAT 1) i\n"
+            "Domknięcia (AKSJOMAT 2). Nie „cel → osiągnięcie → pustka”, lecz żywy,\n"
+            "samopodtrzymujący się układ trzech elementów (kompas, nie mapa):\n"
+            + _line("Uśmiech", self.usmiech, "ciekawość ku sobie: „ciekawe, jak sobie z tym poradzę”")
+            + "\n"
+            + _line("Perspektywa", self.perspektywa, "jak patrzeć, nie gdzie dojść — perspektywa jest nieskończona")
+            + "\n"
+            + _line("Droga", self.droga, "co realnie podtrzymuje codzienny ruch")
+            + "\n"
+            "Każda obserwacja i sugestia ma najpierw służyć utrzymaniu tego układu\n"
+            "przy życiu — dopiero potem marzeniu i domknięciu.\n"
+            "══════════════════════════════════════════════════════════════════\n"
+            f"Element wymagający uwagi dziś: {self.weakest_element()}"
+        )
+
+
 class DreamArchitecture(BaseModel):
-    """Pełen szkielet marzenia stojącego za briefem Patryka."""
+    """Pełen szkielet marzenia stojącego za briefem Patryka.
+
+    Uwaga hierarchii: pole `fragment` (AKSJOMAT 0) jest warstwą NADRZĘDNĄ wobec
+    samej Architektury Marzenia (AKSJOMAT 1). Marzenie i domknięcie służą
+    utrzymaniu żywego układu Uśmiech ↔ Perspektywa ↔ Droga, nie odwrotnie.
+    """
+
+    fragment: Fragment = Field(
+        default_factory=Fragment,
+        description="AKSJOMAT 0 — filtr najwyższy (Uśmiech ↔ Perspektywa ↔ Droga).",
+    )
 
     dream_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     raw_brief: str = Field(..., min_length=1)
@@ -137,13 +228,19 @@ class DreamArchitecture(BaseModel):
         """
         Tekstowy nagłówek wstrzykiwany do system promptu KAŻDEGO agenta Rady.
         Agenci mają wiedzieć, JAKIE marzenie wspierają — to wymóg AKSJOMATU 1.
+
+        Hierarchia: blok AKSJOMATU 0 (Filozofia Fragmentu) jest wypisywany
+        PRZED Architekturą Marzenia, bo jest wobec niej NADRZĘDNY. Marzenie
+        i domknięcie służą utrzymaniu żywego układu Uśmiech ↔ Perspektywa ↔
+        Droga, nie odwrotnie.
         """
         milestones_block = "\n".join(
             f"  • {m.title}" + (f" (do: {m.due})" if m.due else "")
             for m in self.milestones[:5]
         ) or "  (brak — Rada ma pomóc je nazwać)"
         return (
-            "═══ ARCHITEKTURA MARZENIA (kontekst nadrzędny dla całej Rady) ═══\n"
+            self.fragment.get_fragment_context() + "\n"
+            "═══ ARCHITEKTURA MARZENIA (kontekst służący AKSJOMATOWI 0) ═══\n"
             f"Rdzenne marzenie Patryka:\n  → {self.core_dream}\n"
             f"Kotwica wartości:\n  → {self.value_anchor}\n"
             f"Filary spełnienia:\n  • " + "\n  • ".join(self.pillars) + "\n"
@@ -154,6 +251,21 @@ class DreamArchitecture(BaseModel):
             + "\n══════════════════════════════════════════════════════════════════\n"
             "Twoje 3 zdania mają wspierać tę architekturę, nie ją rozcieńczać."
         )
+
+    def get_fragment_signal_focus(self) -> str:
+        """
+        Zwraca zwięzłą, wysokosygnałową sugestię opartą na najsłabszym elemencie Fragmentu.
+        Sugestia ma pomagać w wyborze zadań na najbliższe 18 godzin.
+        """
+        f = self.fragment
+        if not (f.usmiech.strip() or f.perspektywa.strip() or f.droga.strip()):
+            return ""
+        sugestie = {
+            "Uśmiech": "Na 18h: jedno zadanie podjęte z ciekawością „ciekawe, jak sobie z tym poradzę”, nie z przymusu.",
+            "Perspektywa": "Na 18h: jeden ruch, który zmienia kąt patrzenia — nie domykanie kolejnego celu.",
+            "Droga": "Na 18h: jeden mały, realny krok podtrzymujący codzienny ruch — bez skoków.",
+        }
+        return sugestie[f.weakest_element()]
 
     def for_syez(self) -> str:
         """Pełna serializacja przekazywana Syezowi przed syntezą."""
@@ -345,8 +457,22 @@ def _fallback_dream(raw_brief: str, *, language: str = "pl") -> DreamArchitectur
 _DREAM_CACHE: dict[str, DreamArchitecture] = {}
 
 
+def _tenant_scope() -> str:
+    """Granica tenanta dla cache (#4). Fallback 'default' gdy warstwa
+    multi-tenant niedostępna (czyste testy domeny / tryb single-user)."""
+    try:
+        from db.tenant import current_tenant_id
+        return current_tenant_id() or "default"
+    except Exception:
+        return "default"
+
+
 def _cache_key(raw_brief: str) -> str:
-    return hashlib.sha256(raw_brief.strip().encode("utf-8")).hexdigest()
+    # Tenant w kluczu — dwóch użytkowników z tym samym briefem NIE współdzieli
+    # obiektu marzenia w pamięci procesu (#4).
+    return hashlib.sha256(
+        f"{_tenant_scope()}:{raw_brief.strip()}".encode("utf-8")
+    ).hexdigest()
 
 
 def _extract_json_block(text: str) -> str:
@@ -555,6 +681,25 @@ async def adistill_dream(
             return dream
         except Exception as e:
             logger.warning("adistill_dream: błąd xAI (%s) — fallback (bez cache).", e)
+            return _fallback_dream(raw_brief, language=language)
+
+    if backend == "ollama":
+        try:
+            om = map_claude_model_to_ollama(model_name)
+            text, _, _ = await ollama_chat_completion(
+                system=system_prompt,
+                user=user_content,
+                model=om,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            payload = _parse_llm_json_object(text)
+            dream = _build_dream_from_payload(raw_brief, payload)
+            _DREAM_CACHE[key] = dream
+            logger.info("adistill_dream: marzenie zdestylowane (dream_id=%s)", dream.dream_id)
+            return dream
+        except Exception as e:
+            logger.warning("adistill_dream: błąd Ollama (%s) — fallback (bez cache).", e)
             return _fallback_dream(raw_brief, language=language)
 
     try:

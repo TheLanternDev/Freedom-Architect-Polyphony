@@ -407,15 +407,24 @@ def validate_syez_prose_completion_audit(text: str) -> None:
     hits_rem = bool(re.search(_CLUSTER_REM, low))
     hits_blk = bool(re.search(_CLUSTER_BLK, low))
     hits_nxt = bool(re.search(_CLUSTER_NEXT, low))
-    hits_open = bool(re.search(_CLUSTER_OPEN, low))
+    # `?` to słaby sygnał — pytanie otwarte liczy się tylko, gdy obok znaku
+    # zapytania jest jawny marker pytania (nie sam pytajnik gdziekolwiek).
+    hits_open = bool(re.search(_CLUSTER_OPEN, low)) and "?" in low and bool(
+        re.search(r"pytani|\bczy\b|co\s+(?:jeśli|by|wydaje)|jak\s+(?:widzisz|"
+                  r"czujesz|oceniasz|rozwiąz|nadajesz)|zastanów|jakiego\s+odpowiedzi", low)
+    )
     hits_ok = hits_rem + hits_blk + hits_nxt + hits_open
-    if hits_ok < 4:
+    # AKSJOMAT 2: `remaining` (co zostało) i `next_move` (najmniejszy ruch) to
+    # NIEZBYWALNY rdzeń audytu domknięcia. Sam pytajnik + dwa słowa-klucze nie
+    # mogą udawać audytu. Wymagamy obu rdzeniowych klastrów + łącznie ≥3 z 4.
+    core_present = hits_rem and hits_nxt
+    if not core_present or hits_ok < 3:
         raise CompletionViolation(
             kind="prose_audit_signals_weak",
             message=(
                 "AKSJOMAT 2 / struktura syntezy: w prozie brakuje wyraźnych "
-                "sygnałów audytu (checklista / blokada / następny ruch / "
-                "pytania otwarte)."
+                "sygnałów audytu. Obowiązkowo: co zostało z checklisty ORAZ "
+                "najmniejszy następny ruch; dodatkowo blokada i/lub pytania otwarte."
             ),
             details={
                 "clusters_matched": {
@@ -424,8 +433,9 @@ def validate_syez_prose_completion_audit(text: str) -> None:
                     "next_move": hits_nxt,
                     "open_questions": hits_open,
                 },
+                "core_required": {"remaining": hits_rem, "next_move": hits_nxt},
                 "matched_ok_total": hits_ok,
-                "needed_ok_total": 4,
+                "needed_ok_total": 3,
             },
         )
 

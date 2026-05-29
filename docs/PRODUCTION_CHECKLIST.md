@@ -11,6 +11,10 @@
 - **Cost log**: `cost_log.jsonl` przy każdym callu (tier/model/tokens/$).
 - **Safety**: word-boundary regex + Unicode-normalize.
 - **TypeScript**: `tsc --noEmit` clean.
+- **RODO (konto)**: `GET /account/export`, `DELETE /account` (JWT, potwierdzenie `USUŃ MOJE KONTO`), purge tenanta w repo.
+- **Observability**: opcjonalny Sentry (`SENTRY_DSN`), globalny handler 500 bez stacktrace, logi bez PII (metadane: path, tenant_id).
+- **Preflight produkcyjny**: przy `AW_ENV=production` start odmawiany bez `ARCHITEKT_JWT_SECRET`, `AW_CORS_ORIGINS` (konkretna lista, nie `*`), `REDIS_URL`, `ANTHROPIC_API_KEY`, `ARCHITEKT_ADMIN_TOKEN`.
+- **CORS fail-fast**: produkcja nie startuje z `AW_CORS_ORIGINS=*` ani bez zmiennej.
 
 ## Do wykonania ręcznie 🔧
 
@@ -25,7 +29,7 @@ Sprawdź: `cost_log.jsonl` przyrasta, `perspectives` ma 9 wpisów, synteza po po
 
 ### 2) Tauri build
 ```bash
-cd ui
+cd src
 npm install              # rollup-native dla Twojej platformy
 npm run tauri:dev        # natywne okno dev
 # albo:
@@ -33,10 +37,21 @@ npm run tauri:build      # bundle (.app / .dmg / .msi)
 ```
 Wymaga: Rust toolchain (`rustc`, `cargo`), Xcode CLT na macOS.
 
-### 3) Konfiguracja produkcyjna (jeśli serwer publiczny)
-- W `src/.env`: ustaw `AW_API_TOKEN=<silny-token>` + `ARCHITEKT_API_KEY=<ten-sam>`
-- UI: w modal „Połączenie" (LocalSetupModal) podaj klucz dla `Authorization: Bearer`.
-- W `business_fa2`: ustaw `AW_FA2_RATE=10` (zaostrz limit), `AW_CORS_ORIGINS=https://twoja-domena.pl`.
+### 3) Konfiguracja produkcyjna (serwer publiczny)
+Wymagane ENV (aplikacja **nie wystartuje** bez nich gdy `AW_ENV=production`):
+
+| Zmienna | Cel |
+|---------|-----|
+| `ARCHITEKT_JWT_SECRET` | Logowanie JWT, multi-tenant |
+| `AW_CORS_ORIGINS` | CSV konkretnych origins, np. `https://twoja-domena.pl` (nie `*`) |
+| `REDIS_URL` | Refresh tokeny, globalny rate-limit, JTI revoke |
+| `ANTHROPIC_API_KEY` | Rada / LLM |
+| `ARCHITEKT_ADMIN_TOKEN` | `/admin/*` |
+| `SENTRY_DSN` | (opcjonalnie) agregacja błędów |
+
+Dodatkowo w `src/.env` (dev) lub sekretach deployu:
+- UI: klucz JWT z `POST /auth/login` w nagłówku `Authorization: Bearer`
+- `business_fa2`: `AW_FA2_RATE=10` (zaostrz limit)
 
 ## Architektura per-request mode
 

@@ -24,6 +24,8 @@ except ImportError:
     load_budget_snapshot = None  # type: ignore[misc,assignment]
     maybe_fire_cost_webhook = None  # type: ignore[misc,assignment]
 
+_background_tasks: set[asyncio.Task] = set()
+
 
 def spent_today_usd() -> float:
     """Koszt dzienny UTC z cost_log.jsonl."""
@@ -40,7 +42,7 @@ async def ensure_hard_budget_or_raise() -> None:
     if block is None:
         return
     if maybe_fire_cost_webhook is not None:
-        asyncio.create_task(
+        _t = asyncio.create_task(
             maybe_fire_cost_webhook(
                 {
                     "event": "budget_hard_block",
@@ -50,6 +52,8 @@ async def ensure_hard_budget_or_raise() -> None:
                 }
             )
         )
+        _background_tasks.add(_t)
+        _t.add_done_callback(_background_tasks.discard)
     raise HTTPException(
         status_code=402,
         detail={

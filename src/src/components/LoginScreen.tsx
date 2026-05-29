@@ -5,6 +5,10 @@
 import { useCallback, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { useLang } from "@/lib/i18n";
+import {
+  type DemoPublicConfig,
+  startDemoSession,
+} from "@/lib/demoConfig";
 
 const LS_JWT = "aw_jwt_token";
 const LS_USER = "aw_user_display";
@@ -42,9 +46,10 @@ export function getStoredUserDisplay(): string | null {
 
 interface Props {
   onAuthenticated: () => void;
+  demoConfig?: DemoPublicConfig | null;
 }
 
-export function LoginScreen({ onAuthenticated }: Props) {
+export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
   const { t } = useLang();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
@@ -96,6 +101,66 @@ export function LoginScreen({ onAuthenticated }: Props) {
     setStoredJwt(null);
     onAuthenticated();
   }, [onAuthenticated]);
+
+  const startDemo = useCallback(async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const result = await startDemoSession();
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      onAuthenticated();
+    } finally {
+      setBusy(false);
+    }
+  }, [onAuthenticated]);
+
+  if (demoConfig?.enabled) {
+    return (
+      <div className="min-h-screen bg-navy flex items-center justify-center">
+        <div className="w-full max-w-md mx-4 rounded-2xl border border-amber-400/20 bg-white/[0.02] p-6 shadow-2xl">
+          <p className="text-[10px] uppercase tracking-widest text-amber-300/80 mb-2">
+            {t("demo.badge")}
+          </p>
+          <h1 className="text-[20px] font-medium text-white mb-1">
+            {t("app.brand")}
+          </h1>
+          <p className="text-[12px] text-white/45 mb-4 leading-relaxed">
+            {t("demo.intro")}
+          </p>
+          <ul className="text-[11px] text-white/35 space-y-1 mb-6 list-disc pl-4">
+            <li>
+              {t("demo.limit_debates").replace(
+                "{n}",
+                String(demoConfig.max_debates),
+              )}
+            </li>
+            <li>
+              {t("demo.limit_chars").replace(
+                "{n}",
+                String(demoConfig.max_brief_chars),
+              )}
+            </li>
+            <li>{t("demo.limit_ephemeral")}</li>
+          </ul>
+          {error && <p className="text-[11px] text-red-400 mb-3">{error}</p>}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void startDemo()}
+            className="w-full py-2.5 rounded-lg bg-teal text-navy font-medium text-[13px] hover:bg-teal-light transition-colors disabled:opacity-30"
+          >
+            {busy ? "..." : t("demo.btn_start")}
+          </button>
+          <p className="text-[10px] text-white/25 mt-4 text-center leading-relaxed">
+            {t("demo.footer")}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-navy flex items-center justify-center">

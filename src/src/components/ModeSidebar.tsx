@@ -13,9 +13,10 @@ interface Props {
   selected: Brief["mode"];
   onChange: (m: Brief["mode"]) => void;
   disabled: boolean;
+  allowedModes?: string[];
 }
 
-export function ModeSidebar({ selected, onChange, disabled }: Props) {
+export function ModeSidebar({ selected, onChange, disabled, allowedModes }: Props) {
   const { t } = useLang();
   const fa2 = isCouncilFa2();
   const modeKey = (k: string) => (fa2 ? `mode.fa2.${k}` : `mode.${k}`);
@@ -24,7 +25,9 @@ export function ModeSidebar({ selected, onChange, disabled }: Props) {
       <p className="text-[10px] uppercase tracking-widest text-white/35 px-2 mb-2">
         {t(fa2 ? "mode.fa2.title" : "mode.title")}
       </p>
-      {MODE_IDS.map(({ id, key }) => {
+      {MODE_IDS.filter(
+        ({ id }) => !allowedModes?.length || allowedModes.includes(id),
+      ).map(({ id, key }) => {
         const active = selected === id;
         const label = t(`${modeKey(key)}.label`);
         const hint = t(`${modeKey(key)}.hint`);

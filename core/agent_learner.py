@@ -9,15 +9,13 @@ Mechanizm:
    obserwacje z głosu agenta (kompresja do ~200 znaków).
 2. Periodycznie: `rebuild_evolution_notes()` przebudowuje rolling notatkę
    z ostatnich N debat.
-3. Opcjonalnie: `suggest_temperature_adjustment()` proponuje korekty
-   temperatur na podstawie jakości i trafności głosów.
 """
 from __future__ import annotations
 
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -101,27 +99,6 @@ async def rebuild_evolution_for_agent(
 
     return note
 
-
-def suggest_temperature_adjustment(
-    agent_name: str,
-    recent_ratings: list[float],
-    current_temp: float,
-) -> Optional[float]:
-    """
-    Heurystyka: jeśli ostatnie oceny użytkownika (1-10) są systematycznie
-    niskie, obniż temperaturę (mniej losowości); jeśli wysokie — zostaw.
-    """
-    if len(recent_ratings) < 5:
-        return None
-
-    avg = sum(recent_ratings) / len(recent_ratings)
-
-    if avg < 4.0 and current_temp > 0.3:
-        return max(0.1, current_temp - 0.15)
-    elif avg > 8.0 and current_temp < 0.9:
-        return min(1.0, current_temp + 0.1)
-
-    return None
 
 
 async def run_full_evolution_cycle(db: Any, repo: Any, agents: list[str]) -> dict[str, str]:

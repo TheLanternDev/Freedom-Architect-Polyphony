@@ -32,6 +32,14 @@ import {
 } from "@/config/product";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
+import {
+  clearDemoSession,
+  fetchDemoStatus,
+  fetchEditionDemoConfig,
+  isDemoSession,
+  type DemoPublicConfig,
+  type DemoStatus,
+} from "@/lib/demoConfig";
 import type { Brief } from "@/types/debate";
 
 const LS_SETUP_DONE = "aw_setup_v2_done";
@@ -77,6 +85,10 @@ export default function App() {
     const jwt = getStoredJwt();
     return jwt !== null || !_jwtEnabled();
   });
+  const [demoPublicConfig, setDemoPublicConfig] =
+    useState<DemoPublicConfig | null>(null);
+  const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null);
+  const inDemo = isDemoSession();
 
   // Register SW for offline-first
   useEffect(() => {
@@ -84,6 +96,38 @@ export default function App() {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchEditionDemoConfig().then((cfg) => {
+      if (!cancelled) setDemoPublicConfig(cfg);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const refreshDemoStatus = useCallback(async () => {
+    if (!isDemoSession()) {
+      setDemoStatus(null);
+      return;
+    }
+    const st = await fetchDemoStatus();
+    setDemoStatus(st);
+  }, []);
+
+  useEffect(() => {
+    if (!authenticated || !inDemo) return;
+    void refreshDemoStatus();
+  }, [authenticated, inDemo, refreshDemoStatus, state.status, state.debateId]);
+
+  useEffect(() => {
+    if (!inDemo || !demoPublicConfig) return;
+    const allowed = demoPublicConfig.allowed_modes;
+    if (allowed.length > 0 && (!mode || !allowed.includes(mode))) {
+      setMode(allowed[0] as Brief["mode"]);
+    }
+  }, [inDemo, demoPublicConfig, mode]);
 
   const toggleCouncilMode = useCallback(() => {
     const next = councilMode === "personal" ? "fa2" : "personal";
@@ -192,8 +236,23 @@ export default function App() {
   }, [mode, state.status]);
 
   if (!authenticated) {
-    return <LoginScreen onAuthenticated={() => setAuthenticated(true)} />;
+    return (
+      <LoginScreen
+        onAuthenticated={() => setAuthenticated(true)}
+        demoConfig={demoPublicConfig}
+      />
+    );
   }
+
+  const demoRemaining = demoStatus?.debates_remaining;
+  const demoExhausted =
+    inDemo && typeof demoRemaining === "number" && demoRemaining <= 0;
+  const maxBriefChars = inDemo
+    ? (demoPublicConfig?.max_brief_chars ?? 800)
+    : 8000;
+  const allowedDemoModes = inDemo
+    ? demoPublicConfig?.allowed_modes
+    : undefined;
 
   return (
     <div
@@ -227,9 +286,14 @@ export default function App() {
             {t("app.brand")}
           </span>
         </div>
-        <ModeSidebar selected={mode} onChange={setMode} disabled={isActive} />
-        <DreamsPanel disabled={isActive} />
-        {councilMode === "personal" && (
+        <ModeSidebar
+          selected={mode}
+          onChange={setMode}
+          disabled={isActive}
+          allowedModes={allowedDemoModes}
+        />
+        <DreamsPanel disabled={isActive || inDemo} />
+        {councilMode === "personal" && !inDemo && (
           <div className="mt-4">
             <DailyRitualPanel />
           </div>
@@ -264,37 +328,39 @@ export default function App() {
               {STATUS_LABEL[state.status] ?? state.status}
             </span>
 
-            <button
-              type="button"
-              onClick={toggleCouncilMode}
-              disabled={isActive}
-              title={
-                councilMode === "personal"
-                  ? "Przełącz na wersję biznesową (FA2)"
-                  : "Przełącz na wersję osobistą (Mój Świat)"
-              }
-              className={`no-print inline-flex items-center gap-[6px] text-[11px] font-mono px-3 py-1 rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                councilMode === "fa2"
-                  ? "border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-300/60"
-                  : "border-teal/40 bg-teal/10 text-teal hover:border-teal/60"
-              }`}
-            >
-              <span
-                className={
-                  councilMode === "personal" ? "text-teal" : "text-white/35"
+            {!inDemo && (
+              <button
+                type="button"
+                onClick={toggleCouncilMode}
+                disabled={isActive}
+                title={
+                  councilMode === "personal"
+                    ? "Przełącz na wersję biznesową (FA2)"
+                    : "Przełącz na wersję osobistą (Mój Świat)"
                 }
+                className={`no-print inline-flex items-center gap-[6px] text-[11px] font-mono px-3 py-1 rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                  councilMode === "fa2"
+                    ? "border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-300/60"
+                    : "border-teal/40 bg-teal/10 text-teal hover:border-teal/60"
+                }`}
               >
-                Osobista
-              </span>
-              <span className="text-white/20">/</span>
-              <span
-                className={
-                  councilMode === "fa2" ? "text-amber-300" : "text-white/35"
-                }
-              >
-                Biznesowa
-              </span>
-            </button>
+                <span
+                  className={
+                    councilMode === "personal" ? "text-teal" : "text-white/35"
+                  }
+                >
+                  Osobista
+                </span>
+                <span className="text-white/20">/</span>
+                <span
+                  className={
+                    councilMode === "fa2" ? "text-amber-300" : "text-white/35"
+                  }
+                >
+                  Biznesowa
+                </span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -304,25 +370,29 @@ export default function App() {
               {t("setup.btn_connection")}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIntegrationsOpen(true)}
-              className="no-print text-[11px] px-2 py-1 rounded-full border border-white/12 text-white/45 hover:text-white/80 hover:border-white/25 transition-colors"
-            >
-              {t("integrations.title")}
-            </button>
+            {!inDemo && (
+              <button
+                type="button"
+                onClick={() => setIntegrationsOpen(true)}
+                className="no-print text-[11px] px-2 py-1 rounded-full border border-white/12 text-white/45 hover:text-white/80 hover:border-white/25 transition-colors"
+              >
+                {t("integrations.title")}
+              </button>
+            )}
 
             {getStoredJwt() && (
               <button
                 type="button"
                 onClick={() => {
-                  setStoredJwt(null);
+                  if (inDemo) clearDemoSession();
+                  else setStoredJwt(null);
                   setAuthenticated(false);
+                  setDemoStatus(null);
                 }}
                 className="no-print text-[11px] px-2 py-1 rounded-full border border-white/12 text-white/45 hover:text-white/80 hover:border-white/25 transition-colors"
                 title={getStoredUserDisplay() ?? undefined}
               >
-                {t("login.logout")}
+                {inDemo ? t("demo.new_session") : t("login.logout")}
               </button>
             )}
 
@@ -362,6 +432,24 @@ export default function App() {
             )}
           </div>
         </header>
+
+        {inDemo && (
+          <div
+            role="status"
+            className={`no-print mx-6 mt-4 rounded-lg border px-4 py-3 text-[13px] ${
+              demoExhausted
+                ? "border-red-500/40 bg-red-900/15 text-red-200/95"
+                : "border-amber-400/35 bg-amber-400/10 text-amber-100/95"
+            }`}
+          >
+            {demoExhausted
+              ? t("demo.banner_exhausted")
+              : t("demo.banner").replace(
+                  "{n}",
+                  String(demoRemaining ?? "—"),
+                )}
+          </div>
+        )}
 
         {state.budgetWarning && (
           <div className="no-print mx-6 mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-[13px] text-amber-100/95">
@@ -403,6 +491,7 @@ export default function App() {
               selected={mode}
               onChange={setMode}
               disabled={isActive}
+              allowedModes={allowedDemoModes}
             />
           </section>
 
@@ -410,11 +499,13 @@ export default function App() {
             <ProductManifest />
             <BriefForm
               onSubmit={handleStart}
-              disabled={isActive}
+              disabled={isActive || demoExhausted}
               selectedMode={mode}
               aggressiveSchema={aggressiveSchema}
               onAggressiveSchemaChange={setAggressiveSchema}
               onModeChange={setMode}
+              maxDescriptionLen={maxBriefChars}
+              allowedModes={allowedDemoModes}
             />
           </section>
 

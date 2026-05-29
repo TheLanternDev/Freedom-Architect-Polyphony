@@ -4,6 +4,7 @@ HTTP: autoryzacja — współdzielony Bearer (legacy), nagłówek serwisowy BFF 
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from typing import Awaitable, Callable
@@ -24,6 +25,7 @@ def _public_paths() -> frozenset[str]:
         {
             "/health",
             "/health/ready",
+            "/edition",
             "/",
         }
     )
@@ -60,7 +62,7 @@ async def architekt_http_guard(
 
     hdr_svc = settings.service_api_header_name()
     svc_val = (request.headers.get(hdr_svc) or "").strip()
-    if api_key and svc_val == api_key:
+    if api_key and svc_val and hmac.compare_digest(svc_val, api_key):
         request.state.architekt_auth = "service_header"
         return await call_next(request)
 
@@ -90,7 +92,7 @@ async def architekt_http_guard(
                     )
             return await call_next(request)
 
-    if api_key and bearer == api_key:
+    if api_key and bearer and hmac.compare_digest(bearer, api_key):
         request.state.architekt_auth = "legacy_bearer"
         response = await call_next(request)
         response.headers["Deprecation"] = "true"

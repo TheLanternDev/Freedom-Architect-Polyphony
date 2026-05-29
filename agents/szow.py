@@ -41,5 +41,6 @@ class Szow(BaseAgent):
             f"siedzi coś, czego nie mówisz. Strach przed oceną, "
             f"potrzeba dowodu własnej wartości albo ucieczka od czegoś "
             f"trudniejszego. Dopóki tego nie nazwiesz — projekt służy "
-            f"cieniu, nie marzeniu."
+            f"cieniu, nie marzeniu. Powiedz głośno jedno zdanie: czego "
+            f"w tym projekcie wolisz nie widzieć?"
         )

@@ -50,6 +50,7 @@ export default defineConfig({
       "/integrations": "http://127.0.0.1:8000",
       "/voice": "http://127.0.0.1:8000",
       "/edition": "http://127.0.0.1:8000",
+      "/demo": "http://127.0.0.1:8000",
       "/costs": "http://127.0.0.1:8000",
     },
   },

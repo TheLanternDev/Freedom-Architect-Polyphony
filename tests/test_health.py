@@ -47,7 +47,7 @@ def test_health_reports_aksjomat_fields(client_no_redis):
     assert "core_status" in data
     assert "db_status" in data
     assert "max_active_projects" in data
-    assert data.get("llm_backend") in ("none", "anthropic", "xai")
+    assert data.get("llm_backend") in ("none", "anthropic", "xai", "ollama")
 
 
 def test_health_when_rada_unavailable(client_no_redis, monkeypatch):

@@ -52,6 +52,29 @@ async def _store_refresh_token(rt: str, sub: str, tenant_id: str) -> None:
         logger.warning("Nie udało się zapisać refresh tokenu: %s", e)
 
 
+async def invalidate_refresh_tokens_for_tenant(tenant_id: str) -> int:
+    """Usuwa refresh tokeny Redis przypisane do tenant_id (RODO — usunięcie konta)."""
+    from api.runtime import get_redis
+
+    r = get_redis()
+    if r is None:
+        return 0
+    removed = 0
+    try:
+        async for key in r.scan_iter(match=f"{_REFRESH_PREFIX}*"):
+            val = await r.get(key)
+            if val is None:
+                continue
+            text = val.decode() if isinstance(val, bytes) else str(val)
+            parts = text.split(":", 1)
+            if len(parts) == 2 and parts[1] == tenant_id:
+                await r.delete(key)
+                removed += 1
+    except Exception as e:
+        logger.warning("invalidate_refresh_tokens_for_tenant: %s", e)
+    return removed
+
+
 async def _consume_refresh_token(rt: str) -> Optional[tuple[str, str]]:
     """Zwraca (sub, tenant_id) i natychmiast usuwa token (rotation)."""
     from api.runtime import get_redis
@@ -122,7 +145,13 @@ def _make_jwt(payload: dict, secret: str) -> str:
     return pyjwt.encode(payload, secret, algorithm="HS256")
 
 
-async def _issue_token_pair(sub: str, tenant_id: str) -> tuple[str, Optional[str]]:
+async def _issue_token_pair(
+    sub: str,
+    tenant_id: str,
+    *,
+    ttl_seconds: int = 86400,
+    extra_claims: dict | None = None,
+) -> tuple[str, Optional[str]]:
     """Wystawia access JWT + refresh token. Zwraca (access_token, refresh_token|None)."""
     secret = _jwt_secret()
     now = int(time.time())
@@ -130,9 +159,11 @@ async def _issue_token_pair(sub: str, tenant_id: str) -> tuple[str, Optional[str
         "sub": sub,
         "tenant_id": tenant_id,
         "iat": now,
-        "exp": now + 86400,
+        "exp": now + max(60, ttl_seconds),
         "jti": str(uuid.uuid4()),
     }
+    if extra_claims:
+        claims.update(extra_claims)
     iss = _jwt_issuer()
     aud = _jwt_audience()
     if iss:
@@ -150,6 +181,14 @@ async def _issue_token_pair(sub: str, tenant_id: str) -> tuple[str, Optional[str
 @router.post("/register", response_model=TokenResponse)
 @_limiter.limit("5/minute")
 async def register(request: Request, req: RegisterRequest):
+    from api.settings import demo_mode_enabled
+
+    if demo_mode_enabled():
+        raise HTTPException(
+            403,
+            detail="Rejestracja wyłączona w trybie demo — użyj POST /auth/demo.",
+        )
+
     secret = _jwt_secret()
     if not secret:
         raise HTTPException(500, "ARCHITEKT_JWT_SECRET nie ustawiony — auth wyłączony.")
@@ -233,6 +272,36 @@ async def login(request: Request, req: LoginRequest):
         refresh_token=refresh,
         tenant_id=tenant_id,
         display_name=display_name,
+    )
+
+
+@router.post("/demo", response_model=TokenResponse)
+@_limiter.limit("15/minute")
+async def demo_session(request: Request):
+    """Sesja gościa demo — JWT z tenant_id demo_* i limitem debat."""
+    from api.settings import demo_jwt_ttl_seconds, demo_mode_enabled
+
+    if not demo_mode_enabled():
+        raise HTTPException(404, detail="Tryb demo wyłączony.")
+
+    secret = _jwt_secret()
+    if not secret:
+        raise HTTPException(500, "ARCHITEKT_JWT_SECRET nie ustawiony — demo wymaga JWT.")
+
+    guest = uuid.uuid4().hex[:16]
+    sub = f"demo:{guest}"
+    tenant_id = f"demo_{guest}"
+    access, refresh = await _issue_token_pair(
+        sub,
+        tenant_id,
+        ttl_seconds=demo_jwt_ttl_seconds(),
+        extra_claims={"demo": True},
+    )
+    return TokenResponse(
+        access_token=access,
+        refresh_token=refresh,
+        tenant_id=tenant_id,
+        display_name="Gość demo",
     )
 
 

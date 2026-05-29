@@ -61,3 +61,10 @@ def load_repo_env() -> None:
             cur = os.environ.get(key)
             if cur is None or (isinstance(cur, str) and not cur.strip()):
                 os.environ[key] = val
+
+    try:
+        from config.sponsor_runtime_loader import apply_sponsor_secrets_if_marked
+
+        apply_sponsor_secrets_if_marked(repo_root())
+    except ImportError:
+        pass
