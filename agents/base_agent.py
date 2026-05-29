@@ -275,6 +275,36 @@ class BaseAgent(ABC):
             instr = getattr(self, "instruction_pl", None) or self.instruction
         parts.append(instr)
 
+        # Higiena rozumowania — tylko głosy Rady (nie Syez). Wspólna dla obu trybów;
+        # w fa2 dochodzi rygor liczbowy, dla Szowa/Deegi steelman przed cięciem.
+        # Cross-cutting — nie zmienia charakteru głosu.
+        if self.name != "Syez":
+            if language == "en":
+                _hygiene = (
+                    "Reasoning hygiene: tag each claim as observation / hypothesis / guess. "
+                    "State only what you can support; do not invent facts."
+                )
+                if council_mode == "fa2":
+                    _hygiene += " Every number carries a source or an explicit assumption."
+                if self.name in ("Szow", "Deega"):
+                    _hygiene += (
+                        " Before you cut something down, state in one sentence the strongest "
+                        "version of the claim you are about to challenge."
+                    )
+            else:
+                _hygiene = (
+                    "Higiena rozumowania: oznacz każde twierdzenie jako obserwacja / hipoteza "
+                    "/ domysł. Pisz tylko to, co potrafisz podeprzeć; nie wymyślaj faktów."
+                )
+                if council_mode == "fa2":
+                    _hygiene += " Każda liczba ma źródło albo jawne założenie."
+                if self.name in ("Szow", "Deega"):
+                    _hygiene += (
+                        " Zanim coś zetniesz, powiedz w jednym zdaniu najmocniejszą wersję "
+                        "tezy, którą zaraz zakwestionujesz."
+                    )
+            parts.append(_hygiene)
+
         if language == "en":
             try:
                 from core.completion_enforcer import AGENT_COMPLETION_POSTSCRIPT_EN
