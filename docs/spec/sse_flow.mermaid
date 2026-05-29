@@ -1,0 +1,77 @@
+sequenceDiagram
+    autonumber
+    actor UI as UI (Tauri/React)
+    participant API as FastAPI /debate/stream
+    participant ORC as _stream_debate_inner
+    participant SAFE as core.safety
+    participant BUD as budget_guard
+    participant A0 as dream_architect (A0)
+    participant DB as repo (SQLite/PG)
+    participant COUNCIL as Rada (9 agentów)
+    participant SYEZ as Syez (synteza)
+
+    UI->>API: POST /debate/stream (Brief + X-Council-Mode)
+    API->>BUD: ensure_hard_budget_or_raise()
+    alt budżet twardo przekroczony
+        BUD-->>UI: SSE budget_hard_block  (Rada NIE startuje)
+    else OK
+        API->>ORC: _stream_debate(brief, council_mode)
+        ORC->>SAFE: safety_check(brief)
+        alt fraza kryzysowa
+            SAFE-->>UI: SSE safety_halt (nr 116 123) — KONIEC
+        else bezpiecznie
+            ORC->>A0: destylacja marzenia (lub fallback w trybie codzienny)
+            alt sukces A0
+                A0-->>UI: SSE dream_architecture
+            else błąd A0
+                A0-->>UI: SSE dream_architecture_error (flow trwa)
+            end
+            opt category=projekt
+                ORC->>DB: ensure_project_for_dream
+                DB-->>UI: SSE project_state
+            end
+            opt próg DAILY_BUDGET_USD
+                BUD-->>UI: SSE budget_soft_warning_sse (Rada trwa)
+            end
+            ORC-->>UI: SSE debate_start
+
+            loop dla każdego agenta Rady
+                ORC-->>UI: SSE agent_start {agent}
+                loop strumień tokenów
+                    COUNCIL-->>UI: SSE agent_chunk {chunk}
+                end
+                COUNCIL-->>UI: SSE agent_done {full_text}
+            end
+
+            ORC->>ORC: compute_live_pair_frictions (Jaccard)
+            ORC-->>UI: SSE live_tensions {pairs}
+
+            ORC->>SYEZ: synteza (kontekst A0 + głosy)
+            ORC-->>UI: SSE synthesis_start
+            opt długa analiza
+                SYEZ-->>UI: SSE synthesis_heartbeat {thinking}
+            end
+            loop strumień syntezy
+                SYEZ-->>UI: SSE synthesis_chunk {chunk}
+            end
+            SYEZ-->>UI: SSE synthesis_done {full_text}
+
+            ORC->>ORC: _attempt_completion_audit (AKSJOMAT 2)
+            alt audyt OK
+                ORC->>DB: save_completion_audit
+                ORC-->>UI: SSE synthesis_structured
+            else brak audytu (po re-prompcie 2x)
+                ORC-->>UI: SSE completion_audit_violation (synteza zapisana z flagą)
+            end
+
+            ORC->>DB: save_synthesis
+            opt mode=schematy
+                ORC->>DB: insert_commitment (auto_72h, +72h)
+                DB-->>UI: SSE commitment_created
+            end
+
+            ORC-->>UI: SSE debate_done {debate_id, cost_usd}
+        end
+    end
+
+    Note over ORC,UI: Wyjątek w generatorze → SSE stream_error + debate_done (graceful)

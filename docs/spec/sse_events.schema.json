@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://architekt-wolnosci/spec/sse_events.schema.json",
+  "title": "Architekt Wolności — SSE event payloads",
+  "description": "Formalne schematy pola `data` dla każdego eventu SSE z /debate/stream i /debate/continue/stream. Wyprowadzone z api/services/debate_orchestrator.py, dream_service.py, budget_guard.py, completion_enforcer.py (2026-05-25). Każdy frame: `event: <name>\\ndata: <JSON>\\n\\n`.",
+  "type": "object",
+  "$defs": {
+    "milestone": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "due": { "type": ["string", "null"] },
+        "why_it_matters": { "type": "string" }
+      },
+      "required": ["title", "why_it_matters"]
+    },
+    "next_move": {
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "when": { "type": "string" },
+        "smallest_form": { "type": "string" }
+      },
+      "required": ["action", "when", "smallest_form"]
+    }
+  },
+  "oneOf": [
+    {
+      "title": "safety_halt",
+      "properties": { "message": { "type": "string" } },
+      "required": ["message"]
+    },
+    {
+      "title": "budget_hard_block",
+      "properties": {
+        "error": { "const": "budget_exceeded" },
+        "kind": { "type": "string" },
+        "message_pl": { "type": "string" }
+      },
+      "required": ["kind"]
+    },
+    {
+      "title": "budget_warning",
+      "description": "Soft warning (próg DAILY_BUDGET_USD). Uwaga: webhook analityczny używa odrębnej etykiety 'budget_soft_warning_sse' — to NIE jest nazwa eventu SSE.",
+      "properties": { "message": { "type": "string" } },
+      "required": ["message"]
+    },
+    {
+      "title": "dream_architecture",
+      "properties": {
+        "core_dream": { "type": "string" },
+        "value_anchor": { "type": "string" },
+        "pillars": { "type": "array", "items": { "type": "string" } },
+        "milestones": { "type": "array", "items": { "$ref": "#/$defs/milestone" } },
+        "next_move": { "$ref": "#/$defs/next_move" },
+        "completion_criteria": { "type": "array", "items": { "type": "string" } },
+        "functionality_checklist": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["core_dream", "value_anchor", "pillars", "milestones", "next_move", "completion_criteria", "functionality_checklist"]
+    },
+    {
+      "title": "dream_architecture_error",
+      "properties": { "error": { "type": "string" } },
+      "required": ["error"]
+    },
+    {
+      "title": "project_state",
+      "description": "Surowy wiersz repo.get_project (kolumny tabeli projects).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "dream_id": { "type": ["string", "null"] },
+        "status": { "type": "string", "enum": ["dreaming", "in_progress", "at_risk", "stuck", "completed", "archived_consciously"] },
+        "started_at": { "type": ["string", "null"] },
+        "last_progress_at": { "type": ["string", "null"] },
+        "completed_at": { "type": ["string", "null"] },
+        "archived_reason": { "type": ["string", "null"] },
+        "archived_at": { "type": ["string", "null"] }
+      }
+    },
+    {
+      "title": "debate_start",
+      "properties": {
+        "agents": { "type": "array", "items": { "type": "string" } },
+        "synthesizer": { "type": ["string", "null"] },
+        "context_preview": { "type": "string", "maxLength": 120 },
+        "mode": { "type": "string", "enum": ["pelna", "marzen", "schematy", "codzienny"] },
+        "category": { "type": "string", "enum": ["decyzja", "projekt", "marzenie", "schemat"] },
+        "dream_id": { "type": ["string", "null"] },
+        "continuation_parent_id": { "type": ["integer", "null"] }
+      },
+      "required": ["agents", "mode", "category"]
+    },
+    {
+      "title": "agent_start",
+      "properties": { "agent": { "type": "string" } },
+      "required": ["agent"]
+    },
+    {
+      "title": "agent_chunk",
+      "properties": {
+        "agent": { "type": "string" },
+        "chunk": { "type": "string" }
+      },
+      "required": ["agent", "chunk"]
+    },
+    {
+      "title": "agent_done",
+      "properties": {
+        "agent": { "type": "string" },
+        "full_text": { "type": "string" }
+      },
+      "required": ["agent", "full_text"]
+    },
+    {
+      "title": "live_tensions",
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "a": { "type": "string" },
+              "b": { "type": "string" },
+              "intensity": { "type": "number", "minimum": 0.22, "maximum": 1.0 }
+            }
+          }
+        }
+      },
+      "required": ["pairs"]
+    },
+    {
+      "title": "synthesis_start",
+      "properties": { "synthesizer": { "type": "string" } },
+      "required": ["synthesizer"]
+    },
+    {
+      "title": "synthesis_heartbeat",
+      "properties": { "status": { "const": "thinking" } },
+      "required": ["status"]
+    },
+    {
+      "title": "synthesis_chunk",
+      "properties": { "chunk": { "type": "string" } },
+      "required": ["chunk"]
+    },
+    {
+      "title": "synthesis_done",
+      "properties": { "full_text": { "type": "string" } },
+      "required": ["full_text"]
+    },
+    {
+      "title": "synthesis_structured",
+      "description": "Sparsowany JSON syntezy Syeza (parsed_final). Kształt zależny od modelu; typowe klucze poniżej, dodatkowe dozwolone.",
+      "type": "object",
+      "properties": {
+        "insights_per_agent": { "type": "object" },
+        "completion_audit": { "type": "object" }
+      }
+    },
+    {
+      "title": "completion_audit_violation",
+      "description": "CompletionViolation.to_payload(). Synteza mimo to zapisana z flagą.",
+      "properties": {
+        "kind": { "type": "string" },
+        "message": { "type": "string" },
+        "details": { "type": "object" }
+      },
+      "required": ["kind"]
+    },
+    {
+      "title": "commitment_created",
+      "description": "Auto-commitment 72h (tryb schematy).",
+      "properties": {
+        "id": { "type": "integer" },
+        "debate_id": { "type": "integer" },
+        "project_id": { "type": ["integer", "null"] },
+        "follow_up_at": { "type": "string" },
+        "trigger_type": { "const": "auto_72h" },
+        "text": { "type": "string" }
+      },
+      "required": ["id", "trigger_type"]
+    },
+    {
+      "title": "stream_error",
+      "properties": {
+        "message": { "type": "string" },
+        "error": { "type": "string", "maxLength": 300 }
+      },
+      "required": ["message"]
+    },
+    {
+      "title": "debate_done",
+      "properties": {
+        "debate_id": { "type": ["integer", "null"] },
+        "agent_count": { "type": "integer" },
+        "synthesizer": { "type": ["string", "null"] },
+        "timestamp": { "type": "string" },
+        "dream_id": { "type": ["string", "null"] },
+        "project_id": { "type": ["integer", "null"] },
+        "continuation_parent_id": { "type": ["integer", "null"] },
+        "cost_usd": { "type": "number" }
+      },
+      "required": ["agent_count"]
+    }
+  ]
+}
