@@ -365,6 +365,32 @@ Tabela `users` jest **świadomie poza RLS** — login wymaga zapytania o usera z
 
 ---
 
+## 8a. Observability (Tydzień 2 mapy luk)
+
+**Pliki:** `api/_log.py`, `api/_metrics.py`, `main.py` (endpoint `/metrics`).
+
+- **Structured logging:** `api._log.slog(event, **fields)`. W trybie produkcyjnym (`LOG_FORMAT=json`) emituje JSON do stdout — gotowe pod Loki / Cloud Logging / Datadog. W dev — czytelne dla człowieka. Używane m.in. w `BaseAgent._call_llm` dla `llm_call_completed`.
+- **Prometheus metryki:** `architekt_llm_calls_total{agent,model,status}`, `architekt_llm_cache_hits_total{agent}` / `_misses_total{agent}`, `architekt_completion_violations_total{kind}`, `architekt_rate_limit_hits_total{route}`, `architekt_debate_latency_seconds{phase,council_mode}`. Endpoint `GET /metrics` (bez auth, scrape internal). Bez `prometheus_client` → 503 (probe wie).
+- **Sentry:** już zainicjowane w `main.py` (DSN przez ENV). `capture_exception` w `_unhandled_exception_handler`.
+
+## 8b. Eval Rady (Tydzień 2 mapy luk)
+
+**Pliki:** `evals/rada/scorer.py`, `evals/rada/briefs.yaml`, `scripts/eval_rada.py`, `tests/test_eval_scorer.py`.
+
+Deterministyczny heurystyczny scorer wypowiedzi:
+- każdy głos Rady musi startować od `{emoji} {name}:`,
+- brak coachingowo-terapeutycznych zwrotów (kluczowe dla Szowa i Kidi),
+- Szow ma minimum jeden sygnał konfrontacyjny,
+- Syez: audyt AKSJOMATU 2 obecny w prozie (reuse `validate_syez_prose_completion_audit`), brak surowego JSON, długość ≥ 800 znaków, min. jedno pytanie otwarte.
+
+`scripts/eval_rada.py` uruchamia briefy z YAML przez `afull_synthesis`, zwraca raport JSON + exit code (0 = pass, 1 = poniżej progu). Brief set startowy: 3 przypadki (chronic abandonment, relationship loyalty, fa2 SaaS niche choice). **TODO**: rozbudować do 20–30 anonimizowanych briefów.
+
+Heurystyki NIE zastępują ludzkiej oceny — wyłapują NAJCZĘSTSZE regresje po zmianie promptów. Pełna walidacja jakości głosów to nadal odsłuch przez Patryka.
+
+## 8c. Test coverage (gate CI ≥ 68%, baseline 69%)
+
+`.coveragerc` świadomie wyklucza moduły wstrzymane (AKSJOMAT 2): `core/autonomy.py`, `core/identity.py`, `core/db/connection.py` (BC shim), `core/db/__init__.py`. Te są kandydatami do skończenia LUB świadomej archiwizacji w kolejnych iteracjach. Każde dodanie nowego kodu MUSI utrzymać coverage ≥ 68% (gate w `.github/workflows/ci.yml`).
+
 ## 9. Budżet i koszty
 
 **Pliki:** `api/services/budget_guard.py`, `core/cost_tracking.py`

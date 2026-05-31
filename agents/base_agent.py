@@ -510,7 +510,20 @@ class BaseAgent(ABC):
             try:
                 cached = await self._redis_op(lambda: redis.get(cache_key))
                 if cached:
+                    # Metryki observability (Tydzień 2 mapy luk). Lazy import,
+                    # żeby BaseAgent działał w testach bez api/_metrics.
+                    try:
+                        from api._metrics import llm_cache_hits_total
+                        llm_cache_hits_total.labels(agent=self.name).inc()
+                    except Exception:  # pragma: no cover
+                        pass
                     return cached
+                # Brak trafienia — odnotuj miss przed pójściem do LLM.
+                try:
+                    from api._metrics import llm_cache_misses_total
+                    llm_cache_misses_total.labels(agent=self.name).inc()
+                except Exception:  # pragma: no cover
+                    pass
             except Exception as e:  # cache nigdy nie blokuje ścieżki głównej
                 logger.warning("Cache read failed for %s: %s", self.name, e)
 
@@ -571,6 +584,22 @@ class BaseAgent(ABC):
                 "LLM [%s] %s in=%d out=%d ≈ $%.4f",
                 self.name, log_model, in_tok, out_tok, cost,
             )
+            # Strukturalny log (JSON gdy LOG_FORMAT=json) + Prometheus counter.
+            try:
+                from api._log import slog
+                from api._metrics import llm_calls_total
+                slog(
+                    "llm_call_completed",
+                    agent=self.name, model=log_model,
+                    input_tokens=in_tok, output_tokens=out_tok,
+                    cost_usd=round(cost, 6),
+                    council_mode=council_mode, language=language,
+                )
+                llm_calls_total.labels(
+                    agent=self.name, model=log_model, status="success"
+                ).inc()
+            except Exception:  # pragma: no cover
+                pass
             try:
                 from core.cost_tracking import append_cost_log_async, build_cost_entry
 

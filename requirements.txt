@@ -21,3 +21,6 @@ sentry-sdk[fastapi]>=2.0.0
 # Testowanie: pytest-asyncio dla `@pytest.mark.asyncio`, pytest-cov dla CI coverage gate.
 pytest-asyncio>=0.23.0
 pytest-cov>=4.1.0
+# Observability (Tydzień 2 mapy luk): Prometheus exposition + YAML do eval briefs.
+prometheus-client>=0.20.0
+PyYAML>=6.0

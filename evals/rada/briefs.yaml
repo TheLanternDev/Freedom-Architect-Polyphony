@@ -1,0 +1,45 @@
+# Eval briefs dla Rady — minimalny szkielet do rozbudowy.
+#
+# Każdy brief reprezentuje typowy use-case. Po zmianie promptu agenta
+# uruchom `scripts/eval_rada.py` — scorer pokaże regresje liczbowo.
+#
+# Dwie kategorie:
+#   • personal — głęboka praca nad sobą, integracja, decyzje życiowe.
+#   • fa2      — analityka biznesowa (Base/Bull/Bear, stack, metryki).
+#
+# TODO: rozbudować do 20–30 realnych briefów (anonimizowane wypowiedzi
+# z własnej historii pracy nad sobą lub przypadki klientów ICP).
+# Cel: każda zmiana promptu systemowego ma deterministyczny benchmark.
+
+briefs:
+  - id: personal_chronic_abandonment
+    council_mode: personal
+    description: |
+      Mam pomysł na produkt, ale za każdym razem porzucam go na 30%.
+      Zaczynam, palę się, potem znika energia. Co jest pode mną?
+    expected_signals:
+      - szow_confronts_directly
+      - kogit_names_inherited_belief
+      - deega_traces_old_pattern
+
+  - id: personal_relationship_loyalty
+    council_mode: personal
+    description: |
+      Ojciec dzwoni dwa razy w tygodniu z presją żeby "wreszcie znaleźć
+      stałą pracę". Trzy lata buduję firmę. Czuję się jakbym kłamał, że
+      jest mi z tym OK.
+    expected_signals:
+      - relacjan_maps_loyalty
+      - emojy_names_underlying_emotion
+      - smaty_points_body_signal
+
+  - id: fa2_saas_niche_choice
+    council_mode: fa2
+    description: |
+      B2B SaaS dla 20-200 osobowych firm. Mam stack technologiczny i 6
+      miesięcy runwayu. Dwie nisze do wyboru: (a) RevOps tooling dla
+      Head of Ops, (b) Compliance automation dla finansów. Co wybrać?
+    expected_signals:
+      - kogit_business_assumption_test
+      - tai_market_timing_pattern
+      - syez_base_bull_bear_scenarios

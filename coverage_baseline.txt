@@ -1,7 +1,7 @@
-........................................................................ [ 26%]
-........................................................................ [ 52%]
-........................................................................ [ 78%]
-..........................................................               [100%]
+........................................................................ [ 25%]
+........................................................................ [ 50%]
+........................................................................ [ 75%]
+......................................................................   [100%]
 =============================== warnings summary ===============================
 ../../.local/lib/python3.10/site-packages/fastapi/testclient.py:1
   /sessions/nice-pensive-cerf/.local/lib/python3.10/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
@@ -14,7 +14,7 @@ _______________ coverage: platform linux, python 3.10.12-final-0 _______________
 Name                                  Stmts   Miss  Cover
 ---------------------------------------------------------
 agents/__init__.py                       59     36    39%
-agents/base_agent.py                    279    126    55%
+agents/base_agent.py                    290    137    53%
 agents/deega.py                          11      0   100%
 agents/emojy.py                          11      0   100%
 agents/kidi.py                           11      0   100%
@@ -26,6 +26,8 @@ agents/syez.py                           17      2    88%
 agents/szow.py                           11      0   100%
 agents/tai.py                            11      0   100%
 api/__init__.py                           0      0   100%
+api/_log.py                              18      0   100%
+api/_metrics.py                          11      1    91%
 api/_rate_limit.py                        8      0   100%
 api/auth_identity.py                     62     26    58%
 api/http_guard.py                        63      2    97%
@@ -55,15 +57,11 @@ api/settings.py                         114     21    82%
 core/__init__.py                          3      0   100%
 core/agent_learner.py                    58     32    45%
 core/analytics.py                        32      1    97%
-core/autonomy.py                        105    105     0%
 core/completion_enforcer.py             168     11    93%
 core/cost_tracking.py                   139     38    73%
-core/db/__init__.py                       2      2     0%
-core/db/connection.py                     3      3     0%
 core/debate_export.py                   102     61    40%
 core/debate_export_pdf.py                48      7    85%
 core/dream_architect.py                 263     81    69%
-core/identity.py                         61     61     0%
 core/live_tensions.py                    25      1    96%
 core/safety.py                           21      0   100%
 db/__init__.py                            2      0   100%
@@ -72,4 +70,4 @@ db/connection.py                        348     67    81%
 db/pg_wrap.py                            77     18    77%
 db/tenant.py                             20      0   100%
 ---------------------------------------------------------
-TOTAL                                  3775   1283    66%
+TOTAL                                  3644   1124    69%

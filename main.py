@@ -335,6 +335,23 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+# ── Prometheus /metrics (observability, Tydzień 2 mapy luk) ─────────────────
+from api import _metrics as _arch_metrics  # noqa: E402
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics_endpoint() -> Response:
+    """Prometheus exposition. Bez auth — typowo skrobane wewnętrznie przez Prom/Grafana.
+    Gdy `prometheus_client` nie jest zainstalowane → 503 (nie 500, żeby probe wiedział)."""
+    if not _arch_metrics.is_available():
+        return Response(
+            content="prometheus_client not installed",
+            status_code=503,
+            media_type="text/plain",
+        )
+    return Response(content=_arch_metrics.render(), media_type=_arch_metrics.CONTENT_TYPE_LATEST)
+
+
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """Nieobsłużone wyjątki: log + Sentry, klient dostaje generyczny 500 (bez stacktrace)."""

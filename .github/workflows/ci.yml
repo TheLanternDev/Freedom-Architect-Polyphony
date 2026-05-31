@@ -56,13 +56,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
+      - run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov prometheus-client pyyaml
       - name: Run tests with coverage gate
         run: |
           pytest tests/ -q \
             --cov=agents --cov=core --cov=api --cov=db \
             --cov-report=term-missing \
-            --cov-fail-under=64
+            --cov-fail-under=68
       - name: Verify cache isolation (multi-tenancy hard isolation)
         run: python scripts/verify_cache_isolation.py
 

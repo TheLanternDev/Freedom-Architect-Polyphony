@@ -1,0 +1,33 @@
+[run]
+# Świadome wyłączenia z coverage gate:
+#
+#   core/autonomy.py    — Mechanizm Autonomii Rady v1.2 (spec 2026-05-15).
+#                          Zaplanowane, nieaktywne — żaden moduł nie importuje.
+#                          Decyzja AKSJOMAT 2: albo skończyć, albo archiwizować
+#                          świadomie. Do czasu decyzji: poza coverage gate, żeby
+#                          nie blokował CI dla aktywnej części systemu.
+#
+#   core/identity.py    — Żywy Model Tożsamości Patryka + Aksjomat 3.
+#                          Status jak wyżej.
+#
+#   core/db/connection.py — 24-linijkowy BC shim (alias importu).
+#                            Sam re-eksport, testować nie ma czego.
+#
+#   core/db/__init__.py   — pusty __init__.
+#
+#   db/migrations/*.py    — gdyby istniały (są tylko .sql, dla porządku).
+#
+# Aktualizuj listę razem z decyzjami AKSJOMATU 2 ("kończysz / archiwizujesz / wracasz").
+omit =
+    core/autonomy.py
+    core/identity.py
+    core/db/connection.py
+    core/db/__init__.py
+    db/migrations/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
