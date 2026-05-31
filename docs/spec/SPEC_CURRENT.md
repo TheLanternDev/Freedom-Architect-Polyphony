@@ -387,9 +387,28 @@ Deterministyczny heurystyczny scorer wypowiedzi:
 
 Heurystyki NIE zastępują ludzkiej oceny — wyłapują NAJCZĘSTSZE regresje po zmianie promptów. Pełna walidacja jakości głosów to nadal odsłuch przez Patryka.
 
-## 8c. Test coverage (gate CI ≥ 68%, baseline 69%)
+## 8c. Test coverage (gate CI ≥ 75%, baseline 76%)
 
-`.coveragerc` świadomie wyklucza moduły wstrzymane (AKSJOMAT 2): `core/autonomy.py`, `core/identity.py`, `core/db/connection.py` (BC shim), `core/db/__init__.py`. Te są kandydatami do skończenia LUB świadomej archiwizacji w kolejnych iteracjach. Każde dodanie nowego kodu MUSI utrzymać coverage ≥ 68% (gate w `.github/workflows/ci.yml`).
+`.coveragerc` świadomie wyklucza moduły wstrzymane (AKSJOMAT 2): `core/autonomy.py`, `core/identity.py`, `core/db/connection.py` (BC shim), `core/db/__init__.py`. Te są kandydatami do skończenia LUB świadomej archiwizacji w kolejnych iteracjach. Każde dodanie nowego kodu MUSI utrzymać coverage ≥ 75% (gate w `.github/workflows/ci.yml`).
+
+**Stan po Tygodniu 1 #2 (zamknięcie):** 437 testów, 76% TOTAL. Silne pokrycie hot-path:
+- `core/safety.py` 100%, `db/tenant.py` 100%, `core/completion_enforcer.py` 93%, `core/dream_architect.py` 70%
+- `api/http_guard.py` 97%, `api/auth_identity.py` 95%, `api/services/budget_guard.py` 90%
+- 9 agentów Rady 100%, `agents/syez.py` 88%, `agents/base_agent.py` 61% (LLM ścieżki async)
+
+**Czarne dziury (ścieżka do 80%):**
+- `api/routers/integrations.py` 25%, `attachment.py` 28%, `voice.py` 27% — wymagają testów z FastAPI TestClient + mockowanymi external APIs. Świadomy scope follow-up.
+- `api/routers/auth.py` 61% — końcowe ścieżki rejestracji/refreshu.
+- `api/services/debate_orchestrator.py` 68% — async phase generators, większe testy integracyjne.
+
+## 8d. UX / Onboarding / Dokumentacja użytkownika (Tydzień 3 mapy luk)
+
+**Pliki:** `src/src/components/FragmentCompass.tsx`, `src/src/components/ActiveProjectLimitModal.tsx`, `src/src/components/PersonalRitualPanels.tsx::OnboardingPanel`, `USER_README.md`.
+
+- **AKSJOMAT 0 widoczny w UI:** komponent `FragmentCompass` (kompas Uśmiech ↔ Perspektywa ↔ Droga) renderowany stale w trybie `personal` w prawym dolnym rogu. NIE jest todo — klik rozwija krótki opis każdego elementu, brak progresu/procentów. Świadoma decyzja designu: kompas, nie mapa.
+- **AKSJOMAT 2 konfrontacja:** komponent `ActiveProjectLimitModal` renderowany gdy `state.auditViolation.kind === "active_project_limit"`. Lista aktywnych projektów (id, dream_id, status, % checklisty, dni bez ruchu) + trzy świadome opcje: kończę / archiwizuję świadomie / rezygnuję z nowego. „Brak ruchu" nie jest opcją w UI.
+- **Onboarding:** `OnboardingPanel` (20 pytań, modal po pierwszym logowaniu, progress w `localStorage` pod kluczem `aw_onboarding_v1_done`). Backend `/personal/onboarding/questions` jest źródłem prawdy. Pytania pomijane / wracane w dowolnym momencie.
+- **USER_README.md:** jednostronicowy przewodnik dla nietechnicznego użytkownika — czym system JEST i NIE jest, dla kogo, 5-minutowy quickstart, co się stanie gdy nie zrobisz ruchu, czego unikać. Zlinkowany z głównego `README.md` w pierwszej linii nagłówka, żeby był odkrywalny bez kopania w `docs/`.
 
 ## 9. Budżet i koszty
 

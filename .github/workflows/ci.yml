@@ -62,7 +62,7 @@ jobs:
           pytest tests/ -q \
             --cov=agents --cov=core --cov=api --cov=db \
             --cov-report=term-missing \
-            --cov-fail-under=68
+            --cov-fail-under=75
       - name: Verify cache isolation (multi-tenancy hard isolation)
         run: python scripts/verify_cache_isolation.py
 
