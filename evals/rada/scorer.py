@@ -111,6 +111,80 @@ def score_agent(name: str, emoji: Optional[str], text: str) -> AgentScore:
     return score
 
 
+def score_syez_fa2(text: str) -> AgentScore:
+    """Heurystyczny scoring syntezy Syeza w trybie FA2 (Freedom Architect Business).
+
+    Kontrakt FA2 (z `agents/base_agent.py::_build_user_message`):
+      1. Trzy scenariusze: BASE, BULL, BEAR — wyraźnie nazwane.
+      2. Diagram Mermaid (flowchart lub sequenceDiagram).
+      3. Minimum 3 pytania otwarte do założyciela.
+      4. Wzmianka o stacku/platformach (konkretne nazwy).
+      5. Wzmianka o metrykach (CAC, LTV, marża, runway, koszty).
+      6. Długość: 800–1600 słów (sanity, nie ścisły upper bound).
+
+    Brak któregokolwiek = niedotrzymany kontrakt FA2 → regresja jakości.
+    """
+    score = AgentScore(agent="Syez/FA2")
+    low = text.lower()
+
+    # (1) Scenariusze Base/Bull/Bear — case-insensitive, nazwy mogą być po angielsku
+    # lub po polsku ("BASE", "BULL", "BEAR" lub "scenariusz base/bull/bear").
+    has_base = "base" in low and ("scenari" in low or "scenario" in low)
+    has_bull = "bull" in low
+    has_bear = "bear" in low
+    if has_base and has_bull and has_bear:
+        score.passed_checks.append("three_scenarios")
+    else:
+        score.failed_checks.append("three_scenarios")
+
+    # (2) Mermaid diagram.
+    if "```mermaid" in low and ("flowchart" in low or "sequencediagram" in low or "graph " in low):
+        score.passed_checks.append("mermaid_diagram")
+    else:
+        score.failed_checks.append("mermaid_diagram")
+
+    # (3) ≥3 pytania otwarte (heurystyka: ≥3 znaki "?" w tekście).
+    if text.count("?") >= 3:
+        score.passed_checks.append("min_three_open_questions")
+    else:
+        score.failed_checks.append("min_three_open_questions")
+
+    # (4) Stack / platformy: minimum jeden konkret z listy popularnych.
+    import re as _re
+    stack_keywords = _re.compile(
+        r"\b(shopify|woocommerce|stripe|payu|aws|gcp|azure|vercel|"
+        r"hubspot|salesforce|airtable|supabase|firebase|notion|"
+        r"postgres|postgresql|mongodb|redis|docker|kubernetes|"
+        r"next\.?js|fastapi|django|react|flutter)\b",
+        _re.IGNORECASE,
+    )
+    if stack_keywords.search(text):
+        score.passed_checks.append("stack_concrete")
+    else:
+        score.failed_checks.append("stack_concrete")
+
+    # (5) Metryki biznesowe.
+    metrics_keywords = _re.compile(
+        r"\b(cac|ltv|mrr|arr|marg|margin|marż|runway|burn|gross|"
+        r"conversion|konwersj|retention|retencj|churn|payback|"
+        r"break[- ]?even|rentowność|rentownosc|roi|pricing|pric)\w*\b",
+        _re.IGNORECASE,
+    )
+    if metrics_keywords.search(text):
+        score.passed_checks.append("business_metrics_present")
+    else:
+        score.failed_checks.append("business_metrics_present")
+
+    # (6) Długość (sanity — nie ścisły upper, FA2 syntezy bywają długie).
+    words = len(text.split())
+    if 500 <= words <= 2400:
+        score.passed_checks.append("length_in_range")
+    else:
+        score.failed_checks.append("length_in_range")
+
+    return score
+
+
 def score_syez(text: str) -> AgentScore:
     """Heurystyczny scoring syntezy Syeza.
 

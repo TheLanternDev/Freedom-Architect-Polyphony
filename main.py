@@ -204,6 +204,11 @@ try:
 except ImportError:
     demo_router = None  # type: ignore[assignment]
 
+try:
+    from api.routers.feedback import router as feedback_router
+except ImportError:
+    feedback_router = None  # type: ignore[assignment]
+
 
 def _production_startup_checks() -> None:
     """Preflight produkcyjny: brak krytycznych ENV → odmowa startu (fail-fast)."""
@@ -393,6 +398,8 @@ if account_router:
     app.include_router(account_router)
 if demo_router:
     app.include_router(demo_router)
+if feedback_router:
+    app.include_router(feedback_router)
 
 # ── Dwa Tryby (spec v1.0): osobisty (ten program) + biznesowy (business_fa2) ──
 # Mount sub-aplikacji `Freedom Architect 2.0` pod prefiksem /business. Lazy

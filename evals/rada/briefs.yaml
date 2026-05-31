@@ -43,3 +43,48 @@ briefs:
       - kogit_business_assumption_test
       - tai_market_timing_pattern
       - syez_base_bull_bear_scenarios
+
+  - id: fa2_pricing_seat_vs_usage
+    council_mode: fa2
+    description: |
+      Mam działający SaaS — 12 płacących kont, $4K MRR, churn 8% miesięcznie.
+      Cennik per-seat ($49/seat/miesiąc). Klienci proszą o usage-based.
+      Zostać przy seat czy przejść na usage? Jak to wpłynie na CAC/LTV?
+
+  - id: fa2_when_to_hire_first
+    council_mode: fa2
+    description: |
+      Solofounder, MRR rośnie 15% m/m, runway 18 miesięcy. Sprzedaż żre
+      40h tygodniowo, kod 20h. Powinienem zatrudnić sales czy engineera —
+      i kiedy? Jakie progi MRR uzasadniają każde z hire?
+
+  - id: fa2_two_sided_marketplace_chicken_egg
+    council_mode: fa2
+    description: |
+      Marketplace dla freelance RevOps consultants ↔ firmy 20–200 osób.
+      Mam 8 consultantów ale 0 firm po stronie popytu. Jak rozwiązać
+      chicken-and-egg w 90 dni z budżetem $5K? Scenariusze z liczbami.
+
+  - id: fa2_pivot_or_persist
+    council_mode: fa2
+    description: |
+      Produkt 14 miesięcy live, 60 płacących klientów, MRR plateau przez
+      4 miesiące przy $8K. NPS=42 (dobry), conversion z trial=18% (OK),
+      ale wzrost stoi. Pivot na sąsiednią niszę czy podwójne kliknięcie
+      w obecny segment? Jakie metryki muszą dotknąć progu by zdecydować?
+
+  - id: fa2_funding_bootstrap_or_seed
+    council_mode: fa2
+    description: |
+      Bootstrap 18 miesięcy, $12K MRR, growth 8% m/m. Mam ofertę
+      $400K seed od pre-seed VC. Wziąć i przyspieszyć do $50K MRR
+      w 12 miesięcy, czy odrzucić i utrzymać 100% equity? Trzy scenariusze
+      z modelem cash flow.
+
+  - id: fa2_build_vs_buy_internal_tool
+    council_mode: fa2
+    description: |
+      Potrzebujemy CRM + sales automation. Build własny (3 miesiące dev,
+      pełna kontrola) czy HubSpot ($800/mies. start, scale do $5K)?
+      Stack mamy w Python/FastAPI. Co realnie wybrać dla firmy w fazie
+      0-50 klientów B2B?

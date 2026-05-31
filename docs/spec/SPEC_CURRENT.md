@@ -410,6 +410,27 @@ Heurystyki NIE zastępują ludzkiej oceny — wyłapują NAJCZĘSTSZE regresje p
 - **Onboarding:** `OnboardingPanel` (20 pytań, modal po pierwszym logowaniu, progress w `localStorage` pod kluczem `aw_onboarding_v1_done`). Backend `/personal/onboarding/questions` jest źródłem prawdy. Pytania pomijane / wracane w dowolnym momencie.
 - **USER_README.md:** jednostronicowy przewodnik dla nietechnicznego użytkownika — czym system JEST i NIE jest, dla kogo, 5-minutowy quickstart, co się stanie gdy nie zrobisz ruchu, czego unikać. Zlinkowany z głównego `README.md` w pierwszej linii nagłówka, żeby był odkrywalny bez kopania w `docs/`.
 
+## 8e. Soft launch + FA2 walidacja (Tydzień 4 mapy luk)
+
+**Pliki:** `api/routers/feedback.py`, `db/migrations/0003_feedback_table.sql`, `src/src/components/FeedbackPanel.tsx`, `evals/rada/scorer.py::score_syez_fa2`, `evals/rada/briefs.yaml` (9 briefów: 2 personal + 7 fa2), `docs/SOFT_LAUNCH.md`, `tests/test_feedback_endpoint.py`, `tests/test_eval_scorer_fa2.py`.
+
+### Feedback in-app (soft launch)
+Endpoint `POST /feedback` przyjmuje strukturalny payload (rating 1–5, what_worked, what_broke, opcjonalny debate_id). Per-JWT rate-limit (10/min). Persistence: tabela `feedback` z RLS per tenant (migracja `0003`); jeśli `repo.insert_feedback` lub migracja jeszcze niedostępne — fallback do `data/feedback.jsonl` (świadomy graceful degradation: soft launch nie blokuje się gdy DB migration jeszcze nie wdrożona). UI: `FeedbackPanel` (3 pytania, 5-gwiazdkowy rating).
+
+### Walidacja kontraktu FA2 (`score_syez_fa2`)
+Sześć deterministycznych checków na każdej syntezie Syeza w trybie `fa2`:
+1. **three_scenarios** — obecność BASE + BULL + BEAR.
+2. **mermaid_diagram** — blok ```mermaid``` z `flowchart`/`sequenceDiagram`/`graph`.
+3. **min_three_open_questions** — ≥3 znaki `?`.
+4. **stack_concrete** — minimum jeden konkret z whitelisty platform (Shopify, Stripe, Supabase, HubSpot, Vercel, FastAPI, …).
+5. **business_metrics_present** — minimum jedno: CAC, LTV, MRR, ARR, marża, runway, churn, conversion, retention, payback, break-even.
+6. **length_in_range** — 500–2400 słów (sanity range).
+
+Score = `passed / (passed + failed)`. Per-brief threshold w `scripts/eval_rada.py` (default 0.6). 7 briefów FA2 + 2 personal w `briefs.yaml` — startowy korpus walidacyjny; **TODO Tygodnia 4**: rozszerzyć do 20–30 anonimizowanych briefów z realnych historii (po soft launchu).
+
+### Protokół soft launchu
+`docs/SOFT_LAUNCH.md` — pre-flight checklist (CI, RLS smoke, pg_dump, sekrety), kryteria wyboru 3–5 userów (dyskwalifikacje świadome), monitoring 7-dniowy (Prometheus thresholds + Sentry + feedback table), kryteria sukcesu (rating ≥3.5, eval średni ≥0.7, zero RLS leaków), warunki rollbacku.
+
 ## 9. Budżet i koszty
 
 **Pliki:** `api/services/budget_guard.py`, `core/cost_tracking.py`
