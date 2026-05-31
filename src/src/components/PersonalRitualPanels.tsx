@@ -35,6 +35,19 @@ export function OnboardingPanel() {
   const q = items[idx];
   const close = (done: boolean) => {
     if (done) {
+      // Tydzień 4 / #14 tech-debt: na koniec onboardingu wysyłamy odpowiedzi
+      // do backendu, żeby zasiliły AKSJOMAT 1 (Architektura Marzenia).
+      // Best-effort — nie blokujemy zamknięcia modalu, gdy network padnie.
+      const answers = Object.entries(ans)
+        .filter(([, v]) => v && v.trim())
+        .map(([k, v]) => ({ question_idx: Number(k), answer: v.trim() }));
+      if (answers.length > 0) {
+        fetch(`${getApiBase()}/personal/onboarding/save`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getApiAuthHeaders() },
+          body: JSON.stringify({ answers }),
+        }).catch(() => { /* ignore — flaga localStorage chroni przed re-pytaniem */ });
+      }
       try { localStorage.setItem(LS_ONBOARDING_DONE, "1"); } catch { /* ignore */ }
     }
     setOpen(false);
