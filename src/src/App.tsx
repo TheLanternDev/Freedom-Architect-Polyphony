@@ -14,6 +14,8 @@ import {
   OnboardingPanel,
   DailyRitualPanel,
 } from "@/components/PersonalRitualPanels";
+import { FragmentCompass } from "@/components/FragmentCompass";
+import { ActiveProjectLimitModal, type ActiveProjectInfo } from "@/components/ActiveProjectLimitModal";
 import { DreamWizard } from "@/components/DreamWizard";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { IntegrationsModal } from "@/components/IntegrationsModal";
@@ -270,6 +272,38 @@ export default function App() {
         onClose={() => setIntegrationsOpen(false)}
       />
       {councilMode === "personal" && <OnboardingPanel />}
+      {/* AKSJOMAT 0 — kompas Fragmentu. Stale widoczny w trybie personal,
+          jako delikatne przypomnienie że to nie jest todo, tylko postawa. */}
+      {councilMode === "personal" && (
+        <div className="fixed bottom-4 right-4 z-40 max-w-[320px] no-print">
+          <FragmentCompass compact />
+        </div>
+      )}
+      {/* AKSJOMAT 2 — konfrontacja gdy backend zwraca 409 active_project_limit.
+          Zamiast suchego błędu: pełen dialog z aktywnymi projektami i trzema
+          świadomymi opcjami (kończę / archiwizuję / rezygnuję). */}
+      {state.auditViolation?.kind === "active_project_limit" && (
+        <ActiveProjectLimitModal
+          open
+          limit={Number(state.auditViolation.details?.limit ?? 1)}
+          activeProjects={(state.auditViolation.details?.active_projects as ActiveProjectInfo[]) ?? []}
+          onFinish={(pid) => {
+            // TODO (osobny PR): otwarcie widoku functionality_checklist dla #pid.
+            // Tutaj zamykamy modal — user kontynuuje ręcznie w sekcji projektów.
+            console.info("[AKSJOMAT 2] użytkownik kończy projekt:", pid);
+            window.location.hash = `#project=${pid}`;
+          }}
+          onArchive={(pid) => {
+            console.info("[AKSJOMAT 2] użytkownik archiwizuje świadomie:", pid);
+            window.location.hash = `#archive=${pid}`;
+          }}
+          onCancel={() => {
+            // Czyścimy violation — user świadomie zrezygnował z nowego.
+            // (Reset stanu robi useDebate przy nowym briefie.)
+            window.location.reload();
+          }}
+        />
+      )}
       {dreamWizardOpen && (
         <DreamWizard
           onSubmit={(b) => {

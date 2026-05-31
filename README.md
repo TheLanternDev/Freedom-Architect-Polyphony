@@ -1,5 +1,7 @@
 # Architekt Wolności – Rada Nadzorcza „Mój Świat” (backend + Tauri UI)
 
+**Dla użytkownika (czym to jest, jak używać, czego unikać):** [`USER_README.md`](USER_README.md)
+
 **Instalacja lokalna (model founders / BYOK):** [`INSTALL.md`](INSTALL.md) · **dokumentacja:** [`docs/README.md`](docs/README.md) · kontrakt: [`docs/spec/SPEC_CURRENT.md`](docs/spec/SPEC_CURRENT.md) · oferta: [`docs/FOUNDERS_OFFER.md`](docs/FOUNDERS_OFFER.md) · bezpieczeństwo lokalne: [`docs/SECURITY_LOCAL.md`](docs/SECURITY_LOCAL.md) · support: [`docs/SUPPORT_PLAYBOOK.md`](docs/SUPPORT_PLAYBOOK.md) · smoke: `./scripts/smoke_week1.sh`
 
 Silnik FastAPI (SSE, SQLite, Redis opcjonalnie) oraz aplikacja **Tauri v2 + React 19 + Vite + Tailwind** zgodnie ze specyfikacją MVP v1.1 (historia debat, strukturalna synteza Syeza, zobowiązania, alert budżetu LLM).
