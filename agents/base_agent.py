@@ -158,6 +158,8 @@ class BaseAgent(ABC):
         debate_mode: str = "pelna",
         evolution_note: Optional[str] = None,
         council_mode: str = "personal",
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         """
         Asynchroniczna wersja: realne wywołanie LLM (z cache + retry).
@@ -197,6 +199,8 @@ class BaseAgent(ABC):
             ctx, dream=dream, language=language, debate_mode=debate_mode,
             council_mode=council_mode,
             has_evolution_note=bool(evolution_note and evolution_note.strip()),
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
 
     def get_full_instruction(
@@ -424,23 +428,26 @@ class BaseAgent(ABC):
         language: str = "pl",
         debate_mode: str = "pelna",
         council_mode: str = "personal",
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> str:
-        # v7: izolacja cache per council_mode (personal vs fa2).
+        # v8: izolacja cache per tenant_id + user_id (multi-tenancy hard isolation).
         #
-        # Dlaczego council_mode jest częścią klucza:
-        # Ten sam agent (np. Syez) generuje zupełnie różne odpowiedzi w trybie
-        # "personal" (synteza Rady osobistej) i "fa2" (analiza biznesowa FA2).
-        # Używają innych system promptów, innych user-message templates i innych
-        # max_tokens. Bez council_mode w kluczu Redis zwróciłby odpowiedź
-        # z trybu osobistego na zapytanie FA2 (i odwrotnie), co łamie kontrakt
-        # obu trybów. Izolacja jest gwarantowana przez włączenie council_mode
-        # do hasha — identyczny context + model + temperature w dwóch trybach
-        # daje dwa różne klucze cache.
+        # Dlaczego tenant_id / user_id są częścią klucza:
+        # `context[:400]` może kolidować między userami (wspólny prefix briefu,
+        # ten sam Dream Architecture header, ten sam Daily Signal). Bez tych pól
+        # Redis zwracałby odpowiedź jednego użytkownika drugiemu — wyciek treści
+        # osobistej między kontami. To naruszenie multi-tenancy z `db/tenant.py`.
+        # Brak ID (None) → fallback do izolacji per-process (legacy path, tylko
+        # gdy caller jawnie nie ma kontekstu requestu, np. CLI / testy).
+        #
+        # v7 (legacy): izolacja per council_mode (personal vs fa2). Zachowana.
         raw = (
             f"{context[:400]}:{model}:{temperature}:{dream_id or ''}:"
-            f"{language}:{debate_mode}:{council_mode}"
+            f"{language}:{debate_mode}:{council_mode}:"
+            f"{tenant_id or ''}:{user_id or ''}"
         ).encode("utf-8")
-        return f"llm:v7:{name}:{hashlib.sha256(raw).hexdigest()}"
+        return f"llm:v8:{name}:{hashlib.sha256(raw).hexdigest()}"
 
     @retry(
         stop=stop_after_attempt(5),
@@ -458,6 +465,8 @@ class BaseAgent(ABC):
         debate_mode: str = "pelna",
         council_mode: str = "personal",
         has_evolution_note: bool = False,
+        tenant_id: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         cfg = dict(self.get_model_config(council_mode=council_mode))
         if debate_mode == "codzienny":
@@ -471,6 +480,19 @@ class BaseAgent(ABC):
             return self._fallback_contribute(context)
 
         dream_id = getattr(dream, "dream_id", None) if dream is not None else None
+        # Multi-tenancy hard isolation: gdy caller nie podał ID, sięgamy do
+        # ContextVar z `db.tenant` (ustawianego przez middleware na podstawie
+        # JWT claim `sub` / `tenant_id`). Try/except, żeby BaseAgent działał
+        # w testach jednostkowych bez warstwy DB / w trybie offline.
+        if tenant_id is None or user_id is None:
+            try:
+                from db.tenant import current_tenant_id, current_user_id
+                if tenant_id is None:
+                    tenant_id = current_tenant_id()
+                if user_id is None:
+                    user_id = current_user_id()
+            except Exception:
+                pass
         cache_key = self._cache_key(
             self.name,
             context,
@@ -480,6 +502,8 @@ class BaseAgent(ABC):
             language=language,
             debate_mode=debate_mode,
             council_mode=council_mode,
+            tenant_id=tenant_id,
+            user_id=user_id,
         )
         redis = await self._get_redis()
         if redis is not None:

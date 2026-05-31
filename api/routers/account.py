@@ -8,14 +8,15 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
-from slowapi.util import get_remote_address
 
+from api._rate_limit import jwt_or_ip_key
 from api.settings import write_rate_limit
 from db import get_db, repo
 
 logger = logging.getLogger(__name__)
 
-_limiter = Limiter(key_func=get_remote_address)
+# Endpointy `/account/*` są ZAWSZE zaautentykowane → limit per JWT `sub`.
+_limiter = Limiter(key_func=jwt_or_ip_key)
 
 router = APIRouter(prefix="/account", tags=["account"])
 

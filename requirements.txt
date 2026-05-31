@@ -18,3 +18,6 @@ slowapi>=0.1.9
 cryptography>=42.0.0
 python-multipart>=0.0.9
 sentry-sdk[fastapi]>=2.0.0
+# Testowanie: pytest-asyncio dla `@pytest.mark.asyncio`, pytest-cov dla CI coverage gate.
+pytest-asyncio>=0.23.0
+pytest-cov>=4.1.0

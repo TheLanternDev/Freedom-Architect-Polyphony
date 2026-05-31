@@ -325,8 +325,9 @@ app = FastAPI(
 # Storage rate-limitu: Redis (globalny przy wielu instancjach) lub in-memory
 # fallback (pojedynczy proces). Bez storage_uri slowapi liczy per-proces.
 _rl_storage = (os.getenv("REDIS_URL") or "").strip() or "memory://"
+from api._rate_limit import jwt_or_ip_key
 limiter = Limiter(
-    key_func=get_remote_address,
+    key_func=jwt_or_ip_key,
     enabled=rate_limit_enabled(),
     storage_uri=_rl_storage,
 )

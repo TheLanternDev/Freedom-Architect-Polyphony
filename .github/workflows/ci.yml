@@ -56,5 +56,104 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -r requirements.txt pytest
-      - run: pytest tests/ -q
+      - run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov
+      - name: Run tests with coverage gate
+        run: |
+          pytest tests/ -q \
+            --cov=agents --cov=core --cov=api --cov=db \
+            --cov-report=term-missing \
+            --cov-fail-under=64
+      - name: Verify cache isolation (multi-tenancy hard isolation)
+        run: python scripts/verify_cache_isolation.py
+
+  secrets-scan:
+    # Skan repo na potencjalne wycieki sekretów (Anthropic / xAI / OpenAI / AWS / GitHub PAT).
+    # `detect-secrets` jako baseline check — szybki, bez konieczności postawienia gitleaksa.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # potrzebne dla skanu po całej historii
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install detect-secrets
+      - name: Scan working tree
+        run: |
+          detect-secrets scan --all-files \
+            --exclude-files 'venv/|node_modules/|\.git/|src/dist/|__pycache__/' \
+            --exclude-files '.*\.lock(\.json)?$|package-lock\.json' \
+            --exclude-lines 'sk-ant-\.{3}|xai-\.{3}|YOUR_|XXXX|<.*>|example' \
+            > /tmp/secrets.json
+          # Plik wyjściowy ma "results" — jeśli niepuste, fail.
+          if python -c "import json,sys; d=json.load(open('/tmp/secrets.json')); sys.exit(1 if d.get('results') else 0)"; then
+            echo "✅ No secrets detected."
+          else
+            echo "❌ Potential secrets in repo — review /tmp/secrets.json output above."
+            cat /tmp/secrets.json
+            exit 1
+          fi
+
+  rls-smoke:
+    # End-to-end smoke RLS na żywym Postgresie: INSERT jako tenant A, SELECT
+    # jako tenant B musi zwrócić 0 wierszy. Zabezpiecza przed regresją po
+    # zmianach w `db/migrations/*.sql` lub `db/pg_wrap.py`.
+    runs-on: ubuntu-latest
+    needs: [lint]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: architekt
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/architekt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install asyncpg
+      - name: Apply schema + migrations
+        run: |
+          sudo apt-get install -y postgresql-client
+          psql "$DATABASE_URL" -f db/schema_postgres.sql
+          psql "$DATABASE_URL" -f db/migrations/0001_add_tenant_isolation.sql
+          psql "$DATABASE_URL" -f db/migrations/0002_enable_rls.sql
+      - name: Create NOSUPERUSER NOBYPASSRLS app role (jak na prod)
+        run: |
+          psql "$DATABASE_URL" <<'SQL'
+          CREATE ROLE app_test LOGIN PASSWORD 'test' NOSUPERUSER NOBYPASSRLS;
+          GRANT USAGE ON SCHEMA public TO app_test;
+          GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_test;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_test;
+          SQL
+      - name: Smoke RLS — tenant B nie może czytać wierszy tenanta A
+        run: |
+          OUTPUT=$(PGPASSWORD=test psql "postgresql://app_test@localhost:5432/architekt" -At <<'SQL'
+          SET architekt.tenant_id = 'A';
+          INSERT INTO dreams (id, tenant_id, raw_brief, core_dream, value_anchor,
+              pillars_json, milestones_json, next_move_json,
+              completion_criteria_json, functionality_checklist_json)
+          VALUES ('a1', 'A', 'brief', 'cd', 'va', '[]', '[]', '{}', '[]', '[]');
+          SET architekt.tenant_id = 'B';
+          SELECT COUNT(*) FROM dreams;
+          SET architekt.tenant_id = 'A';
+          SELECT COUNT(*) FROM dreams;
+          SQL
+          )
+          echo "Counts (B then A): $OUTPUT"
+          # B musi widzieć 0, A musi widzieć 1.
+          B_COUNT=$(echo "$OUTPUT" | sed -n '1p')
+          A_COUNT=$(echo "$OUTPUT" | sed -n '2p')
+          if [ "$B_COUNT" != "0" ] || [ "$A_COUNT" != "1" ]; then
+            echo "❌ RLS broken — tenant B saw $B_COUNT row(s), tenant A saw $A_COUNT row(s)."
+            exit 1
+          fi
+          echo "✅ RLS enforced: cross-tenant SELECT zwraca 0."

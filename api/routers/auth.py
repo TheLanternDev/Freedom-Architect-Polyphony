@@ -13,11 +13,15 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from slowapi import Limiter
-from slowapi.util import get_remote_address
+
+from api._rate_limit import jwt_or_ip_key
 
 logger = logging.getLogger(__name__)
 
-_limiter = Limiter(key_func=get_remote_address)
+# Rate limit per JWT `sub` z fallbackiem na IP (patrz `api._rate_limit`).
+# Dla `/auth/*` JWT najczęściej JESZCZE nie istnieje (to ścieżki login/refresh),
+# więc realnie limit pójdzie po IP — co dla tych endpointów jest poprawne.
+_limiter = Limiter(key_func=jwt_or_ip_key)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

@@ -15,7 +15,12 @@ from starlette.responses import Response
 
 from api import settings
 from api.auth_identity import decode_user_jwt_checked
-from db.tenant import DEFAULT_TENANT, set_current_tenant_id
+from db.tenant import (
+    DEFAULT_TENANT,
+    DEFAULT_USER,
+    set_current_tenant_id,
+    set_current_user_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +58,7 @@ async def architekt_http_guard(
     # — reset byłby wykonany zanim generator SSE wyprodukuje jakikolwiek chunk.
     # Wartość i tak jest izolowana per-Task dzięki mechanizmowi ContextVar.
     set_current_tenant_id(DEFAULT_TENANT)
+    set_current_user_id(DEFAULT_USER)
 
     api_key = settings.api_key_legacy()
     jwt_on = settings.jwt_secret_configured()
@@ -81,6 +87,10 @@ async def architekt_http_guard(
             request.state.architekt_tenant_id = tid
             # Faza 4: tenant_id z JWT → ContextVar; fallback: sub.
             set_current_tenant_id(str(tid or sub or DEFAULT_TENANT))
+            # AKSJOMAT 1 / cache isolation: user_id (claim `sub`) → ContextVar.
+            # `BaseAgent._cache_key` używa go do hard-isolation cache LLM między
+            # userami tego samego tenanta (zapobiega cross-user wycieku odpowiedzi).
+            set_current_user_id(str(sub or DEFAULT_USER))
             if settings.enforce_tenant_header_match():
                 th = settings.tenant_header_name()
                 hdr_tid = (request.headers.get(th) or "").strip()

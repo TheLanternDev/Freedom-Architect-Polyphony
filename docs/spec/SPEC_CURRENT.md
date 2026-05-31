@@ -256,6 +256,41 @@ Mechanizmy:
 
 ---
 
+## 7a. Decyzja persistence (target produkcyjny: PostgreSQL)
+
+**Pliki:** `db/backend.py`, `db/schema_postgres.sql`, `db/schema.sql` (SQLite), `db/migrations/*.sql`, `db/pg_wrap.py`, `core/db/connection.py` (24-linijkowy BC shim — nie duplikat, alias dla starych importów).
+
+`db/backend.py:use_postgres()` decyduje runtime'owo:
+- `DATABASE_URL` zaczyna się od `postgresql://` lub `postgres://` → **Postgres** (`asyncpg`, schema `db/schema_postgres.sql`, migracje z `db/migrations/`).
+- inaczej → **SQLite** (`aiosqlite`, schema `db/schema.sql`, plik `data/architekt.db`).
+
+**Świadoma decyzja na prod: Postgres.** RLS (migracja 0002) ma realną wartość tylko na PG; SQLite nie wspiera Row Level Security. SQLite zostaje jako szybki backend dev/test/CI (zero setupu) — same testy jednostkowe i nie-RLS smoke jadą na SQLite, RLS smoke jest osobnym jobem CI (`rls-smoke`) na żywym PG service container.
+
+### Wymogi prod (PG)
+
+1. `DATABASE_URL` → managed PG (Supabase / RDS / Render / Fly Postgres).
+2. Aplikacja łączy się jako rola `NOSUPERUSER NOBYPASSRLS` (patrz §8 RLS). Sprawdzenie po deployu:
+   ```sql
+   SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;
+   ```
+3. Migracje uruchamiane w kolejności (init_db wywoła automatycznie):
+   ```
+   psql "$DATABASE_URL" -f db/schema_postgres.sql
+   psql "$DATABASE_URL" -f db/migrations/0001_add_tenant_isolation.sql
+   psql "$DATABASE_URL" -f db/migrations/0002_enable_rls.sql
+   ```
+4. Backup: codzienny `pg_dump` na storage poza tym samym hostem (S3/R2/B2). Restore drill **min. raz na kwartał** — niesprawdzony backup to nie backup. Komendy:
+   ```
+   pg_dump -Fc "$DATABASE_URL" > backup-$(date +%F).dump
+   pg_restore -d "$RESTORE_TARGET_URL" --clean --if-exists backup-YYYY-MM-DD.dump
+   ```
+   Managed PG (Supabase/Render) mają auto-backup w ustawieniach — włącz i potwierdź retencję ≥7 dni.
+5. Migracja danych dev→prod (jeśli były dane na SQLite): jednorazowy skrypt eksportu (`scripts/sqlite_to_pg.py` — TODO, nie tworzymy do czasu realnej potrzeby).
+
+### Decyzja dla użytkowników desktop (Tauri/`src/`)
+
+Tauri działa **lokalnie** na maszynie usera — tam zostaje SQLite (`data/architekt.db`). Multi-user / multi-tenant nie ma sensu w trybie desktop (jeden user = jeden tenant `default`). RLS pomijane.
+
 ## 7. Model danych (`db/schema.sql`, dosłownie)
 
 Wszystkie tabele: `tenant_id TEXT NOT NULL DEFAULT 'default'` (multi-tenant).
@@ -313,7 +348,20 @@ Oba schematy mają **te same 10 tabel, te same kolumny i te same CHECK-i enumów
 `safety_check()` przed Radą: normalizacja NFKD→ASCII lowercase, regex po granicach słów (`\b`) na liście fraz kryzysowych PL+EN → event `safety_halt` z nr 116 123; debata **nie startuje**. Filozofia: *Zdrowie Patryka > postęp projektu.*
 
 ### Auth (`api/routers/auth.py`, `api/auth_identity.py`, `api/http_guard.py`)
-JWT multi-tenant; rejestracja/login z hashem hasła; `http_guard` wyciąga `tenant_id` z JWT i wstrzykuje do kontekstu zapytań DB. Refresh/revoke wymagają Redis (blocklist JTI).
+JWT multi-tenant; rejestracja/login z hashem hasła; `http_guard` wyciąga `tenant_id` z JWT i wstrzykuje do kontekstu zapytań DB. Refresh/revoke wymagają Redis (blocklist JTI). Middleware ustawia również `current_user_id` (claim `sub`) — wykorzystywany przez `BaseAgent._cache_key` do hard-isolation cache LLM między userami w obrębie tego samego tenanta.
+
+### Rate limiting (`api/_rate_limit.py`, `main.py`, `api/routers/{auth,account}.py`)
+`slowapi` z `key_func=jwt_or_ip_key`: per JWT `sub` gdy autentykowany (`u:<sub>`), fallback per IP (`ip:<addr>`) gdy nie. Storage: Redis (`REDIS_URL`) lub in-memory fallback. Limit per-user jest stabilny niezależnie od sieci klienta — dwóch userów za NAT-em mają niezależne buckety, jeden user z VPN-em nie obchodzi limitu rotacją IP.
+
+### Row-Level Security (`db/migrations/0002_enable_rls.sql`, `db/pg_wrap.py`)
+Defense-in-depth dla multi-tenancy w PostgreSQL. Każda tabela z `tenant_id` (dreams, debates, agent_voices, projects, functionality_items, completion_audits, commitments, agent_evolution) ma `ENABLE` + `FORCE ROW LEVEL SECURITY` oraz policy `tenant_isolation`: `USING/CHECK (tenant_id = current_setting('architekt.tenant_id', true) OR current_setting(...) = '')`. `PgConnection.execute` przed każdym query woła `SELECT set_config('architekt.tenant_id', <ctx>, false)` z aktywnego `ContextVar`. Bez tej warstwy bezpieczeństwo zależałoby wyłącznie od poprawności repo. Walidacja end-to-end: smoke w `db/migrations/0002_enable_rls.sql` (komentarz) — INSERT jako user-A + SELECT jako user-B musi zwrócić 0 wierszy.
+
+**WYMÓG PRODUKCYJNY:** aplikacja **MUSI** łączyć się z PG jako rola `NOSUPERUSER NOBYPASSRLS`. Superuser i role z `BYPASSRLS` omijają RLS niezależnie od `FORCE` — to zaprojektowane zachowanie Postgresa, nie bug. Supabase / RDS / Render / Fly dają zwykle dedykowanego "application user" bez tych przywilejów; weryfikuj przy deploy'u:
+```sql
+SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;
+-- oba MUSZĄ być `f`.
+```
+Tabela `users` jest **świadomie poza RLS** — login wymaga zapytania o usera zanim jego tenant_id jest znany. Hashing argon2 + brak innych danych w wierszu redukuje ryzyko.
 
 ---
 

@@ -65,3 +65,4 @@ BETA_SPONSOR.marker
 ab_out/
 eval-reviewer.skill
 fa-lead-finder.skill
+.coverage.*
