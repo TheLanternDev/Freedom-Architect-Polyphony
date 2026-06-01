@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Optional
 
 from api.services._types import BriefLike, PhaseCouncilResult, PhaseSynthesisResult
+from agents.base_agent import _LLM_TIMEOUT_ERRORS
+from config.llm_providers import LLM_TIMEOUT_WAIT_SEC
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +103,11 @@ from api.services.dream_service import (
     dream_architecture_sse,
     persist_dream_and_project,
 )
-from api.services.mode_helpers import build_audit_fix_prompt, mode_decorator_for_dream
+from api.services.mode_helpers import (
+    _pending_msg,
+    build_audit_fix_prompt,
+    mode_decorator_for_dream,
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -340,11 +346,22 @@ async def _phase_council(
             if buf:
                 await queue.put((" ".join(buf), False))
             await queue.put((response, True))
+        except _LLM_TIMEOUT_ERRORS:
+            await queue.put(
+                (
+                    f"[timeout: agent {agent.name} przekroczył {LLM_TIMEOUT_WAIT_SEC}s]",
+                    True,
+                )
+            )
         except Exception as e:
             await queue.put((f"[błąd: {e}]", True))
 
     def _is_error_voice(text: str) -> bool:
-        return text.startswith("[błąd") or text.startswith("[error")
+        return (
+            text.startswith("[błąd")
+            or text.startswith("[error")
+            or text.startswith("[timeout:")
+        )
 
     for a in council:
         yield _sse("agent_start", {"agent": a.name})
@@ -363,7 +380,11 @@ async def _phase_council(
                     if _is_error_voice(text):
                         # AKSJOMAT 1: integralność Rady. Uszkodzony głos NIE trafia
                         # do Syeza jako pełnoprawny — i degradacja jest WIDOCZNA (#3).
-                        yield _sse("agent_error", {"agent": a.name, "error": text})
+                        kind = "timeout" if text.startswith("[timeout:") else "error"
+                        yield _sse(
+                            "agent_error",
+                            {"agent": a.name, "error": text, "kind": kind},
+                        )
                     else:
                         full_voices[a.name] = text
                         yield _sse("agent_done", {"agent": a.name, "full_text": text})
@@ -645,6 +666,22 @@ async def _stream_debate_inner(
     council_mode: str = "personal",
 ) -> AsyncIterator[str]:
     """Właściwa orkiestracja: A0 → agenci → Syez → zapis."""
+
+    # Wczesny sygnał do frontu + log do uvicorn: backend żyje, zaczyna pracę.
+    # Bez logu nie wiadomo czy generator w ogóle startuje (uvicorn loguje
+    # tylko HTTP status, nie ciało SSE).
+    logger.info(
+        "_stream_debate_inner: START (mode=%s, council_mode=%s, lang=%s, brief_len=%d)",
+        brief.mode, council_mode, brief.language, len(brief.description or ""),
+    )
+    yield _sse(
+        "debate_pending",
+        {
+            "status": "initializing",
+            "council_mode": council_mode,
+            "msg": _pending_msg(council_mode, brief.language),
+        },
+    )
 
     # ── Safety check ─────────────────────────────────────────────────────────
     if _SAFETY_AVAILABLE and _safety_check is not None:

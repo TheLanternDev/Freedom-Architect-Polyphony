@@ -28,6 +28,19 @@ export const DICT: Record<string, Phrase> = {
   "app.status.synthesizing": { pl: "Syez syntetyzuje", en: "Syez synthesizing" },
   "app.status.done": { pl: "Debata zakończona", en: "Debate finished" },
   "app.status.error": { pl: "Błąd", en: "Error" },
+  "app.status.safety_halt": { pl: "Wstrzymano — bezpieczeństwo", en: "Stopped — safety" },
+  "safety.halt.title": {
+    pl: "Wsparcie w kryzysie",
+    en: "Crisis support",
+  },
+  "safety.halt.helpline": {
+    pl: "Jeśli jesteś w kryzysie lub masz myśli o odebraniu sobie życia, zadzwoń pod numer",
+    en: "If you are in crisis or having thoughts of self-harm, call",
+  },
+  "safety.halt.footer": {
+    pl: "Debata nie została uruchomiona. Zdrowie jest ważniejsze niż postęp projektu.",
+    en: "The debate did not start. Your wellbeing matters more than project progress.",
+  },
   "app.btn.reset": { pl: "Resetuj", en: "Reset" },
   "app.mobile_mode_label": { pl: "Tryb (skrót mobilny)", en: "Mode (mobile shortcut)" },
   "app.error.unknown": {

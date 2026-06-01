@@ -34,8 +34,41 @@ def debate_rounds() -> int:
 
 
 def confrontation_enabled(mode: str) -> bool:
-    """Czy uruchomić drugą turę dla danego trybu debaty."""
+    """Czy tryb i flaga ENV w ogóle dopuszczają drugą turę (warunek konieczny)."""
     return debate_rounds() >= 2 and mode in _CONFRONTATION_MODES
+
+
+def tension_threshold() -> float:
+    """Próg „high-stakes" z ENV `AW_CONFRONTATION_TENSION_MIN` (domyślnie 0.66).
+
+    Intensywność par z compute_live_pair_frictions mieści się w 0.22–1.0;
+    ~0.66 oznacza wyraźne rozjechanie głosów. Clamp do [0, 1]."""
+    try:
+        v = float((os.getenv("AW_CONFRONTATION_TENSION_MIN") or "0.66").strip())
+    except ValueError:
+        return 0.66
+    return min(1.0, max(0.0, v))
+
+
+def tensions_exceed_threshold(
+    pairs: list[dict[str, Any]], threshold: float | None = None
+) -> bool:
+    """True, gdy najsilniejsza para napięć osiąga próg. Pusta lista → False
+    (rutynowa debata zostaje jednorundowa)."""
+    if not pairs:
+        return False
+    thr = tension_threshold() if threshold is None else threshold
+    top = max(float(p.get("intensity", 0.0)) for p in pairs)
+    return top >= thr
+
+
+def should_confront(
+    mode: str, pairs: list[dict[str, Any]], threshold: float | None = None
+) -> bool:
+    """Bramka „high-stakes": druga tura tylko gdy tryb+flaga ją dopuszczają
+    ORAZ napięcia rundy 1 przekraczają próg. W przeciwnym razie debata
+    pozostaje jednorundowa."""
+    return confrontation_enabled(mode) and tensions_exceed_threshold(pairs, threshold)
 
 
 def top_opponents_for(

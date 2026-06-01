@@ -52,6 +52,7 @@ def test_metrics_counters_inc_does_not_raise():
     _metrics.llm_cache_misses_total.labels(agent="Kogit").inc()
     _metrics.completion_violations_total.labels(kind="prose_audit_signals_weak").inc()
     _metrics.rate_limit_hits_total.labels(route="/debate/stream").inc()
+    _metrics.dream_distillation_total.labels(status="timeout").inc()
 
 
 def test_histogram_observes_without_error():

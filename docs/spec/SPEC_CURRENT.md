@@ -347,6 +347,8 @@ Oba schematy mają **te same 10 tabel, te same kolumny i te same CHECK-i enumów
 ### Safety halt (`core/safety.py`)
 `safety_check()` przed Radą: normalizacja NFKD→ASCII lowercase, regex po granicach słów (`\b`) na liście fraz kryzysowych PL+EN → event `safety_halt` z nr 116 123; debata **nie startuje**. Filozofia: *Zdrowie Patryka > postęp projektu.*
 
+**UI (wymóg):** `useDebate` **MUSI** obsłużyć SSE `safety_halt`: ustawić `status: "safety_halt"`, zapisać `payload.message` w `safetyMessage`, wyczyścić `pendingMsg`, zamknąć reader strumienia (`cancel`). `App.tsx` **MUSI** pokazać dedykowaną ramkę alertu (amber/czerwień) z widocznym numerem **116 123** oraz treścią z backendu. Rada i synteza **nie** startują (`debate_start` nie następuje). Reduktor: `src/hooks/debateSseReducer.ts`; test: `npm run test:unit` w `src/`.
+
 ### Auth (`api/routers/auth.py`, `api/auth_identity.py`, `api/http_guard.py`)
 JWT multi-tenant; rejestracja/login z hashem hasła; `http_guard` wyciąga `tenant_id` z JWT i wstrzykuje do kontekstu zapytań DB. Refresh/revoke wymagają Redis (blocklist JTI). Middleware ustawia również `current_user_id` (claim `sub`) — wykorzystywany przez `BaseAgent._cache_key` do hard-isolation cache LLM między userami w obrębie tego samego tenanta.
 
@@ -362,6 +364,17 @@ SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user;
 -- oba MUSZĄ być `f`.
 ```
 Tabela `users` jest **świadomie poza RLS** — login wymaga zapytania o usera zanim jego tenant_id jest znany. Hashing argon2 + brak innych danych w wierszu redukuje ryzyko.
+
+### Timeouty LLM (`config/llm_providers.py`)
+Jawna konfiguracja ENV (domyślne wartości w nawiasach):
+
+| Zmienna | Domyślnie | Zastosowanie |
+|---------|-----------|--------------|
+| `AW_LLM_TIMEOUT_SDK` | 45 | `AsyncAnthropic(timeout=…)` — agenti + destylacja (SDK httpx) |
+| `AW_LLM_TIMEOUT_WAIT` | 55 | `asyncio.wait_for` na `messages.create` agentów — **belt+suspenders** gdy SDK timeout zostanie obejrzany (np. wewnętrzny retry httpx). **Nie** jest to retry Tenacity dla `asyncio.TimeoutError` — timeout propaguje się do `_phase_council` jako `agent_error{kind:timeout}`. |
+| `AW_DREAM_TIMEOUT_WAIT` | 60 | `asyncio.wait_for` na destylację marzenia (Anthropic/xAI/Ollama) |
+
+Wymaganie: `AW_LLM_TIMEOUT_WAIT` > `AW_LLM_TIMEOUT_SDK`; `AW_DREAM_TIMEOUT_WAIT` ≥ `AW_LLM_TIMEOUT_WAIT` zalecane operacyjnie. Szablon: `.env.example`.
 
 ---
 

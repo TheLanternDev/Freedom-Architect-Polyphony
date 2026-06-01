@@ -11,6 +11,7 @@ Warstwa LLM v3.0:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -25,6 +26,8 @@ from config.agent_models import (
     get_model_config,
 )
 from config.llm_providers import (
+    LLM_TIMEOUT_SDK_SEC,
+    LLM_TIMEOUT_WAIT_SEC,
     anthropic_api_key,
     anthropic_omits_temperature,
     effective_llm_backend,
@@ -121,6 +124,7 @@ try:  # pragma: no cover
         APIConnectionError,
         APIError,
         APIStatusError,
+        APITimeoutError,
         AsyncAnthropic,
         BadRequestError,
         RateLimitError,
@@ -130,12 +134,21 @@ try:  # pragma: no cover
     # Tylko transient errors → retry. BadRequest / Auth są deterministyczne,
     # ponawianie ich = spalanie kredytów.
     _RETRYABLE = (RateLimitError, APIConnectionError)
+    _LLM_TIMEOUT_ERRORS: tuple[type[BaseException], ...] = (
+        asyncio.TimeoutError,
+        APITimeoutError,
+    )
 except Exception:  # pragma: no cover
     anthropic = None
     AsyncAnthropic = None
+
+    class APITimeoutError(Exception):  # noqa: N818 — stub gdy brak anthropic SDK
+        """Placeholder — przy _ANTHROPIC_OK=False nieużywany."""
+
     RateLimitError = APIConnectionError = APIError = APIStatusError = BadRequestError = Exception
     _ANTHROPIC_OK = False
     _RETRYABLE = (Exception,)
+    _LLM_TIMEOUT_ERRORS = (asyncio.TimeoutError,)
 
 try:  # pragma: no cover
     from tenacity import (
@@ -441,7 +454,10 @@ class BaseAgent(ABC):
             api_key = anthropic_api_key()
             if not api_key:
                 return None
-            cls._client = AsyncAnthropic(api_key=api_key)
+            # SDK timeout — bez tego domyślnie ~10 min; patrz AW_LLM_TIMEOUT_SDK.
+            cls._client = AsyncAnthropic(
+                api_key=api_key, timeout=float(LLM_TIMEOUT_SDK_SEC)
+            )
         return cls._client
 
     @classmethod
@@ -521,8 +537,11 @@ class BaseAgent(ABC):
         return f"llm:v8:{name}:{hashlib.sha256(raw).hexdigest()}"
 
     @retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential(multiplier=1, min=1, max=30) + wait_random(0, 2),
+        # Tenacity retry TYLKO dla RateLimitError + APIConnectionError.
+        # Timeouty (asyncio.TimeoutError, APITimeoutError) NIE są retry'owane —
+        # propagowane do `_phase_council` jako agent_error{kind:'timeout'}.
+        stop=stop_after_attempt(2),
+        wait=wait_exponential(multiplier=1, min=1, max=10) + wait_random(0, 2),
         retry=retry_if_exception_type(_RETRYABLE),
         before_sleep=before_sleep_log(logger, logging.WARNING),
         reraise=True,
@@ -640,7 +659,11 @@ class BaseAgent(ABC):
                 }
                 if not anthropic_omits_temperature(cfg["model"]):
                     create_kw["temperature"] = cfg["temperature"]
-                message = await client.messages.create(**create_kw)
+                # Belt+suspenders: wait_for > SDK (AW_LLM_TIMEOUT_WAIT vs SDK).
+                message = await asyncio.wait_for(
+                    client.messages.create(**create_kw),
+                    timeout=float(LLM_TIMEOUT_WAIT_SEC),
+                )
                 response_text = message.content[0].text.strip()
                 in_tok = message.usage.input_tokens
                 out_tok = message.usage.output_tokens
@@ -704,8 +727,33 @@ class BaseAgent(ABC):
             # 400 = nasz błąd (zły config, za długi context, etc.) — fail fast
             logger.error("LLM BadRequest for %s: %s", self.name, e)
             raise
+        except _LLM_TIMEOUT_ERRORS:
+            try:
+                from api._log import slog
+                from api._metrics import llm_calls_total
+
+                slog(
+                    "llm_call_timeout",
+                    agent=self.name,
+                    model=cfg["model"],
+                    timeout_s=LLM_TIMEOUT_WAIT_SEC,
+                )
+                llm_calls_total.labels(
+                    agent=self.name, model=cfg["model"], status="timeout"
+                ).inc()
+            except Exception:  # pragma: no cover
+                pass
+            raise
         except Exception as e:
             logger.error("LLM unrecoverable for %s: %s", self.name, e)
+            try:
+                from api._metrics import llm_calls_total
+
+                llm_calls_total.labels(
+                    agent=self.name, model=cfg["model"], status="error"
+                ).inc()
+            except Exception:  # pragma: no cover
+                pass
             return self._fallback_contribute(context)
 
     def _build_user_message(self, context: str, *, language: str = "pl",

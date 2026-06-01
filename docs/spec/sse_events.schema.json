@@ -31,6 +31,16 @@
       "required": ["message"]
     },
     {
+      "title": "debate_pending",
+      "description": "Wczesny sygnał że backend przetwarza brief (safety + destylacja). Zwykle pierwszy event w strumieniu.",
+      "properties": {
+        "status": { "const": "initializing" },
+        "council_mode": { "type": "string", "enum": ["personal", "fa2"] },
+        "msg": { "type": "string" }
+      },
+      "required": ["status", "council_mode", "msg"]
+    },
+    {
       "title": "budget_hard_block",
       "properties": {
         "error": { "const": "budget_exceeded" },
@@ -54,7 +64,8 @@
         "milestones": { "type": "array", "items": { "$ref": "#/$defs/milestone" } },
         "next_move": { "$ref": "#/$defs/next_move" },
         "completion_criteria": { "type": "array", "items": { "type": "string" } },
-        "functionality_checklist": { "type": "array", "items": { "type": "string" } }
+        "functionality_checklist": { "type": "array", "items": { "type": "string" } },
+        "quality": { "type": "string", "enum": ["llm", "fallback"] }
       },
       "required": ["core_dream", "value_anchor", "pillars", "milestones", "next_move", "completion_criteria", "functionality_checklist"]
     },
@@ -111,6 +122,16 @@
         "full_text": { "type": "string" }
       },
       "required": ["agent", "full_text"]
+    },
+    {
+      "title": "agent_error",
+      "description": "Agent nie dostarczył pełnoprawnego głosu (timeout lub błąd). Głos nie trafia do Syeza.",
+      "properties": {
+        "agent": { "type": "string" },
+        "error": { "type": "string" },
+        "kind": { "type": "string", "enum": ["timeout", "error"] }
+      },
+      "required": ["agent", "error", "kind"]
     },
     {
       "title": "live_tensions",

@@ -18,6 +18,7 @@ fallback, żeby system działał offline (np. w testach albo bez ANTHROPIC_API_K
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -25,11 +26,13 @@ import os
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from config.llm_providers import (
+    DREAM_TIMEOUT_WAIT_SEC,
+    LLM_TIMEOUT_SDK_SEC,
     anthropic_api_key,
     anthropic_omits_temperature,
     effective_llm_backend,
@@ -187,6 +190,10 @@ class DreamArchitecture(BaseModel):
     functionality_checklist: list[str] = Field(
         default_factory=list,
         description="OBOWIĄZKOWE (AKSJOMAT 2): co musi DZIAŁAĆ, żeby projekt był ukończony.",
+    )
+    distillation_quality: Literal["llm", "fallback"] = Field(
+        default="fallback",
+        description="Źródło destylacji: model LLM vs deterministyczny fallback.",
     )
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -577,6 +584,32 @@ def _parse_llm_json_object(text: str) -> dict[str, Any]:
     raise ValueError(f"JSON Architekta Marzenia nieparsowalny.{hint}") from last_err
 
 
+def _inc_dream_distillation_metric(status: str) -> None:
+    try:
+        from api._metrics import dream_distillation_total
+
+        dream_distillation_total.labels(status=status).inc()
+    except Exception:  # pragma: no cover
+        pass
+
+
+def _fallback_after_dream_timeout(
+    raw_brief: str,
+    *,
+    language: str,
+    backend: str,
+    model_name: str,
+) -> DreamArchitecture:
+    logger.warning(
+        "adistill_dream: TIMEOUT po %ss (%s, model=%s) — fallback (bez cache).",
+        DREAM_TIMEOUT_WAIT_SEC,
+        backend,
+        model_name,
+    )
+    _inc_dream_distillation_metric("timeout")
+    return _fallback_dream(raw_brief, language=language)
+
+
 def _build_dream_from_payload(raw_brief: str, payload: dict[str, Any]) -> DreamArchitecture:
     """Mapuje dict z LLM-a na DreamArchitecture (z walidacją Pydantic)."""
     return DreamArchitecture(
@@ -591,6 +624,7 @@ def _build_dream_from_payload(raw_brief: str, payload: dict[str, Any]) -> DreamA
         next_move=NextMove(**(payload.get("next_move") or {"action": "?", "when": "?"})),
         completion_criteria=list(payload.get("completion_criteria", []) or []),
         functionality_checklist=list(payload.get("functionality_checklist", []) or []),
+        distillation_quality="llm",
     )
 
 
@@ -667,18 +701,25 @@ async def adistill_dream(
     if backend == "xai":
         try:
             xm = map_claude_model_to_xai(model_name)
-            text, _, _ = await xai_chat_completion(
-                system=system_prompt,
-                user=user_content,
-                model=xm,
-                max_tokens=max_tokens,
-                temperature=temperature,
+            text, _, _ = await asyncio.wait_for(
+                xai_chat_completion(
+                    system=system_prompt,
+                    user=user_content,
+                    model=xm,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ),
+                timeout=float(DREAM_TIMEOUT_WAIT_SEC),
             )
             payload = _parse_llm_json_object(text)
             dream = _build_dream_from_payload(raw_brief, payload)
             _DREAM_CACHE[key] = dream
             logger.info("adistill_dream: marzenie zdestylowane (dream_id=%s)", dream.dream_id)
             return dream
+        except asyncio.TimeoutError:
+            return _fallback_after_dream_timeout(
+                raw_brief, language=language, backend="xai", model_name=xm
+            )
         except Exception as e:
             logger.warning("adistill_dream: błąd xAI (%s) — fallback (bez cache).", e)
             return _fallback_dream(raw_brief, language=language)
@@ -686,18 +727,25 @@ async def adistill_dream(
     if backend == "ollama":
         try:
             om = map_claude_model_to_ollama(model_name)
-            text, _, _ = await ollama_chat_completion(
-                system=system_prompt,
-                user=user_content,
-                model=om,
-                max_tokens=max_tokens,
-                temperature=temperature,
+            text, _, _ = await asyncio.wait_for(
+                ollama_chat_completion(
+                    system=system_prompt,
+                    user=user_content,
+                    model=om,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ),
+                timeout=float(DREAM_TIMEOUT_WAIT_SEC),
             )
             payload = _parse_llm_json_object(text)
             dream = _build_dream_from_payload(raw_brief, payload)
             _DREAM_CACHE[key] = dream
             logger.info("adistill_dream: marzenie zdestylowane (dream_id=%s)", dream.dream_id)
             return dream
+        except asyncio.TimeoutError:
+            return _fallback_after_dream_timeout(
+                raw_brief, language=language, backend="ollama", model_name=om
+            )
         except Exception as e:
             logger.warning("adistill_dream: błąd Ollama (%s) — fallback (bez cache).", e)
             return _fallback_dream(raw_brief, language=language)
@@ -717,8 +765,13 @@ async def adistill_dream(
         _DREAM_CACHE[key] = dream
         return dream
 
+    logger.info(
+        "adistill_dream: start (model=%s, brief_chars=%d, lang=%s)",
+        model_name, len(raw_brief), language,
+    )
     try:
-        client = AsyncAnthropic(api_key=ak)
+        # SDK (AW_LLM_TIMEOUT_SDK) + wait_for belt+suspenders (AW_DREAM_TIMEOUT_WAIT).
+        client = AsyncAnthropic(api_key=ak, timeout=float(LLM_TIMEOUT_SDK_SEC))
         create_kw: dict = {
             "model": model_name,
             "max_tokens": max_tokens,
@@ -727,13 +780,26 @@ async def adistill_dream(
         }
         if not anthropic_omits_temperature(model_name):
             create_kw["temperature"] = temperature
-        msg = await client.messages.create(**create_kw)
+        msg = await asyncio.wait_for(
+            client.messages.create(**create_kw),
+            timeout=float(DREAM_TIMEOUT_WAIT_SEC),
+        )
         text = msg.content[0].text  # type: ignore[index,union-attr]
         payload = _parse_llm_json_object(text)
         dream = _build_dream_from_payload(raw_brief, payload)
         _DREAM_CACHE[key] = dream
         logger.info("adistill_dream: marzenie zdestylowane (dream_id=%s)", dream.dream_id)
         return dream
+    except asyncio.TimeoutError:
+        return _fallback_after_dream_timeout(
+            raw_brief,
+            language=language,
+            backend="anthropic",
+            model_name=model_name,
+        )
     except Exception as e:
-        logger.warning("adistill_dream: błąd LLM (%s) — fallback (bez cache).", e)
+        logger.warning(
+            "adistill_dream: błąd LLM (%s: %s) — fallback (bez cache).",
+            type(e).__name__, e,
+        )
         return _fallback_dream(raw_brief, language=language)

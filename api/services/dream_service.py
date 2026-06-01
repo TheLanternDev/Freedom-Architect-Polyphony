@@ -44,6 +44,7 @@ async def distill_dream(
 
 def dream_architecture_sse(dream: DreamArchitecture) -> str:
     """Formatuje DreamArchitecture jako SSE event."""
+    quality = getattr(dream, "distillation_quality", "fallback")
     return _sse(
         "dream_architecture",
         {
@@ -55,6 +56,7 @@ def dream_architecture_sse(dream: DreamArchitecture) -> str:
             "next_move": dream.next_move.model_dump(),
             "completion_criteria": dream.completion_criteria,
             "functionality_checklist": dream.functionality_checklist,
+            "quality": quality,
         },
     )
 

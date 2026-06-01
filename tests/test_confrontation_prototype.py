@@ -18,6 +18,8 @@ from api.services.confrontation import (
     build_confrontation_context,
     confrontation_enabled,
     debate_rounds,
+    should_confront,
+    tensions_exceed_threshold,
     top_opponents_for,
 )
 
@@ -41,6 +43,24 @@ def test_enabled_only_for_full_modes(monkeypatch):
     assert confrontation_enabled("pelna") is True   # kanoniczna nazwa (db CHECK)
     assert confrontation_enabled("schematy") is True
     assert confrontation_enabled("codzienny") is False  # decyzja Rady: nie codzienny
+
+
+def test_tensions_exceed_threshold_empty_pairs():
+    assert tensions_exceed_threshold([]) is False
+
+
+def test_tensions_exceed_threshold_uses_max_intensity():
+    pairs = [{"a": "Szow", "b": "Tai", "intensity": 0.5}]
+    assert tensions_exceed_threshold(pairs, threshold=0.66) is False
+    assert tensions_exceed_threshold(pairs, threshold=0.4) is True
+
+
+def test_should_confront_requires_mode_flag_and_tension(monkeypatch):
+    monkeypatch.setenv("AW_COUNCIL_DEBATE_ROUNDS", "2")
+    pairs = [{"a": "Szow", "b": "Relacjan", "intensity": 0.9}]
+    assert should_confront("pelna", pairs) is True
+    assert should_confront("codzienny", pairs) is False
+    assert should_confront("pelna", []) is False
 
 
 # ── Selekcja przeciwników z istniejących par napięć ──────────────────────────

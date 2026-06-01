@@ -27,6 +27,18 @@ _DAILY_QUESTIONS_EN: tuple[str, ...] = (
 )
 
 
+def _pending_msg(council_mode: str, language: str = "pl") -> str:
+    """Komunikat SSE `debate_pending` — zgodny z trybem rady i językiem briefu."""
+    en = (language or "pl").strip().lower() == "en"
+    if council_mode == "fa2":
+        if en:
+            return "Checking safety, preparing analysts..."
+        return "Sprawdzam bezpieczeństwo, przygotowuję analityków..."
+    if en:
+        return "Checking safety and distilling the dream..."
+    return "Sprawdzam bezpieczeństwo i destyluję marzenie..."
+
+
 def daily_checkin_question(language: str) -> str:
     """Pytanie dnia — rotacja po ordinalnym dniu roku."""
     i = date.today().toordinal() % len(_DAILY_QUESTIONS_PL)

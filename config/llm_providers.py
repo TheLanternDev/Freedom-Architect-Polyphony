@@ -11,6 +11,11 @@ Zmienne:
   AW_ANTHROPIC_OMIT_TEMPERATURE_SUBSTR — opcjonalnie: dodatkowe fragmenty nazwy modelu
     (po przecinku), dla których nie wysyłamy `temperature` do Messages API (Anthropic
     zwraca 400 „deprecated for this model” m.in. dla Claude Opus 4.7).
+
+  Timeouty LLM (sekundy, jawna konfiguracja):
+  AW_LLM_TIMEOUT_SDK — httpx/Anthropic SDK (domyślnie 45)
+  AW_LLM_TIMEOUT_WAIT — asyncio.wait_for na wywołaniach agentów (domyślnie 55, > SDK)
+  AW_DREAM_TIMEOUT_WAIT — destylacja marzenia xAI/Ollama/Anthropic (domyślnie 60)
 """
 
 from __future__ import annotations
@@ -21,6 +26,21 @@ from typing import Literal
 import httpx
 
 LLMBackend = Literal["anthropic", "xai", "ollama", "none"]
+
+
+def _int_env(name: str, default: str) -> int:
+    try:
+        return int((os.getenv(name) or default).strip())
+    except ValueError:
+        return int(default)
+
+
+# SDK Anthropic — bez tego domyślnie ~10 min wiszenia przy SSE.
+LLM_TIMEOUT_SDK_SEC = _int_env("AW_LLM_TIMEOUT_SDK", "45")
+# Belt+suspenders na `messages.create` agentów (np. wewnętrzny retry httpx > SDK).
+LLM_TIMEOUT_WAIT_SEC = _int_env("AW_LLM_TIMEOUT_WAIT", "55")
+# Destylacja AKSJOMATU 1 (Sonnet, JSON do ~2400 tok).
+DREAM_TIMEOUT_WAIT_SEC = _int_env("AW_DREAM_TIMEOUT_WAIT", "60")
 
 
 def _strip_key(name: str) -> str | None:

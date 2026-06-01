@@ -13,7 +13,8 @@ export type DebateStatus =
   | "agents_speaking"
   | "synthesizing"
   | "done"
-  | "error";
+  | "error"
+  | "safety_halt";
 
 // ── AKSJOMAT 1: Architektura Marzenia ──────────────────────────────────────
 
@@ -120,6 +121,10 @@ export interface DebateState {
   debateMode?: string;
   /** Ostatnie auto-zobowiązanie z SSE (tryb schematy). */
   lastCommitmentEcho?: Record<string, unknown>;
+  /** Wczesny komunikat z SSE `debate_pending` (destylacja / safety). */
+  pendingMsg?: string;
+  /** Treść z SSE `safety_halt` (flow kryzysowy — numer 116 123 w UI). */
+  safetyMessage?: string;
 }
 
 // ── SSE event payloads ─────────────────────────────────────────────────────

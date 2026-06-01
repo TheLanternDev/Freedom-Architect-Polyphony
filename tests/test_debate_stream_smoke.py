@@ -20,6 +20,17 @@ def _collect_events(resp_text: str) -> list[str]:
     return events
 
 
+def _first_event_data(resp_text: str) -> dict:
+    import json
+
+    block = resp_text.split("\n\n")[0]
+    data_line = next(
+        (ln for ln in block.splitlines() if ln.startswith("data: ")), None
+    )
+    assert data_line is not None, "brak data: w pierwszym bloku SSE"
+    return json.loads(data_line.removeprefix("data: "))
+
+
 def test_debate_stream_emits_full_event_sequence(client_no_redis):
     payload = {
         "description": (
@@ -37,8 +48,16 @@ def test_debate_stream_emits_full_event_sequence(client_no_redis):
 
     events = _collect_events(body)
 
-    # AKSJOMAT 1 — faza A0 musi pojawić się PRZED Radą
+    # Pierwszy event — wczesny sygnał (kontrakt SSE § debate_pending)
+    assert events[0] == "debate_pending"
+    pending = _first_event_data(body)
+    assert pending["status"] == "initializing"
+    assert pending["council_mode"] in ("personal", "fa2")
+    assert isinstance(pending["msg"], str) and len(pending["msg"]) > 0
+
+    # AKSJOMAT 1 — faza A0 musi pojawić się PRZED Radą (po debate_pending)
     assert "dream_architecture" in events
+    assert events.index("debate_pending") < events.index("dream_architecture")
     assert events.index("dream_architecture") < events.index("debate_start")
 
     # 9 agentów Rady

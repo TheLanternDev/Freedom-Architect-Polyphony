@@ -25,3 +25,30 @@ def test_sse_unicode():
     result = sse("pl", {"msg": "żółw"})
     assert "żółw" in result
     assert "\\u" not in result
+
+
+def test_sse_debate_pending_and_agent_error_payload_shape():
+    """Kształt payloadów zgodny z docs/spec/sse_events.schema.json (task 6)."""
+    pending = sse(
+        "debate_pending",
+        {
+            "status": "initializing",
+            "council_mode": "personal",
+            "msg": "Sprawdzam bezpieczeństwo i destyluję marzenie...",
+        },
+    )
+    assert pending.startswith("event: debate_pending\n")
+
+    err = sse(
+        "agent_error",
+        {
+            "agent": "Szow",
+            "error": "[timeout: agent Szow przekroczył 55s]",
+            "kind": "timeout",
+        },
+    )
+    import json
+
+    data_line = err.split("\n")[1]
+    payload = json.loads(data_line.removeprefix("data: "))
+    assert payload["kind"] == "timeout"

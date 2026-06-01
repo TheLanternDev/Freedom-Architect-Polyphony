@@ -11,6 +11,8 @@ Cztery rodziny metryk dobrane pod realne pytania:
         — ile razy syntezy Syeza nie spełniły AKSJOMATU 2 i wymagały re-promptu.
   • rate_limit_hits_total (Counter, label: route)
         — ile razy slowapi odrzucił request.
+  • dream_distillation_total (Counter, label: status)
+        — destylacja AKSJOMATU 1: success|timeout|error|fallback.
 
 Gdy `prometheus_client` nie jest zainstalowane (dev bez observability) —
 moduł degraduje do no-op stubów. Endpoint /metrics zwraca wtedy 503.
@@ -76,6 +78,12 @@ rate_limit_hits_total = Counter(
     "architekt_rate_limit_hits_total",
     "Liczba requestów odrzuconych przez slowapi.",
     labelnames=("route",),
+)
+
+dream_distillation_total = Counter(
+    "architekt_dream_distillation_total",
+    "Destylacja marzenia (AKSJOMAT 1) per status.",
+    labelnames=("status",),
 )
 
 

@@ -204,6 +204,7 @@ export default function App() {
     synthesizing: t("app.status.synthesizing"),
     done: t("app.status.done"),
     error: t("app.status.error"),
+    safety_halt: t("app.status.safety_halt"),
   };
 
   const handleCommit = useCallback(
@@ -356,10 +357,14 @@ export default function App() {
                   ? "bg-green-900/20 border-green-500/30 text-green-400"
                   : state.status === "error"
                   ? "bg-red-900/20 border-red-500/30 text-red-400"
+                  : state.status === "safety_halt"
+                  ? "bg-amber-950/40 border-amber-500/50 text-amber-200"
                   : "bg-white/5 border-white/10 text-white/40"
               }`}
             >
-              {STATUS_LABEL[state.status] ?? state.status}
+              {state.pendingMsg && agentList.length === 0
+                ? state.pendingMsg
+                : STATUS_LABEL[state.status] ?? state.status}
             </span>
 
             {!inDemo && (
@@ -542,6 +547,32 @@ export default function App() {
               allowedModes={allowedDemoModes}
             />
           </section>
+
+          {state.status === "safety_halt" && (
+            <div
+              role="alert"
+              className="rounded-lg border-2 border-amber-500/60 bg-amber-950/50 px-5 py-4 space-y-3"
+            >
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2 className="text-[15px] font-semibold text-amber-100">
+                  {t("safety.halt.title")}
+                </h2>
+                <span className="text-[22px] font-bold tracking-wide text-amber-300 tabular-nums">
+                  116 123
+                </span>
+              </div>
+              <p className="text-[13px] text-amber-100/90 leading-relaxed">
+                {t("safety.halt.helpline")}{" "}
+                <strong className="text-amber-200">116 123</strong>.
+              </p>
+              {state.safetyMessage ? (
+                <p className="text-[13px] text-amber-50/80 border-t border-amber-500/30 pt-3">
+                  {state.safetyMessage}
+                </p>
+              ) : null}
+              <p className="text-[12px] text-amber-200/70">{t("safety.halt.footer")}</p>
+            </div>
+          )}
 
           {state.status === "error" && (
             <div className="rounded-lg border border-red-500/30 bg-red-900/10 px-4 py-3 text-[13px] text-red-400">

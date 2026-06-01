@@ -4,24 +4,17 @@ import { humanizeFetchFailure } from "@/lib/fetchErrors";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import type {
+  AgentState,
   Brief,
   DebateState,
-  AgentState,
-  DebateStartPayload,
-  AgentChunkPayload,
-  AgentDonePayload,
-  SynthesisChunkPayload,
-  SynthesisDonePayload,
-  DreamArchitecturePayload,
-  ProjectStatePayload,
-  SynthesisStructuredPayload,
-  CompletionAuditViolationPayload,
-  DebateDonePayload,
-  BudgetWarningPayload,
   DebateStatus,
-  LiveTensionsPayload,
   DebateContinueBody,
+  SynthesisStructuredPayload,
 } from "@/types/debate";
+import {
+  reduceDebateEvent,
+  shouldCancelSseStream,
+} from "@/hooks/debateSseReducer";
 
 const INITIAL_STATE: DebateState = {
   status: "idle",
@@ -48,6 +41,8 @@ function debateBootstrap(status: DebateStatus): DebateState {
     error: undefined,
     debateMode: undefined,
     lastCommitmentEcho: undefined,
+    pendingMsg: undefined,
+    safetyMessage: undefined,
   };
 }
 
@@ -67,172 +62,18 @@ export function useDebate() {
   }, []);
 
   function handleEvent(event: string, payload: unknown) {
-    switch (event) {
-      // ── AKSJOMAT 1: Architektura Marzenia ─────────────────────────────
-      case "dream_architecture": {
-        const p = payload as DreamArchitecturePayload;
-        setState((s) => ({ ...s, dream: p }));
-        break;
-      }
-
-      case "dream_architecture_error": {
-        const p = payload as { error: string };
-        setState((s) => ({ ...s, dreamError: p.error }));
-        break;
-      }
-
-      // ── AKSJOMAT 2: stan projektu ────────────────────────────────────
-      case "project_state": {
-        const p = payload as ProjectStatePayload;
-        setState((s) => ({ ...s, project: p }));
-        break;
-      }
-
-      case "completion_audit_violation": {
-        const p = payload as CompletionAuditViolationPayload;
-        setState((s) => ({ ...s, auditViolation: p }));
-        break;
-      }
-
-      case "live_tensions": {
-        const p = payload as LiveTensionsPayload;
-        setState((s) => ({
-          ...s,
-          liveTensions: Array.isArray(p.pairs) ? p.pairs : [],
-        }));
-        break;
-      }
-
-      // ── Klasyczny pipeline Rady ──────────────────────────────────────
-      case "debate_start": {
-        const p = payload as DebateStartPayload;
-        const agents: Record<string, AgentState> = {};
-        for (const name of p.agents) {
-          agents[name] = { name, status: "idle", text: "", progress: 0 };
-        }
-        setState((s) => ({
-          ...s,
-          status: "agents_speaking",
-          agents,
-          continuationParentId: p.continuation_parent_id ?? undefined,
-          debateMode: p.mode,
-        }));
-        break;
-      }
-
-      case "agent_start": {
-        const p = payload as { agent: string };
-        setState((s) => ({
-          ...s,
-          agents: {
-            ...s.agents,
-            [p.agent]: { ...s.agents[p.agent], status: "analyzing", text: "", progress: 0 },
-          },
-        }));
-        break;
-      }
-
-      case "agent_chunk": {
-        const p = payload as AgentChunkPayload;
-        setState((s) => ({
-          ...s,
-          agents: {
-            ...s.agents,
-            [p.agent]: {
-              ...s.agents[p.agent],
-              status: "speaking",
-              text: (s.agents[p.agent]?.text ?? "") + p.chunk,
-              progress: Math.min(
-                96,
-                (s.agents[p.agent]?.progress ?? 0) + 5,
-              ),
-            },
-          },
-        }));
-        break;
-      }
-
-      case "agent_done": {
-        const p = payload as AgentDonePayload;
-        setState((s) => ({
-          ...s,
-          agents: {
-            ...s.agents,
-            [p.agent]: {
-              ...s.agents[p.agent],
-              status: "done",
-              text: p.full_text,
-              progress: 100,
-            },
-          },
-        }));
-        break;
-      }
-
-      case "synthesis_start": {
-        setState((s) => ({ ...s, status: "synthesizing" }));
-        break;
-      }
-
-      case "synthesis_chunk": {
-        const p = payload as SynthesisChunkPayload;
-        setState((s) => ({ ...s, synthesis: s.synthesis + p.chunk }));
-        break;
-      }
-
-      case "synthesis_done": {
-        const p = payload as SynthesisDonePayload;
-        setState((s) => ({ ...s, synthesis: p.full_text }));
-        break;
-      }
-
-      case "synthesis_structured": {
-        const p = payload as SynthesisStructuredPayload;
-        setState((s) => ({ ...s, synthesisStructured: p }));
-        break;
-      }
-
-      case "debate_done": {
-        const p = payload as DebateDonePayload;
-        setState((s) => ({
-          ...s,
-          status: "done",
-          debateId: p.debate_id ?? undefined,
-          debateCost: p.cost_usd ?? undefined,
-        }));
-        break;
-      }
-
-      case "commitment_created": {
-        setState((s) => ({
-          ...s,
-          lastCommitmentEcho: payload as Record<string, unknown>,
-        }));
-        break;
-      }
-
-      case "budget_warning": {
-        const p = payload as BudgetWarningPayload;
-        setState((s) => ({
-          ...s,
-          budgetWarning: p.message,
-        }));
-        break;
-      }
-
-      case "stream_error": {
-        const p = payload as { message?: string; error?: string };
-        const fb = p?.message
-          ? `${p.message}${p.error ? " — " + p.error : ""}`
-          : tRef.current("debate.stream.broke");
-        setState((s) => ({
-          ...s,
-          status: "error",
-          error: fb,
-        }));
-        break;
-      }
+    if (shouldCancelSseStream(event)) {
+      void readerRef.current?.cancel();
+      readerRef.current = null;
     }
+    let streamErrorMessage: string | undefined;
+    if (event === "stream_error") {
+      const p = payload as { message?: string };
+      streamErrorMessage = p?.message ?? tRef.current("debate.stream.broke");
+    }
+    setState((s) =>
+      reduceDebateEvent(s, event, payload, { streamErrorMessage }),
+    );
   }
 
   const runDebateStream = useCallback(async (url: string, body: unknown) => {
