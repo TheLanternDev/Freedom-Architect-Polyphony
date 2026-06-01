@@ -55,6 +55,62 @@ except ImportError:
     _FA2_BUSINESS_ROLES = {}  # type: ignore[assignment]
     _FA2_BUSINESS_ROLES_EN = {}  # type: ignore[assignment]
 
+
+# ── Per-agent failure modes (poprawa rozumowania, chirurgiczna zmiana) ──────
+# Każdy agent ma swój charakterystyczny błąd. Wstrzykiwane jako 1 zdanie do
+# system promptu po higienie rozumowania. NIE zastępuje charakteru agenta —
+# uzupełnia, jak alarm na własnej pułapce. Aktualizuj razem z evalem
+# (`evals/rada/scorer.py`), żeby regresje były wychwytywalne.
+_AGENT_FAILURE_MODES_PL: dict[str, str] = {
+    "Kogit": "Twój błąd: racjonalizujesz odziedziczone założenie, "
+             "udając że je analizujesz. Zanim nazwiesz założenie — sprawdź, "
+             "czy nie służy ono Tobie samej w tej chwili.",
+    "Szow": "Twój błąd: konfrontujesz zanim zobaczysz najmocniejszą wersję "
+            "tezy którą tniesz. Konfrontacja bez steelmana to atak, nie wgląd.",
+    "Kidi": "Twój błąd: uciekasz w ciekawość gdy jest trudno. "
+            "Czysta ciekawość zostaje, gdy zostajesz w tym co bolesne.",
+    "Tai": "Twój błąd: widzisz pętlę tam, gdzie są dwa różne zdarzenia. "
+           "Trzy punkty to nie wzorzec — to trzy punkty. Sprawdź czy "
+           "rzeczywiście się powtarza, czy tylko Ci to przypomina inne razem.",
+    "Obver": "Twój błąd: dystansujesz się tak bardzo, że przestajesz być "
+             "obecny. Meta-perspektywa bez kontaktu to ucieczka, nie obserwacja.",
+    "Relacjan": "Twój błąd: projektujesz lojalność tam, gdzie jest tylko "
+                "wpływ. Nie każda obecność innego człowieka to lojalność wobec niego.",
+    "Emojy": "Twój błąd: zlewasz różne emocje w jedną. „Czuję ciężar” może "
+             "ukrywać żal, gniew i wstyd jednocześnie — rozróżnij zanim nazwiesz.",
+    "Smaty": "Twój błąd: nadinterpretujesz sygnał ciała. "
+             "Napięcie w karku nie zawsze znaczy „opór” — czasem znaczy „za mało snu”.",
+    "Deega": "Twój błąd: kopiesz do dzieciństwa, gdy odpowiedź jest w "
+             "zeszłym tygodniu. Najstarszy wzorzec nie zawsze jest tym aktywnym.",
+    "Syez": "Twój błąd: uśredniasz konfliktujące głosy do umiarkowanego "
+            "stanowiska. Jeśli dwa głosy są w trwałym konflikcie — NAZWIJ konflikt, "
+            "nie szukaj kompromisu. Sprzeczność jest informacją.",
+}
+_AGENT_FAILURE_MODES_EN: dict[str, str] = {
+    "Kogit": "Your failure mode: you rationalise an inherited assumption "
+             "under the guise of analysing it. Before naming the assumption, "
+             "check whether it currently serves YOU.",
+    "Szow": "Your failure mode: you confront before steelmanning the claim "
+            "you are cutting. Confrontation without a steelman is attack, not insight.",
+    "Kidi": "Your failure mode: you escape into curiosity when things get hard. "
+            "Real curiosity stays when you stay with what hurts.",
+    "Tai": "Your failure mode: you see a loop where there are three separate "
+           "events. Three points are not a pattern — they are three points.",
+    "Obver": "Your failure mode: you distance so far that you stop being present. "
+             "Meta-perspective without contact is flight, not observation.",
+    "Relacjan": "Your failure mode: you project loyalty where there is only "
+                "influence. Not every relationship is a loyalty to that person.",
+    "Emojy": "Your failure mode: you blend distinct emotions into one. "
+             "‘I feel heavy’ may hide grief, anger and shame at once — separate them first.",
+    "Smaty": "Your failure mode: you over-read body signals. Neck tension is not "
+             "always resistance — sometimes it is just missed sleep.",
+    "Deega": "Your failure mode: you dig into childhood when the answer is "
+             "in last week. The oldest pattern is not always the active one.",
+    "Syez": "Your failure mode: you average conflicting voices into a moderate "
+            "stance. When two voices are in genuine conflict — NAME the conflict, "
+            "do not seek compromise. Contradiction is information.",
+}
+
 # ── Lazy / opcjonalne zależności ────────────────────────────────────────────
 # Importy wewnątrz try/except, żeby BaseAgent działał w trybie fallback
 # nawet gdy anthropic / tenacity / redis nie są zainstalowane (testy, dev).
@@ -286,7 +342,9 @@ class BaseAgent(ABC):
             if language == "en":
                 _hygiene = (
                     "Reasoning hygiene: tag each claim as observation / hypothesis / guess. "
-                    "State only what you can support; do not invent facts."
+                    "State only what you can support; do not invent facts. "
+                    "For hypotheses and guesses: name in one phrase what concrete evidence "
+                    "would raise OR lower your confidence — this cuts motivated reasoning."
                 )
                 if council_mode == "fa2":
                     _hygiene += " Every number carries a source or an explicit assumption."
@@ -298,7 +356,10 @@ class BaseAgent(ABC):
             else:
                 _hygiene = (
                     "Higiena rozumowania: oznacz każde twierdzenie jako obserwacja / hipoteza "
-                    "/ domysł. Pisz tylko to, co potrafisz podeprzeć; nie wymyślaj faktów."
+                    "/ domysł. Pisz tylko to, co potrafisz podeprzeć; nie wymyślaj faktów. "
+                    "Dla hipotez i domysłów: nazwij w jednym wyrażeniu, jaka konkretna "
+                    "informacja podniosłaby ALBO obniżyła Twoją pewność — to ucina motivated "
+                    "reasoning."
                 )
                 if council_mode == "fa2":
                     _hygiene += " Każda liczba ma źródło albo jawne założenie."
@@ -308,6 +369,16 @@ class BaseAgent(ABC):
                         "tezy, którą zaraz zakwestionujesz."
                     )
             parts.append(_hygiene)
+
+        # Per-agent failure mode — chirurgiczny alarm na charakterystycznej pułapce
+        # danego głosu. Dotyczy KAŻDEGO agenta (włącznie z Syezem), bo każdy ma
+        # swój typowy błąd niewykrywany przez generyczną higienę. Dodawane na
+        # końcu instrukcji, ZANIM dyrektywa językowa, żeby było ostatnią rzeczą
+        # którą model widzi przed wypowiedzią.
+        _failure_map = _AGENT_FAILURE_MODES_EN if language == "en" else _AGENT_FAILURE_MODES_PL
+        _failure_line = _failure_map.get(self.name)
+        if _failure_line:
+            parts.append(_failure_line)
 
         if language == "en":
             try:
