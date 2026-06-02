@@ -84,8 +84,14 @@ def test_release_commitment_requires_length(client_no_redis, debate_schematy_id:
     assert r2.status_code == 200
 
 
-def test_admin_trigger_followups_ok(client_no_redis):
-    r = client_no_redis.post("/admin/trigger-followups")
+def test_admin_trigger_followups_ok(client_no_redis, monkeypatch):
+    # Stage 1: endpoint fail-closed — wymaga ARCHITEKT_ADMIN_TOKEN + Bearer.
+    tok = "test-admin-tok"
+    monkeypatch.setenv("ARCHITEKT_ADMIN_TOKEN", tok)
+    r = client_no_redis.post(
+        "/admin/trigger-followups",
+        headers={"Authorization": f"Bearer {tok}"},
+    )
     assert r.status_code == 200
     assert r.json()["ok"] is True
 

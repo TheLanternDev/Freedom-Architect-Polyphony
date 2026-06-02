@@ -97,10 +97,11 @@ export function FragmentCompass({ compact = false }: { compact?: boolean }) {
                   type="button"
                   onClick={() => setActive(isActive ? null : n.key)}
                   className={cn(
+                    /* Stage 3: AKSJOMAT 0 używa gold (rdzeń filozofii), nie teal (teal = Syez/output) */
                     "flex-1 rounded-control border px-2 py-2 text-left transition-all duration-premium",
                     isActive
-                      ? "border-teal/40 bg-teal-dim"
-                      : "border-border bg-surface-raised/50 hover:border-border/80",
+                      ? "border-gold/30 bg-gold-dim"
+                      : "border-border bg-surface-raised/50 hover:border-gold/15 hover:bg-gold-dim/50",
                   )}
                   aria-pressed={isActive}
                 >

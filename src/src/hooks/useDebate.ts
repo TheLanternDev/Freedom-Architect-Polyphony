@@ -102,20 +102,9 @@ export function useDebate() {
     );
   }
 
-  const runDebateStream = useCallback(
-    async (
-      url: string,
-      body: unknown,
-      opts: { turns?: PriorTurn[]; currentPromptText: string } = { currentPromptText: "" },
-    ) => {
-    readerRef.current?.cancel();
-    setState(
-      debateBootstrap("agents_speaking", {
-        turns: opts.turns,
-        currentPromptText: opts.currentPromptText,
-      }),
-    );
-
+  // _runDebateStreamOnce: wewnętrzna warstwa SSE — jeden attempt połączenia.
+  // Retry (max 1x) obsługiwany przez runDebateStream przez _retried flag.
+  async function _runDebateStreamOnce(url: string, body: unknown, _retried: boolean) {
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -164,6 +153,10 @@ export function useDebate() {
       readerRef.current = reader as unknown as ReadableStreamDefaultReader<string>;
 
       let buffer = "";
+      // Guard dla retry: czy backend już przyjął i zaczął obsługiwać debatę?
+      // Retry po odebraniu choć jednego eventu = duplikat debaty w DB.
+      // Retry tylko gdy połączenie padło ZANIM backend wysłał cokolwiek.
+      let receivedFirstEvent = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -185,18 +178,54 @@ export function useDebate() {
             continue;
           }
 
+          receivedFirstEvent = true;
           handleEvent(eventLine, payload);
         }
       }
     } catch (err) {
+      // Stage 4 resilience: jeden automatyczny retry przy przejściowym błędzie sieciowym.
+      // NIE retry-ujemy gdy: (a) błąd HTTP — obsłużony wyżej przez `return`,
+      // (b) backend już wysłał event (`receivedFirstEvent`) — retry = duplikat debaty w DB,
+      // (c) celowe anulowanie przez użytkownika.
+      const isNetworkError = err instanceof TypeError || err instanceof DOMException;
+      // receivedFirstEvent jest w closurze — false jeśli błąd przed SSE, true po.
+      const safeToRetry = isNetworkError && !_retried;
+      if (safeToRetry) {
+        setState((s) => ({
+          ...s,
+          pendingMsg: tRef.current("debate.reconnecting") || "Ponawiam połączenie…",
+        }));
+        await new Promise<void>((r) => setTimeout(r, 2_500));
+        await _runDebateStreamOnce(url, body, true);
+        return;
+      }
       const msg = humanizeFetchFailure(err, (k) => tRef.current(k));
       setState((s) => ({
         ...s,
         status: "error",
         error: msg,
+        pendingMsg: undefined,
       }));
     }
-  }, []);
+  }
+
+  const runDebateStream = useCallback(
+    async (
+      url: string,
+      body: unknown,
+      opts: { turns?: PriorTurn[]; currentPromptText: string } = { currentPromptText: "" },
+    ) => {
+      readerRef.current?.cancel();
+      setState(
+        debateBootstrap("agents_speaking", {
+          turns: opts.turns,
+          currentPromptText: opts.currentPromptText,
+        }),
+      );
+      await _runDebateStreamOnce(url, body, false);
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  []);
 
   const startDebate = useCallback(
     async (brief: Brief) => {

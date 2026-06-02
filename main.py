@@ -345,9 +345,21 @@ from api import _metrics as _arch_metrics  # noqa: E402
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics_endpoint() -> Response:
-    """Prometheus exposition. Bez auth — typowo skrobane wewnętrznie przez Prom/Grafana.
-    Gdy `prometheus_client` nie jest zainstalowane → 503 (nie 500, żeby probe wiedział)."""
+async def metrics_endpoint(authorization: Optional[str] = Header(None)) -> Response:
+    """Prometheus exposition — wymaga Bearer ARCHITEKT_ADMIN_TOKEN (fail-closed).
+    Skrobacz Prometheus powinien podawać token w nagłówku Authorization.
+    Gdy `prometheus_client` nie jest zainstalowane → 503."""
+    # Stage 1 hardening: /metrics nie jest w _public_paths(); wymaga admin tokenu.
+    admin_tok = (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip()
+    if not admin_tok:
+        return Response(
+            content="ARCHITEKT_ADMIN_TOKEN nie ustawiony — /metrics wyłączone",
+            status_code=403,
+            media_type="text/plain",
+        )
+    auth = (authorization or "").strip()
+    if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
+        return Response(content="Unauthorized", status_code=401, media_type="text/plain")
     if not _arch_metrics.is_available():
         return Response(
             content="prometheus_client not installed",
@@ -923,17 +935,22 @@ async def admin_trigger_followups(
     """
     Idempotentny „kopniak" Fazy 2: przeterminowane follow-upy + synchronizacja projektów.
 
-    Gdy ustawiono `ARCHITEKT_ADMIN_TOKEN`, wymagany jest nagłówek
-    `Authorization: Bearer <token>` (ochrona przed publicznym otwartym adminem).
+    Wymaga nagłówka `Authorization: Bearer <ARCHITEKT_ADMIN_TOKEN>`.
+    Bez ustawionego tokenu endpoint jest wyłączony (fail-closed).
     """
+    # Stage 1 hardening: fail-closed — token zawsze wymagany.
     admin_tok = (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip()
-    if admin_tok:
-        auth = (authorization or "").strip()
-        if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid or missing Authorization bearer for admin",
-            )
+    if not admin_tok:
+        raise HTTPException(
+            status_code=403,
+            detail="ARCHITEKT_ADMIN_TOKEN nie ustawiony — endpoint /admin wyłączony.",
+        )
+    auth = (authorization or "").strip()
+    if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing Authorization bearer for admin",
+        )
     await _run_phase2_startup_tasks()
     return {"ok": True}
 
@@ -1145,12 +1162,21 @@ async def admin_rebuild_evolution(
     authorization: Optional[str] = Header(None),
     db=Depends(get_db),
 ):
-    """Przebudowuje rolling notatki ewolucyjne dla wszystkich agentów."""
+    """Przebudowuje rolling notatki ewolucyjne dla wszystkich agentów.
+
+    Wymaga nagłówka `Authorization: Bearer <ARCHITEKT_ADMIN_TOKEN>`.
+    Bez ustawionego tokenu endpoint jest wyłączony (fail-closed).
+    """
+    # Stage 1 hardening: fail-closed — token zawsze wymagany.
     admin_tok = (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip()
-    if admin_tok:
-        auth = (authorization or "").strip()
-        if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
-            raise HTTPException(status_code=401, detail="Invalid admin token")
+    if not admin_tok:
+        raise HTTPException(
+            status_code=403,
+            detail="ARCHITEKT_ADMIN_TOKEN nie ustawiony — endpoint /admin wyłączony.",
+        )
+    auth = (authorization or "").strip()
+    if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
 
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="DB niedostępna")

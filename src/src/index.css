@@ -8,27 +8,30 @@
 @layer base {
   :root,
   [data-council-mode="personal"] {
-    --aw-app: #0A0D14;
-    --aw-surface: #11151F;
-    --aw-surface-raised: #161B28;
-    --aw-gold: #C5A46E;
-    --aw-gold-dim: rgba(197, 164, 110, 0.12);
-    --aw-teal: #3D8B8B;
-    --aw-teal-dim: rgba(61, 139, 139, 0.12);
-    --aw-text-primary: #E8EBF0;
-    --aw-text-secondary: #A6B0C3;
-    --aw-text-tertiary: #667085;
-    --aw-border: #1E2433;
+    /* Stage 3 / Premium redesign — spójniejszy, ciemniejszy baseline */
+    --aw-app: #08090F;
+    --aw-surface: #0E1019;
+    --aw-surface-raised: #141720;
+    /* Gold cieplejszy i bardziej stonowany — mniej jaskrawy, bardziej luksusowy */
+    --aw-gold: #C9A05A;
+    --aw-gold-dim: rgba(201, 160, 90, 0.10);
+    --aw-teal: #3A8484;
+    --aw-teal-dim: rgba(58, 132, 132, 0.10);
+    --aw-text-primary: #E2E4EC;
+    --aw-text-secondary: #98A2B8;
+    --aw-text-tertiary: #58627A;
+    /* Stage 3: border z #1E2433 → #232A3A — wyraźniejsze oddzielenie powierzchni */
+    --aw-border: #232A3A;
     --aw-radius-card: 12px;
     --aw-radius-surface: 10px;
-    --aw-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.24), 0 4px 16px rgba(0, 0, 0, 0.18);
+    --aw-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.32), 0 4px 20px rgba(0, 0, 0, 0.24);
     --aw-transition: 220ms cubic-bezier(0.4, 0, 0.2, 1);
-    --aw-accent: #C5A46E;
-    --aw-accent-light: #D4B888;
-    --aw-accent-dim: rgba(197, 164, 110, 0.12);
-    --aw-accent-muted: rgba(197, 164, 110, 0.55);
-    --aw-accent-glow: 0 0 24px rgba(197, 164, 110, 0.12);
-    --aw-accent-border: rgba(197, 164, 110, 0.35);
+    --aw-accent: #C9A05A;
+    --aw-accent-light: #D8B474;
+    --aw-accent-dim: rgba(201, 160, 90, 0.10);
+    --aw-accent-muted: rgba(201, 160, 90, 0.50);
+    --aw-accent-glow: 0 0 28px rgba(201, 160, 90, 0.12);
+    --aw-accent-border: rgba(201, 160, 90, 0.30);
   }
 
   [data-council-mode="fa2"] {
@@ -268,10 +271,13 @@
 
   .aw-brief-textarea {
     font-family: Inter, system-ui, sans-serif;
+    /* Stage 3: line-height 1.75 → 1.82 — bardziej oddychający tekst filozoficzny */
     @apply w-full min-h-[220px] max-h-[420px] bg-transparent px-6 py-5 aw-scroll
-           text-[15px] leading-[1.75] text-text-primary
-           placeholder:text-text-tertiary/60
+           text-[15px] text-text-primary
+           placeholder:text-text-tertiary/50
            resize-y focus:outline-none disabled:opacity-40;
+    line-height: 1.82;
+    letter-spacing: 0.008em;
   }
 
   .aw-char-meter {

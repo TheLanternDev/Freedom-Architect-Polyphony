@@ -211,11 +211,16 @@ def test_require_audit_passes_when_complete():
 
 
 def test_validate_prose_audit_passes_with_signals():
+    # Stage 2: PROSE_AUDIT_MIN_CHARS podniesiono do 400 — tekst testu musi to odzwierciedlać.
     text = (
-        "Krótka synteza. Na checklistie funkcjonalności zostały jeszcze dwie pozycje. "
-        "Pierwszą blokuje brak decyzji o kolorystyce. Najmniejszy konkretny ruch "
-        "na dziś to przygotować jeden szkic widoku w 45 minut. Domykamy audyt."
-        " Co jest dla Ciebie najcięższe w tym kroku? Jak zmienia się priorytet?"
+        "Synteza Rady po debacie. Na checklistie funkcjonalności zostały jeszcze dwie pozycje: "
+        "widok onboardingu i integracja z systemem płatności. "
+        "Pierwszą blokuje brak decyzji o kolorystyce i tonie komunikacji. "
+        "Drugą blokuje brak klucza API od providera. "
+        "Najmniejszy konkretny ruch na dziś to przygotować jeden szkic widoku onboardingu "
+        "w ciągu 45 minut — zanim pojawi się którakolwiek inna dyskusja o detalach. "
+        "Domykamy audyt z pełną świadomością, co stoi na drodze. "
+        "Co jest dla Ciebie najcięższe w tym kroku? Jak zmienia się priorytet, gdy widzisz obie blokady razem?"
     )
     validate_syez_prose_completion_audit(text)
 
@@ -245,12 +250,16 @@ def test_extract_audit_from_prose_shapes_dict():
         "smallest_next_functional_increment",
     }
 def test_validate_prose_audit_passes_poetic_wording():
+    # Stage 2: PROSE_AUDIT_MIN_CHARS podniesiono do 400 — tekst testu musi to odzwierciedlać.
     text = (
-        "Elementów domknięcia przybywa wolno: ścieżka zaproszeń wciąż stoi w kolejce. "
-        "Napina się wewnętrzny opór przed pokazaniem półdziałającego panelu. "
-        "Micro-krok na dziś — wyślij jeden szkic i poproś o jedno zdanie zwrotnej informacji. "
-        "To nie sprint; to odblokowanie pierwszej pętli feedbacku. "
-        "Jak oceniasz koszt emocjonalny pokazania niedoskonałości? Co by zmieniło Twoją decyzję?"
+        "Elementów domknięcia przybywa wolno: ścieżka zaproszeń wciąż stoi w kolejce, "
+        "a panel administracyjny czeka na zatwierdzenie kolorystyki. "
+        "Napina się wewnętrzny opór przed pokazaniem półdziałającego panelu — "
+        "ten opór blokuje pierwszą odsłonę bardziej niż brak czasu. "
+        "Micro-krok na dziś — wyślij jeden szkic panelu i poproś o jedno zdanie zwrotnej informacji "
+        "od kogoś z zewnątrz zanim dodasz kolejny element. "
+        "To nie sprint; to odblokowanie pierwszej pętli feedbacku, bez której reszta nie ruszy. "
+        "Jak oceniasz koszt emocjonalny pokazania niedoskonałości? Co by zmieniło Twoją decyzję o pokazaniu?"
     )
     validate_syez_prose_completion_audit(text)
 

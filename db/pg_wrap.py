@@ -104,15 +104,29 @@ class PgConnection:
         # tenant_id porównuje wiersz z tym GUC. `set_config(_, _, false)` =
         # session-level (asyncpg pool ma 1 connection per query w tej klasie,
         # więc race między requestami zamykamy nadpisywaniem PRZED query).
-        # Try/except, bo `db.tenant` to opcjonalny import w testach jednostkowych.
+        # Stage 1 hardening: RLS GUC fail-closed.
+        # Przy błędzie set_config NIE kontynuujemy query — brak kontekstu tenanta
+        # oznacza ryzyko wycieku danych między tenantami. Wyjątek propaguje jako
+        # 500 do wywołującego (lepsze niż cichy cross-tenant access).
+        # Jedyny wyjątek: ImportError db.tenant (testy jednostkowe bez DB) — tam
+        # RLS Postgres nie istnieje, więc import-miss jest bezpieczny.
         try:
             from db.tenant import current_tenant_id
-            await self._c.execute(
-                "SELECT set_config('architekt.tenant_id', $1, false)",
-                current_tenant_id(),
-            )
-        except Exception as e:  # pragma: no cover
-            logger.warning("RLS GUC set failed: %s — fallback to repo-layer isolation", e)
+        except ImportError:
+            pass  # testy jednostkowe bez modułu db.tenant — RLS Postgres nieaktywne
+        else:
+            try:
+                await self._c.execute(
+                    "SELECT set_config('architekt.tenant_id', $1, false)",
+                    current_tenant_id(),
+                )
+            except Exception as e:  # pragma: no cover
+                logger.error(
+                    "RLS: set_config('architekt.tenant_id') failed: %s — przerywam query", e
+                )
+                raise RuntimeError(
+                    f"Nie można ustawić kontekstu tenanta RLS — query przerwane: {e}"
+                ) from e
 
         up = sql_work.upper().strip()
         if up.startswith("SELECT") or up.startswith("WITH"):

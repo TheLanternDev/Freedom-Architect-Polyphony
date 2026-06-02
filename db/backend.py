@@ -92,6 +92,14 @@ async def init_database(sqlite_init_cb: Any) -> None:
         max_sz = max(2, min(max_sz, 64))
         _pg_pool = await asyncpg.create_pool(url, min_size=1, max_size=max_sz)
         schema_sql = _SCHEMA_PG_PATH.read_text(encoding="utf-8")
+        # ⚠️  JEDYNE dozwolone użycie rawowego `_pg_pool.acquire()` bez PgConnection wrappera.
+        # PgConnection.execute() ustawia GUC `architekt.tenant_id` przed każdym query —
+        # co jest wymagane przez RLS policy tenant_isolation. Tutaj celowo pomijamy ten
+        # mechanizm, bo:
+        #   a) Migracje DDL muszą widzieć WSZYSTKIE wiersze (brak tenant_id w kontekście).
+        #   b) RLS policy przepuszcza query gdy GUC == '' (patrz migration 0002).
+        # Poza init_database NIE używaj _pg_pool.acquire() bezpośrednio — każdy request-time
+        # query musi przechodzić przez PgConnection (acquire_http_db / debate_stream_db).
         async with _pg_pool.acquire() as conn:
             # 1) Schema = current desired state (tworzy brakujące tabele na nowej bazie).
             for stmt in _split_pg_schema(schema_sql):

@@ -320,7 +320,11 @@ w bloku kodu. Bez nich synteza jest niekompletna.
 SYEZ_COMPLETION_AUDIT_REQUIREMENT: str = SYEZ_AKSJOMAT2_PROSE_APPEND
 
 
-PROSE_AUDIT_MIN_CHARS: int = 200
+# Stage 2: podniesiono z 200 do 400.
+# 200 znaków z 3 słowami-kluczami (np. "checklista", "dziś", "blokada") przechodzi
+# walidację bez żadnej użytecznej treści audytu. 400 znaków wymusza minimum
+# dwóch pełnych zdań na każdy z wymaganych klastrów.
+PROSE_AUDIT_MIN_CHARS: int = 400
 
 # Trzy klastry sygnałów audytu (proza, bez NLP). Celowo szerokie synonimy
 # i literackie obejścia — Syez nie musi brzmieć jak backlog Jiry.
@@ -406,7 +410,46 @@ def validate_syez_prose_completion_audit(text: str) -> None:
     low = t.lower()
     hits_rem = bool(re.search(_CLUSTER_REM, low))
     hits_blk = bool(re.search(_CLUSTER_BLK, low))
-    hits_nxt = bool(re.search(_CLUSTER_NEXT, low))
+
+    # Stage 2: wzmocniona walidacja `_CLUSTER_NEXT`.
+    # Słaby match (np. samo słowo "dziś" lub "jutro" w zdaniu bez czasownika
+    # działania) nie wystarczy. Wymagamy: (a) match klastra ORAZ (b) co najmniej
+    # jedno zdanie zawierające zarówno referencję czasową/akcyjną jak i
+    # konkretny czasownik działania (imperativus lub bezokolicznik w formie
+    # "zrób/napisz/zadzwoń/ustaw/otwórz" etc.).
+    # Imperatiwy + bezokoliczniki — Syez pisze prozą i może użyć dowolnej formy.
+    _ACTION_VERB = re.compile(
+        r"(?:zrób|zrobić|napisz|napisać|zadzwoń|zadzwonić|"
+        r"wyślij|wysłać|otwórz|otworzyć|ustaw|ustawić|umów|umówić|"
+        r"odeślij|odesłać|przejdź|przejść|sprawdź|sprawdzić|"
+        r"zaplanuj|zaplanować|zacznij|zacząć|uruchom|uruchomić|"
+        r"wdroż|wdrożyć|dodaj|dodać|stwórz|stworzyć|"
+        r"przygotuj|przygotować|poświęć|poświęcić|"
+        r"spędź|spędzić|wygospodaruj|wygospodarować|"
+        r"zarezerwuj|zarezerwować|wróć|wrócić|odezwij|odezwać|"
+        r"make|write|send|open|set|schedule|start|launch|build|create|prepare|spend)",
+        re.IGNORECASE,
+    )
+    _nxt_match = bool(re.search(_CLUSTER_NEXT, low))
+    if _nxt_match:
+        # Sprawdź czy match jest w zdaniu z czasownikiem działania.
+        sentences = re.split(r"(?<=[.!?])\s+", t)
+        _nxt_has_action = any(
+            re.search(_CLUSTER_NEXT, s.lower()) and _ACTION_VERB.search(s)
+            for s in sentences
+        )
+        # Akceptuj też jeśli match to fraza wielowyrazowa (≥2 tokeny alfabetyczne) —
+        # np. "najmniejszy możliwy ruch" lub "60 minut wystarczy żeby" — to nie
+        # jest przypadkowe pojawienie się słowa kluczowego.
+        _nxt_multiword = bool(re.search(
+            r"(?:najmniejsz\S*\s+\S+|micro[-\s]?krok|\d+\s*min(?:ut)?[aąy]?\s+\S+|"
+            r"pół\s+godzin\S*\s+\S+|jedna\s+godzin\S*\s+\S+|konkretny\s+(?:ruch|krok))",
+            low
+        ))
+        hits_nxt = _nxt_has_action or _nxt_multiword
+    else:
+        hits_nxt = False
+
     # `?` to słaby sygnał — pytanie otwarte liczy się tylko, gdy obok znaku
     # zapytania jest jawny marker pytania (nie sam pytajnik gdziekolwiek).
     hits_open = bool(re.search(_CLUSTER_OPEN, low)) and "?" in low and bool(

@@ -84,10 +84,10 @@ def production_preflight_errors() -> list[str]:
         )
     if not (os.getenv("ANTHROPIC_API_KEY") or "").strip():
         errors.append("ANTHROPIC_API_KEY wymagany w produkcji.")
-    if not demo and not (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip():
+    if not (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip():
+        # Stage 1: usunięto `not demo` — admin token wymagany zawsze (endpointy fail-closed).
         errors.append(
-            "ARCHITEKT_ADMIN_TOKEN wymagany w produkcji — bez niego /admin/* jest dostępny "
-            "dla każdego uwierzytelnionego użytkownika."
+            "ARCHITEKT_ADMIN_TOKEN wymagany w produkcji — /admin/* i /metrics są wyłączone bez tokenu."
         )
     return errors
 

@@ -1,6 +1,15 @@
 /**
  * Opcjonalny klucz HTTP do backendu (`ARCHITEKT_API_KEY` po stronie serwera).
  * Źródła: `VITE_ARCHITEKT_API_KEY` (build) lub localStorage (modal „Połączenie”).
+ *
+ * ⚠️  SECURITY NOTE — desktop-only:
+ * JWT (`aw_jwt_token`) i API key (`aw_architekt_api_key`) są przechowywane
+ * w localStorage. W Tauri desktop app (izolowany WebView) to akceptowalne ryzyko.
+ *
+ * NIE deployować UI jako web app bez migracji tokenów na `httpOnly` cookies —
+ * w przeglądarce każdy XSS ma dostęp do localStorage i może wykraść tokeny.
+ * Tauri CSP (connect-src) ogranicza ruch do localhost:8000; użycie custom portu
+ * przez `aw_api_base_override` wymaga aktualizacji CSP w src-tauri/tauri.conf.json.
  */
 const LS_ARCHITEKT_API_KEY = "aw_architekt_api_key";
 
@@ -89,7 +98,13 @@ export function getApiAuthHeaders(opts?: { skipCache?: boolean }): Record<string
     return h;
   }
 
-  let key = (import.meta.env.VITE_ARCHITEKT_API_KEY as string | undefined)?.trim();
+  // VITE_ARCHITEKT_API_KEY: tylko w trybie deweloperskim (import.meta.env.DEV).
+  // W buildzie produkcyjnym Vite inlinuje klucz do bundle — staje się publiczny.
+  // Fix: w produkcji ignorujemy zmienną build-time i używamy wyłącznie localStorage
+  // (klucz ustawiony przez użytkownika w modalce Połączenie) lub JWT z /auth/login.
+  let key = (import.meta.env.DEV
+    ? (import.meta.env.VITE_ARCHITEKT_API_KEY as string | undefined)?.trim()
+    : undefined);
   if (!key) {
     key = getStoredArchitektApiKey() ?? "";
   }

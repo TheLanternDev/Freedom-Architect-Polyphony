@@ -205,6 +205,87 @@ def _fa2_business_context_prefix(language: str) -> str:
         return ""
 
 
+_TENSION_HIGH_THRESHOLD: float = 0.65  # powyżej tej wartości para jest eksponowana jako blok konfrontacyjny
+
+
+def _build_tension_structured_bundle(
+    full_voices: dict[str, str],
+    live_pairs: list[dict[str, Any]],
+    *,
+    lang: str = "pl",
+) -> str:
+    """
+    Buduje bundle głosów dla Syeza z eksponowaniem par wysokiego napięcia.
+
+    Filozofia (Stage 2 / Polyphony): Syez dostaje pary w konflikcie RAZEM,
+    jedna pod drugą, z jawnym nagłówkiem napięcia — zamiast płaskiej listy
+    gdzie konflikty są ukryte. Wymusza to na Syezie dostrzeżenie napięcia
+    strukturalnie, a nie wyłącznie przez monitor napięć na końcu payloadu.
+
+    Bezpieczeństwo / izolacja: funkcja operuje wyłącznie na głosach z bieżącego
+    żądania (in-memory dict). Żadnych cross-request flows; ContextVar tenant_id
+    nie jest modyfikowany. Zgodne z izolacją multi-tenant Stage 1.
+
+    Agenci eksponowani w parach nie są usuwani z "pozostałych głosów" —
+    Syez widzi pełny zestaw, ale najpierw widzi konflikty. Każdy głos
+    pojawia się raz w parze i jest pominięty w sekcji "Pozostałe głosy",
+    żeby uniknąć duplikacji.
+    """
+    high_pairs = [p for p in live_pairs if float(p.get("intensity", 0)) >= _TENSION_HIGH_THRESHOLD]
+    shown: set[str] = set()
+    parts: list[str] = []
+
+    if high_pairs:
+        hdr = (
+            "═══ GŁOSY RADY — PARY W NAPIĘCIU (intensity ≥ 0.65 — eksponowane razem) ═══"
+            if lang == "pl"
+            else "═══ COUNCIL VOICES — TENSION PAIRS (intensity ≥ 0.65 — shown together) ═══"
+        )
+        parts.append(hdr)
+        for pair in high_pairs[:4]:  # maks. 4 pary, żeby nie zaburzyć proporcji payloadu
+            a_name = pair["a"]
+            b_name = pair["b"]
+            a_voice = full_voices.get(a_name, "")
+            b_voice = full_voices.get(b_name, "")
+            if not a_voice or not b_voice:
+                continue
+            intensity = pair["intensity"]
+            if lang == "pl":
+                sep = f"── NAPIĘCIE: {a_name} ↔ {b_name}  ({intensity}) ──"
+                call = (
+                    f"Syez — tu jest realne napięcie między tymi głosami. "
+                    f"Nie uśredniaj: nazwij je jednym zdaniem zaczynającym się od "
+                    f"'{a_name} i {b_name} są w napięciu, ponieważ...'"
+                )
+            else:
+                sep = f"── TENSION: {a_name} ↔ {b_name}  ({intensity}) ──"
+                call = (
+                    f"Syez — there is a real tension between these voices. "
+                    f"Do not average: name it in one sentence starting with "
+                    f"'{a_name} and {b_name} are in tension because...'"
+                )
+            parts.append(sep)
+            parts.append(f"[{a_name}]\n{a_voice}")
+            parts.append(f"[{b_name}]\n{b_voice}")
+            parts.append(call)
+            shown.add(a_name)
+            shown.add(b_name)
+
+    remaining = {k: v for k, v in full_voices.items() if k not in shown}
+    if remaining:
+        if high_pairs:
+            rem_hdr = (
+                "── Pozostałe głosy Rady ──"
+                if lang == "pl"
+                else "── Remaining Council voices ──"
+            )
+            parts.append(rem_hdr)
+        for name, voice in remaining.items():
+            parts.append(f"[{name}]\n{voice}")
+
+    return "\n\n".join(parts)
+
+
 def build_syez_payload(
     raw_brief: str,
     voices_bundle: str,
@@ -244,7 +325,13 @@ def build_syez_payload(
             "questions for Patryk.\n"
             "• You are the mirror of the 9 voices + the Dream Architecture — you do "
             "not add a perspective beyond what emerges from them.\n"
-            "• The AXIOM 2 completion audit MUST be readable INSIDE the prose."
+            "• The AXIOM 2 completion audit MUST be readable INSIDE the prose.\n"
+            "• POLYPHONY MANDATE (Stage 2): for every pair marked as TENSION "
+            "in the Council voices section — write EXACTLY one sentence starting with "
+            "both agents' names (e.g. 'Kogit and Szow are in tension because...'). "
+            "FORBIDDEN: averaging the conflict into compromise — if two voices pull "
+            "in opposite directions, the synthesis must show that, not hide it. "
+            "Contradiction is information, not an error to be resolved."
         )
         if brief.mode == "codzienny":
             parts.append(
@@ -286,7 +373,13 @@ def build_syez_payload(
         "otwartych do Patryka.\n"
         "• Jesteś lustrem dziewięciu głosów + Architektury Marzenia — nie dodajesz "
         "osobnej perspektywy ponad to, co z nich wynika.\n"
-        "• Audyt domknięcia z protokołu AKSJOMATU 2 musi być czytelny WEWNĄTRZ prozy."
+        "• Audyt domknięcia z protokołu AKSJOMATU 2 musi być czytelny WEWNĄTRZ prozy.\n"
+        "• MANDAT POLYPHONII (Stage 2): dla każdej pary oznaczonej jako NAPIĘCIE "
+        "w sekcji głosów Rady — napisz DOKŁADNIE jedno zdanie zaczynające się od "
+        "imion obu agentów (np. 'Kogit i Szow są w napięciu, ponieważ...'). "
+        "ZAKAZ uśredniania tego konfliktu do kompromisu — jeśli dwa głosy ciągną "
+        "w przeciwne strony, synteza musi to pokazać, nie ukrywać. "
+        "Sprzeczność jest informacją, nie błędem do wyeliminowania."
     )
     if brief.mode == "codzienny":
         parts.append(
@@ -367,35 +460,52 @@ async def _phase_council(
         yield _sse("agent_start", {"agent": a.name})
 
     tasks = [asyncio.create_task(run_agent(a, agent_queues[a.name])) for a in council]
-    done_agents: set[str] = set()
-    while len(done_agents) < len(council):
-        for a in council:
-            if a.name in done_agents:
-                continue
-            q = agent_queues[a.name]
-            try:
-                text, is_final = q.get_nowait()
-                if is_final:
-                    done_agents.add(a.name)
-                    if _is_error_voice(text):
-                        # AKSJOMAT 1: integralność Rady. Uszkodzony głos NIE trafia
-                        # do Syeza jako pełnoprawny — i degradacja jest WIDOCZNA (#3).
-                        kind = "timeout" if text.startswith("[timeout:") else "error"
-                        yield _sse(
-                            "agent_error",
-                            {"agent": a.name, "error": text, "kind": kind},
-                        )
+    try:
+        done_agents: set[str] = set()
+        while len(done_agents) < len(council):
+            for a in council:
+                if a.name in done_agents:
+                    continue
+                q = agent_queues[a.name]
+                try:
+                    text, is_final = q.get_nowait()
+                    if is_final:
+                        done_agents.add(a.name)
+                        if _is_error_voice(text):
+                            # AKSJOMAT 1: integralność Rady. Uszkodzony głos NIE trafia
+                            # do Syeza jako pełnoprawny — i degradacja jest WIDOCZNA (#3).
+                            kind = "timeout" if text.startswith("[timeout:") else "error"
+                            yield _sse(
+                                "agent_error",
+                                {"agent": a.name, "error": text, "kind": kind},
+                            )
+                        else:
+                            full_voices[a.name] = text
+                            yield _sse("agent_done", {"agent": a.name, "full_text": text})
                     else:
-                        full_voices[a.name] = text
-                        yield _sse("agent_done", {"agent": a.name, "full_text": text})
-                else:
-                    yield _sse("agent_chunk", {"agent": a.name, "chunk": text})
-            except asyncio.QueueEmpty:
-                pass
-        await asyncio.sleep(0.01)
-    await asyncio.gather(*tasks)
-    # Signal full_voices back via typed result
-    yield PhaseCouncilResult(full_voices=full_voices)  # type: ignore[misc]
+                        yield _sse("agent_chunk", {"agent": a.name, "chunk": text})
+                except asyncio.QueueEmpty:
+                    pass
+            await asyncio.sleep(0.01)
+        await asyncio.gather(*tasks)
+        # Signal full_voices back via typed result
+        yield PhaseCouncilResult(full_voices=full_voices)  # type: ignore[misc]
+    finally:
+        # Stage 4 resilience: klient SSE może rozłączyć się podczas pracy agentów.
+        # FastAPI cancelluje async generator → GeneratorExit przy następnym yield/await.
+        # Cancelujemy aktywne task-i LLM, żeby nie palić tokenów Anthropic po rozłączeniu.
+        #
+        # Tech-debt fix: await gather(return_exceptions=True) — dajemy task-om chwilę
+        # na obsługę CancelledError, co pozwala na czysty shutdown SDK Anthropic.
+        # return_exceptions=True zapobiega re-raise CancelledError z gather.
+        _pending = [_t for _t in tasks if not _t.done()]
+        if _pending:
+            for _t in _pending:
+                _t.cancel()
+            try:
+                await asyncio.gather(*_pending, return_exceptions=True)
+            except Exception:
+                pass  # gather sam może zostać anulowany — ignorujemy
 
 
 async def _attempt_completion_audit(
@@ -486,17 +596,26 @@ async def _phase_synthesis(
     lang = brief.language
     yield _sse("synthesis_start", {"synthesizer": SYNTHESIZER.name})
 
-    bundle = "\n\n".join(f"[{name}]\n{voice}" for name, voice in full_voices.items())
+    # Stage 2 / Polyphony: bundle z eksponowanymi parami wysokiego napięcia.
+    # Syez widzi konflikty strukturalnie (razem, z nagłówkiem), a nie tylko
+    # jako osobny monitor na końcu payloadu — zmniejsza ryzyko uśredniania.
+    bundle = _build_tension_structured_bundle(full_voices, pairs, lang=lang)
     syez_payload = build_syez_payload(raw_brief, bundle, dream, brief, live_pairs=pairs)
 
     _syez_task = asyncio.create_task(
         SYNTHESIZER.acontribute(syez_payload, dream=dream, language=lang, council_mode=council_mode)
     )
-    while not _syez_task.done():
-        try:
-            await asyncio.wait_for(asyncio.shield(_syez_task), timeout=8.0)
-        except asyncio.TimeoutError:
-            yield _sse("synthesis_heartbeat", {"status": "thinking"})
+    try:
+        while not _syez_task.done():
+            try:
+                await asyncio.wait_for(asyncio.shield(_syez_task), timeout=8.0)
+            except asyncio.TimeoutError:
+                yield _sse("synthesis_heartbeat", {"status": "thinking"})
+    finally:
+        # Stage 4 resilience: analogicznie do _phase_council — cancel Syez task
+        # gdy klient SSE rozłączy się w trakcie syntezy.
+        if not _syez_task.done():
+            _syez_task.cancel()
 
     try:
         synthesis = _syez_task.result()
@@ -651,9 +770,11 @@ async def stream_debate(
             yield evt
     except Exception as e:
         logger.exception("_stream_debate crashed: %s", e)
+        # Nie przesyłamy str(e) do klienta — szczegóły są w logach serwera.
+        # Klient dostaje tylko typ wyjątku (nie zawiera PII ani ścieżek wewnętrznych).
         yield _sse(
             "stream_error",
-            {"message": "Strumień debaty pękł — sprawdź logi serwera.", "error": str(e)[:300]},
+            {"message": "Strumień debaty pękł — sprawdź logi serwera.", "error_type": type(e).__name__},
         )
         yield _sse(
             "debate_done",
@@ -715,7 +836,9 @@ async def _stream_debate_inner(
                 yield dream_architecture_sse(dream)
         except Exception as e:
             _log_orchestrator_issue("a0_dream_distillation", e)
-            yield _sse("dream_architecture_error", {"error": str(e)})
+            # str(e) może zawierać ścieżki / fragmenty SQL — logujemy w _log_orchestrator_issue,
+            # klient dostaje wyłącznie typ wyjątku.
+            yield _sse("dream_architecture_error", {"error_type": type(e).__name__})
 
     # ── Zapis marzenia + projektu ────────────────────────────────────────────
     debate_id: Optional[int] = None

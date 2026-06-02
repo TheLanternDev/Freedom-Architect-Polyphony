@@ -27,6 +27,10 @@ os.environ.pop("XAI_API_KEY", None)
 # wstrzykiwałby prawdziwych kluczy w środek testów „bez API”.
 os.environ["AW_DISABLE_DOTENV"] = "1"
 os.environ["AW_DISABLE_RATE_LIMIT"] = "1"
+# Stage 1: guard jest teraz fail-closed gdy brak sekretów.
+# Testy integracyjne (nie testujące autentykacji) używają dev-bypass.
+# Testy auth (test_auth_*.py) ustawiają własne sekrety przez monkeypatch.
+os.environ.setdefault("AW_INSECURE_NO_AUTH", "1")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -87,6 +91,23 @@ def client_no_redis(fresh_db_path) -> TestClient:
     """TestClient z lifespan (świeża DB), z wyłączonym Redisem."""
     import main as main_module
     with TestClient(main_module.app) as c:
+        main_module.redis_client = None
+        yield c
+
+
+@pytest.fixture
+def client_no_auth_bypass(fresh_db_path, monkeypatch) -> TestClient:
+    """TestClient bez AW_INSECURE_NO_AUTH — testuje fail-closed guard.
+
+    Tech-debt fix: zastępuje pattern tworzenia TestClient wewnątrz ciała testu.
+    Usuwa AW_INSECURE_NO_AUTH i oba sekrety → guard zwraca 401 dla każdego requestu.
+    Testy auth-specific powinny używać tej fixture zamiast ręcznie monkeypatching ENV.
+    """
+    monkeypatch.delenv("AW_INSECURE_NO_AUTH", raising=False)
+    monkeypatch.delenv("ARCHITEKT_API_KEY", raising=False)
+    monkeypatch.delenv("ARCHITEKT_JWT_SECRET", raising=False)
+    import main as main_module
+    with TestClient(main_module.app, raise_server_exceptions=False) as c:
         main_module.redis_client = None
         yield c
 

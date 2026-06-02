@@ -12,14 +12,33 @@ _JTI_BLOCKLIST_PREFIX = "jti:blocked:"
 
 
 async def is_jti_blocked(jti: str) -> bool:
-    """Sprawdza czy JTI jest na blocklist w Redis. Jeśli Redis niedostępny — przepuszcza."""
+    """Sprawdza czy JTI jest na blocklist w Redis.
+
+    Zachowanie przy braku Redis:
+    - DEV (AW_ENV != production): fail-open — Redis opcjonalny, logout nie blokuje tokenu.
+    - PRODUKCJA: fail-closed — Redis wymagany (preflight check); brak Redis = incydent,
+      token z JTI jest odrzucany żeby logout działał deterministycznie.
+      Tokeny bez claimu `jti` nie są dotknięte (revocation niemożliwe bez JTI).
+    """
     from api.runtime import get_redis
+    from api.settings import is_production
     r = get_redis()
     if r is None:
+        if is_production():
+            # Produkcja: Redis niedostępny = incydent. Fail-closed: blokuj token.
+            logger.warning(
+                "JTI check: Redis niedostępny w produkcji — token z JTI=%s odrzucony (fail-closed)", jti
+            )
+            return True
+        # Dev/staging: fail-open (Redis opcjonalny).
         return False
     try:
         return bool(await r.exists(f"{_JTI_BLOCKLIST_PREFIX}{jti}"))
-    except Exception:
+    except Exception as e:
+        if is_production():
+            logger.error("JTI Redis error w produkcji (fail-closed): %s", e)
+            return True
+        logger.warning("JTI Redis error (fail-open dev): %s", e)
         return False
 
 

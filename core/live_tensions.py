@@ -30,12 +30,25 @@ def compute_live_pair_frictions(
     *,
     max_pairs: int = 16,
 ) -> list[dict[str, Any]]:
+    """Oblicza heurystyczne napięcia leksykalne między parami agentów.
+
+    Filtrowanie błędów: `names = [n for n in council_names if n in voices]` oznacza,
+    że agenci z timeout/error NIE trafiają do tej funkcji — debate_orchestrator dodaje
+    ich do `full_voices` wyłącznie gdy głos jest prawidłowy (linia `full_voices[a.name] = text`
+    w _phase_council). W praktyce fallback 0.42 obsługuje WYŁĄCZNIE agentów z bardzo
+    krótkim głosem (< 4 znaki na token), co jest skrajnie rzadkie.
+
+    Fallback 0.42 celowo leży poniżej progu `_TENSION_HIGH_THRESHOLD = 0.65`
+    (debate_orchestrator), więc para z fallbackiem NIE trafia do sekcji napięć eksponowanej
+    Syezowi — jedynie do monitora napięć w prompcie.
+    """
     pairs: list[PairFriction] = []
     names = [n for n in council_names if n in voices]
     for i, na in enumerate(names):
         for nb in names[i + 1 :]:
             ta, tb = _tokens(voices.get(na, "")), _tokens(voices.get(nb, ""))
             if not ta or not tb:
+                # Głos zbyt krótki by tokenizować — neutralny fallback poniżej progu 0.65.
                 intensity = 0.42
             else:
                 inter = len(ta & tb)

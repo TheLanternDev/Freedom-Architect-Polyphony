@@ -1,4 +1,26 @@
-"""Ładowanie zakodowanych sekretów paczki beta sponsorowanej (bez pliku .env)."""
+"""Ładowanie zakodowanych sekretów paczki beta sponsorowanej (bez pliku .env).
+
+⚠️  SECURITY WARNING — PRZECZYTAJ PRZED UŻYCIEM:
+
+XOR+base64 to OBFUSCATION, nie szyfrowanie. Każdy z dostępem do sponsor_payload.py
+może odczytać sekrety w kilka linii Pythona:
+
+    import base64
+    raw = base64.b64decode(blob)
+    plain = bytes(b ^ SALT for b in raw).decode()
+
+NIE używaj tego mechanizmu do:
+  - kluczy API w dystrybucji publicznej lub masowej (klucze są praktycznie jawne)
+  - danych uwierzytelniających produkcyjnych baz danych
+  - jakichkolwiek sekretów, których kompromitacja miałaby realne skutki
+
+Akceptowalny zakres: zamknięta paczka beta dla JEDNEGO zaufanego testera, gdzie
+alternatywą jest czysty plaintext. Obfuscation zmniejsza ryzyko przypadkowego odczytu,
+nie celowego ataku.
+
+Dla sekretów produkcyjnych użyj zmiennych środowiskowych przez CI/CD lub managera
+sekretów (Vault, AWS Secrets Manager, Doppler, itp.).
+"""
 from __future__ import annotations
 
 import base64
@@ -12,7 +34,10 @@ def encode_value(value: str, salt: int) -> str:
 
 
 def apply_payload(blobs: dict[str, str], salt: int) -> None:
-    """Dekoduje bloby XOR+base64 i ustawia os.environ (tylko paczka sponsorowana)."""
+    """Dekoduje bloby XOR+base64 i ustawia os.environ (tylko paczka sponsorowana).
+
+    Patrz ostrzeżenie security w docstringu modułu — to obfuscation, nie szyfrowanie.
+    """
     for key, blob in blobs.items():
         if not blob:
             continue

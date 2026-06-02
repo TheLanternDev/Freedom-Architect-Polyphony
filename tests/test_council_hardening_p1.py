@@ -20,13 +20,17 @@ from core.completion_enforcer import (
 
 
 def test_prose_audit_rejects_question_mark_only_attack():
-    """Atak: >200 zn., słowa z 2–3 klastrów + sam pytajnik, ale BEZ rdzenia
-    (remaining + next_move). Przed poprawką próg 4/4 to przepuszczał."""
+    """Atak: >400 zn., słowa z 2–3 klastrów + sam pytajnik, ale BEZ rdzenia
+    (remaining + next_move). Stage 2: próg podniesiony do 400 zn. — atak też
+    musi być dłuższy, żeby testował walidację sygnałów, nie samą długość."""
     attack = (
         "Czuję pewien opór oraz niepewność w tym module projektu, co napina "
-        "wewnętrzny stan. To jest celowo wydłużony, neutralny akapit dopełniający "
-        "limit dwustu znaków, pozbawiony jakiegokolwiek konkretnego najmniejszego "
-        "ruchu czy terminu. A czy to wszystko brzmi wystarczająco ładnie?"
+        "wewnętrzny stan decyzyjny i utrudnia pracę. To jest celowo wydłużony, "
+        "neutralny akapit dopełniający limit czterystu znaków, pozbawiony "
+        "jakiegokolwiek konkretnego ruchu do wykonania w określonym czasie. "
+        "Wewnętrzna blokada jest odczuwalna, lecz nie wskazuje żadnej konkretnej akcji. "
+        "Napięcie narasta, a pytanie otwarte wisi w powietrzu bez odpowiedzi. "
+        "A czy to wszystko brzmi wystarczająco diagnostycznie jak synteza Syeza?"
     )
     with pytest.raises(CompletionViolation) as exc:
         validate_syez_prose_completion_audit(attack)
@@ -48,11 +52,15 @@ def test_prose_audit_requires_core_clusters_remaining_and_next():
 
 
 def test_prose_audit_still_passes_real_synthesis():
-    """Realna synteza (remaining + blokada + 45 min + pytania) nadal przechodzi."""
+    """Realna synteza (remaining + blokada + 45 min + pytania) nadal przechodzi.
+    Stage 2: tekst rozszerzony do ≥400 zn. — PROSE_AUDIT_MIN_CHARS podniesiono."""
     ok = (
-        "Na checklistie funkcjonalności zostały jeszcze dwie pozycje. Pierwszą "
-        "blokuje brak decyzji o kolorystyce. Najmniejszy konkretny ruch na dziś "
-        "to przygotować jeden szkic widoku w 45 minut. Domykamy audyt. "
+        "Na checklistie funkcjonalności zostały jeszcze dwie pozycje do odhaczenia: "
+        "widok onboardingu i moduł powiadomień. Pierwszą blokuje brak decyzji "
+        "o kolorystyce i tonie komunikacji, drugą blokuje nierozstrzygnięta architektura "
+        "kolejki zdarzeń. Najmniejszy konkretny ruch na dziś to przygotować jeden "
+        "szkic widoku onboardingu w ciągu 45 minut — bez oczekiwania na resztę. "
+        "Domykamy audyt z pełną świadomością obu blokad. "
         "Co jest dla Ciebie najcięższe w tym kroku? Jak zmienia się priorytet?"
     )
     validate_syez_prose_completion_audit(ok)  # nie rzuca

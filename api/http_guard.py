@@ -64,7 +64,30 @@ async def architekt_http_guard(
     jwt_on = settings.jwt_secret_configured()
 
     if not api_key and not jwt_on:
-        return await call_next(request)
+        # Stage 1 hardening: fail-closed gdy brak sekretów.
+        # Dev-only bypass (nigdy w produkcji): AW_INSECURE_NO_AUTH=1
+        if os.getenv("AW_INSECURE_NO_AUTH", "").strip().lower() in ("1", "true", "yes"):
+            if settings.is_production():
+                logger.critical(
+                    "AW_INSECURE_NO_AUTH=1 niedozwolone w produkcji — blokuję żądanie"
+                )
+                return JSONResponse(
+                    {"detail": "AW_INSECURE_NO_AUTH niedozwolone w środowisku produkcyjnym."},
+                    status_code=403,
+                )
+            logger.warning(
+                "⚠️  AW_INSECURE_NO_AUTH=1 — uwierzytelnianie pominięte (wyłącznie dev/test)"
+            )
+            return await call_next(request)
+        return JSONResponse(
+            {
+                "detail": (
+                    "Brak konfiguracji autoryzacji — ustaw ARCHITEKT_JWT_SECRET lub "
+                    "ARCHITEKT_API_KEY. Dev-only bypass (nigdy w produkcji): AW_INSECURE_NO_AUTH=1."
+                )
+            },
+            status_code=401,
+        )
 
     hdr_svc = settings.service_api_header_name()
     svc_val = (request.headers.get(hdr_svc) or "").strip()
@@ -103,6 +126,18 @@ async def architekt_http_guard(
             return await call_next(request)
 
     if api_key and bearer and hmac.compare_digest(bearer, api_key):
+        # Stage 1 hardening: gdy JWT skonfigurowane, legacy bearer odrzucony.
+        # Shared key nie derivuje tenant_id → ryzyko cross-user data leaku.
+        if jwt_on:
+            return JSONResponse(
+                {
+                    "detail": (
+                        "Legacy ARCHITEKT_API_KEY odrzucony — serwer ma aktywny JWT. "
+                        "Użyj POST /auth/login aby uzyskać per-user JWT."
+                    )
+                },
+                status_code=401,
+            )
         request.state.architekt_auth = "legacy_bearer"
         response = await call_next(request)
         response.headers["Deprecation"] = "true"
