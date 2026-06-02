@@ -3,6 +3,7 @@ import { isCouncilFa2 } from "@/config/product";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { useLang } from "@/lib/i18n";
+import { SidebarSection } from "@/components/ui/SidebarSection";
 
 interface FunctionalityItem {
   id: number;
@@ -115,24 +116,18 @@ export function DreamsPanel({ disabled }: { disabled: boolean }) {
       : "My dreams";
 
   return (
-    <div className="mt-4">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-[11px] uppercase tracking-widest text-white/30 hover:text-teal/70 transition-colors disabled:opacity-40"
-      >
-        <span>{label}</span>
-        <span>{open ? "−" : "+"}</span>
-      </button>
-
-      {open && (
-        <div className="mt-2 space-y-2">
+    <SidebarSection
+      label={label}
+      collapsible
+      disabled={disabled}
+      onOpenChange={setOpen}
+    >
+      <div className="space-y-2 pt-1">
           {loading && (
-            <p className="text-[11px] text-white/30 px-1">{isPL ? "Ładuję..." : "Loading..."}</p>
+            <p className="aw-caption px-1">{isPL ? "Ładuję..." : "Loading..."}</p>
           )}
           {!loading && dreams.length === 0 && (
-            <p className="text-[11px] text-white/25 px-1">
+            <p className="aw-caption px-1">
               {isPL ? "Brak marzeń — zacznij debatę." : "No dreams yet — start a debate."}
             </p>
           )}
@@ -163,7 +158,7 @@ export function DreamsPanel({ disabled }: { disabled: boolean }) {
             return (
               <div
                 key={d.id}
-                className={`rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 ${isArchived ? "opacity-40" : ""}`}
+                className={`rounded-surface border border-border bg-surface-raised/40 px-3 py-2.5 ${isArchived ? "opacity-40" : ""}`}
               >
                 {proj?.status === "stuck" && (
                   <div className="mb-2 rounded border border-red-500/35 bg-red-950/25 px-2 py-1.5 text-[10px] text-red-200/95 leading-snug">
@@ -171,7 +166,7 @@ export function DreamsPanel({ disabled }: { disabled: boolean }) {
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div className="min-w-0">
                     <div className="text-[9px] uppercase tracking-widest text-white/30 mb-1">
                       {t("dreams.col.dream")}
@@ -310,8 +305,7 @@ export function DreamsPanel({ disabled }: { disabled: boolean }) {
               </div>
             );
           })}
-        </div>
-      )}
-    </div>
+      </div>
+    </SidebarSection>
   );
 }

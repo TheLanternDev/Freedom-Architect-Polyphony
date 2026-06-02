@@ -726,6 +726,12 @@ async def debate_history(
     lim = max(1, min(limit, 200))
     needle = (q or "").strip()[:500] or None
     rows = await repo.list_debates_recent(db, limit=lim, query=needle)
+    # Wzbogać każdą debatę o root_debate_id — frontend grupuje sidebar po wątkach
+    # niezależnie od tego, czy rodzic mieści się w aktualnym limicie /history.
+    ids = [int(r["id"]) for r in rows if r.get("id") is not None]
+    roots = await repo.resolve_root_debate_ids(db, ids) if ids else {}
+    for r in rows:
+        r["root_debate_id"] = roots.get(int(r["id"]), int(r["id"]))
     return {"debates": rows, "limit": lim, "query": needle or ""}
 
 
@@ -753,6 +759,45 @@ async def debate_detail(debate_id: int, db=Depends(get_db)):
         "commitments": commitments,
         "synthesis_structured": structured,
     }
+
+
+@app.get("/debate/{debate_id}/thread")
+async def debate_thread(debate_id: int, db=Depends(get_db)):
+    """Pełen wątek konwersacji: wszystkie tury od roota do podanego liścia.
+
+    Każda tura = osobna debata połączona przez `parent_debate_id`. Zwracamy
+    je chronologicznie (najstarsza → najnowsza), żeby UI mogło je wyświetlić
+    jako konwersację: brief #1 → synteza #1 → follow_up #2 → synteza #2 → ...
+    """
+    if not DB_AVAILABLE:
+        raise HTTPException(status_code=503, detail="baza niedostępna")
+    # Limit 20 tur — zabezpieczenie przed patologicznymi łańcuchami; w praktyce
+    # rzadko przekroczone, a chroni przed N+1 query attack.
+    chain = await repo.list_debate_chain(db, debate_id, max_turns=20)
+    if not chain:
+        raise HTTPException(status_code=404, detail="Debata nie znaleziona")
+
+    turns: list[dict[str, Any]] = []
+    for entry in chain:
+        turn_id = entry["id"]
+        row = await repo.get_debate_row(db, turn_id)
+        if not row:
+            continue
+        voices = await repo.list_voices_for_debate(db, turn_id)
+        structured: Optional[dict[str, Any]] = None
+        raw_json = row.get("full_synthesis_json")
+        if raw_json:
+            try:
+                parsed = json.loads(raw_json)
+                structured = parsed if isinstance(parsed, dict) else None
+            except json.JSONDecodeError:
+                structured = None
+        turns.append({
+            "debate": row,
+            "voices": voices,
+            "synthesis_structured": structured,
+        })
+    return {"turns": turns}
 
 
 @app.get("/debate/{debate_id}/export.md")

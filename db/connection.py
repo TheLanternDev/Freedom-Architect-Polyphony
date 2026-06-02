@@ -593,6 +593,7 @@ class _Repo:
             cur = await db.execute(
                 f"""
                 SELECT id, created_at, category, mode, brief_description, dream_id,
+                       parent_debate_id,
                        substr(brief_description, 1, 140) AS preview
                   FROM debates
                  WHERE tenant_id = ?
@@ -614,6 +615,7 @@ class _Repo:
                 """
                 sql = f"""
                 SELECT DISTINCT d.id, d.created_at, d.category, d.mode, d.brief_description, d.dream_id,
+                       d.parent_debate_id,
                        substr(d.brief_description::text, 1, 140) AS preview
                   FROM debates d
                   LEFT JOIN agent_voices v ON v.debate_id = d.id
@@ -636,6 +638,7 @@ class _Repo:
                         f"""
                         SELECT DISTINCT d.id, d.created_at, d.category, d.mode,
                                d.brief_description, d.dream_id,
+                               d.parent_debate_id,
                                substr(d.brief_description, 1, 140) AS preview
                           FROM debates_fts f
                           JOIN debates d ON d.id = f.rowid
@@ -652,6 +655,7 @@ class _Repo:
                         f"""
                         SELECT DISTINCT d.id, d.created_at, d.category, d.mode,
                                d.brief_description, d.dream_id,
+                               d.parent_debate_id,
                                substr(d.brief_description, 1, 140) AS preview
                           FROM debates d
                           LEFT JOIN agent_voices v ON v.debate_id = d.id
@@ -689,6 +693,48 @@ class _Repo:
         )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
+
+    async def resolve_root_debate_ids(
+        self, db: Any, debate_ids: list[int], *, max_depth: int = 32
+    ) -> dict[int, int]:
+        """Dla każdej debaty z listy zwraca id roota jej wątku (debata bez parenta).
+
+        Liczone po stronie serwera (a nie na froncie po `groupIntoThreads`), żeby
+        sidebar history grupował poprawnie nawet gdy część rodziców wypadła poza
+        widoczny limit (np. /history?limit=30 a wątek ma 35 tur). Cache w pamięci
+        per-wywołanie eliminuje redundantne zapytania w obrębie tej samej listy.
+        """
+        if not debate_ids:
+            return {}
+        tid = _tid()
+        parent_cache: dict[int, Optional[int]] = {}
+
+        async def fetch_parent(d_id: int) -> Optional[int]:
+            if d_id in parent_cache:
+                return parent_cache[d_id]
+            cur = await db.execute(
+                "SELECT parent_debate_id FROM debates WHERE id = ? AND tenant_id = ?",
+                (d_id, tid),
+            )
+            row = await cur.fetchone()
+            parent = None if row is None else row["parent_debate_id"]
+            parent_cache[d_id] = int(parent) if parent is not None else None
+            return parent_cache[d_id]
+
+        roots: dict[int, int] = {}
+        for d_id in debate_ids:
+            current = int(d_id)
+            visited: set[int] = set()
+            for _ in range(max_depth):
+                if current in visited:
+                    break
+                visited.add(current)
+                parent = await fetch_parent(current)
+                if parent is None:
+                    break
+                current = parent
+            roots[int(d_id)] = current
+        return roots
 
     async def list_debate_chain(
         self,

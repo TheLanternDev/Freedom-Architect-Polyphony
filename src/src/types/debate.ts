@@ -99,6 +99,19 @@ export interface LiveTensionPair {
   intensity: number;
 }
 
+/** Zarchiwizowana, zakończona tura wątku. Bieżąca tura żyje na top-level DebateState. */
+export interface PriorTurn {
+  debateId?: number;
+  /** Tekst, który użytkownik wpisał, żeby uruchomić tę turę: brief.description (tura #1)
+   *  lub follow_up (kolejne tury). Niezbędny, żeby zrenderować wątek jak konwersację. */
+  promptText: string;
+  agents: Record<string, AgentState>;
+  synthesis: string;
+  synthesisStructured?: SynthesisStructuredPayload;
+  debateCost?: number;
+  debateMode?: string;
+}
+
 export interface DebateState {
   status: DebateStatus;
   agents: Record<string, AgentState>;
@@ -125,6 +138,14 @@ export interface DebateState {
   pendingMsg?: string;
   /** Treść z SSE `safety_halt` (flow kryzysowy — numer 116 123 w UI). */
   safetyMessage?: string;
+  /** Wcześniejsze, zarchiwizowane tury tego samego wątku (chronologicznie).
+   *  Bieżąca tura żyje w polach `agents`/`synthesis`/`debateId`. Pusta / undefined
+   *  przy nowym briefie. UI renderuje je nad bieżącą turą (Ruch 2). */
+  turns?: PriorTurn[];
+  /** Tekst, który uruchomił bieżącą turę (brief.description albo follow_up).
+   *  Trzymany w stanie po to, żeby przy kolejnej kontynuacji można było zarchiwizować
+   *  pełną turę. Nigdy nie nadpisuje tego, co user widzi w formularzu briefu. */
+  currentPromptText?: string;
 }
 
 // ── SSE event payloads ─────────────────────────────────────────────────────

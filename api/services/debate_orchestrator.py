@@ -500,8 +500,16 @@ async def _phase_synthesis(
 
     try:
         synthesis = _syez_task.result()
-    except Exception as e:
-        synthesis = f"[błąd syntezy: {e}]" if lang == "pl" else f"[synthesis error: {e}]"
+    except BaseException as e:
+        # str(e) bywa puste (CancelledError, niektóre timeouty, anthropic errors bez body).
+        # Bez typu wyjątku komunikat „[błąd syntezy: ]” jest nie do zdiagnozowania.
+        logger.exception("Syez synthesis failed")
+        etype = type(e).__name__
+        emsg = str(e).strip() or "<brak treści wyjątku — sprawdź logi backendu>"
+        synthesis = (
+            f"[błąd syntezy: {etype}: {emsg}]" if lang == "pl"
+            else f"[synthesis error: {etype}: {emsg}]"
+        )
 
     for chunk in chunk_words(synthesis, 5):
         yield _sse("synthesis_chunk", {"chunk": chunk})

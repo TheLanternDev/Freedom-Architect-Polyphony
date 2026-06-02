@@ -9,6 +9,7 @@ import type {
   DebateState,
   DebateStatus,
   DebateContinueBody,
+  PriorTurn,
   SynthesisStructuredPayload,
 } from "@/types/debate";
 import {
@@ -23,7 +24,10 @@ const INITIAL_STATE: DebateState = {
 };
 
 /** Stan początkowy nowego strumienia — usuwa pola z poprzedniej debaty (spread INITIAL_STATE tego nie robi). */
-function debateBootstrap(status: DebateStatus): DebateState {
+function debateBootstrap(
+  status: DebateStatus,
+  opts: { turns?: PriorTurn[]; currentPromptText?: string } = {},
+): DebateState {
   return {
     status,
     agents: {},
@@ -43,6 +47,28 @@ function debateBootstrap(status: DebateStatus): DebateState {
     lastCommitmentEcho: undefined,
     pendingMsg: undefined,
     safetyMessage: undefined,
+    turns: opts.turns,
+    currentPromptText: opts.currentPromptText,
+  };
+}
+
+/** Zbuduje snapshot bieżącej tury do archiwum. Wywoływane TYLKO przed startem kontynuacji,
+ *  na podstawie state widzianego w setState-callbacku (zawsze świeży). */
+function snapshotCurrentTurn(s: DebateState): PriorTurn | null {
+  // Pomijamy stany puste (np. brak debateId i brak głosów — nic do zarchiwizowania).
+  const hasContent =
+    s.debateId != null ||
+    Object.keys(s.agents).length > 0 ||
+    (s.synthesis ?? "").length > 0;
+  if (!hasContent) return null;
+  return {
+    debateId: s.debateId,
+    promptText: s.currentPromptText ?? "",
+    agents: s.agents,
+    synthesis: s.synthesis,
+    synthesisStructured: s.synthesisStructured,
+    debateCost: s.debateCost,
+    debateMode: s.debateMode,
   };
 }
 
@@ -76,9 +102,19 @@ export function useDebate() {
     );
   }
 
-  const runDebateStream = useCallback(async (url: string, body: unknown) => {
+  const runDebateStream = useCallback(
+    async (
+      url: string,
+      body: unknown,
+      opts: { turns?: PriorTurn[]; currentPromptText: string } = { currentPromptText: "" },
+    ) => {
     readerRef.current?.cancel();
-    setState(debateBootstrap("agents_speaking"));
+    setState(
+      debateBootstrap("agents_speaking", {
+        turns: opts.turns,
+        currentPromptText: opts.currentPromptText,
+      }),
+    );
 
     try {
       const res = await fetch(url, {
@@ -164,14 +200,32 @@ export function useDebate() {
 
   const startDebate = useCallback(
     async (brief: Brief) => {
-      await runDebateStream(`${getApiBase()}/debate/stream`, brief);
+      // Nowy wątek — żadnych poprzednich tur do zachowania.
+      await runDebateStream(
+        `${getApiBase()}/debate/stream`,
+        brief,
+        { turns: undefined, currentPromptText: brief.description },
+      );
     },
     [runDebateStream],
   );
 
   const continueDebateThread = useCallback(
     async (body: DebateContinueBody) => {
-      await runDebateStream(`${getApiBase()}/debate/continue/stream`, body);
+      // Przed bootstrapem strumienia: zarchiwizuj bieżącą turę (głosy + synteza + promptText)
+      // do `turns`, żeby UI mogło w Ruchu 2 wyrenderować pełen wątek zamiast resetować widok.
+      let nextTurns: PriorTurn[] | undefined;
+      setState((s) => {
+        const snap = snapshotCurrentTurn(s);
+        const existing = s.turns ?? [];
+        nextTurns = snap ? [...existing, snap] : existing;
+        return s; // read-only: nie modyfikujemy stanu, tylko czytamy
+      });
+      await runDebateStream(
+        `${getApiBase()}/debate/continue/stream`,
+        body,
+        { turns: nextTurns, currentPromptText: body.follow_up },
+      );
     },
     [runDebateStream],
   );
@@ -211,7 +265,8 @@ export function useDebate() {
     readerRef.current?.cancel();
     setState(debateBootstrap("idle"));
     try {
-      const res = await fetch(`${getApiBase()}/debate/${debateId}`, {
+      // /thread zwraca cały łańcuch wątku (root → liść) chronologicznie.
+      const res = await fetch(`${getApiBase()}/debate/${debateId}/thread`, {
         headers: { ...getApiAuthHeaders() },
       });
       if (!res.ok) {
@@ -222,27 +277,65 @@ export function useDebate() {
         }));
         return;
       }
-      const data = (await res.json()) as {
+      type ThreadTurn = {
+        debate: {
+          id: number;
+          brief_description?: string | null;
+          synthesis_text?: string | null;
+          mode?: string;
+          cost_usd?: number | null;
+        };
         voices: Array<{ agent_name: string; voice_text: string }>;
-        debate: { synthesis_text?: string | null };
         synthesis_structured?: SynthesisStructuredPayload | null;
       };
-      const agents: Record<string, AgentState> = {};
-      for (const v of data.voices ?? []) {
-        agents[v.agent_name] = {
-          name: v.agent_name,
-          status: "done",
-          text: v.voice_text,
-          progress: 100,
-        };
+      const data = (await res.json()) as { turns: ThreadTurn[] };
+      const turns = data.turns ?? [];
+      if (turns.length === 0) {
+        setState(() => ({
+          ...debateBootstrap("idle"),
+          status: "error",
+          error: `History: empty thread`,
+        }));
+        return;
       }
+
+      function toAgents(
+        voices: Array<{ agent_name: string; voice_text: string }>,
+      ): Record<string, AgentState> {
+        const agents: Record<string, AgentState> = {};
+        for (const v of voices ?? []) {
+          agents[v.agent_name] = {
+            name: v.agent_name,
+            status: "done",
+            text: v.voice_text,
+            progress: 100,
+          };
+        }
+        return agents;
+      }
+
+      // Ostatnia tura ląduje na top-level state (bieżąca tura); poprzednie w state.turns.
+      const last = turns[turns.length - 1];
+      const priorTurns: PriorTurn[] = turns.slice(0, -1).map((tt) => ({
+        debateId: tt.debate.id,
+        promptText: tt.debate.brief_description ?? "",
+        agents: toAgents(tt.voices),
+        synthesis: tt.debate.synthesis_text ?? "",
+        synthesisStructured: tt.synthesis_structured ?? undefined,
+        debateCost: tt.debate.cost_usd ?? undefined,
+        debateMode: tt.debate.mode,
+      }));
       setState({
-        ...debateBootstrap("done"),
-        agents,
-        synthesis: data.debate?.synthesis_text ?? "",
-        synthesisStructured: data.synthesis_structured ?? undefined,
-        debateId,
-        debateMode: (data.debate as { mode?: string })?.mode,
+        ...debateBootstrap("done", {
+          turns: priorTurns,
+          currentPromptText: last.debate.brief_description ?? "",
+        }),
+        agents: toAgents(last.voices),
+        synthesis: last.debate.synthesis_text ?? "",
+        synthesisStructured: last.synthesis_structured ?? undefined,
+        debateId: last.debate.id,
+        debateMode: last.debate.mode,
+        debateCost: last.debate.cost_usd ?? undefined,
       });
     } catch (err) {
       const net = humanizeFetchFailure(err, (k) => tRef.current(k));

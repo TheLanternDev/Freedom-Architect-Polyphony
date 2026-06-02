@@ -26,6 +26,10 @@ interface Props {
     due?: string,
     followUp?: string,
   ) => Promise<void>;
+  /** Archiwum tury — bez sticky (unikamy nakładania wielu paneli). */
+  sticky?: boolean;
+  /** Tylko podgląd — bez eksportu, kontynuacji i zobowiązań. */
+  readOnly?: boolean;
 }
 
 function synthesisToMarkdown(
@@ -136,6 +140,8 @@ export function SyezPanel({
   lastCommitmentEcho,
   onContinueThread,
   onCommitStep,
+  sticky = true,
+  readOnly = false,
 }: Props) {
   const { t } = useLang();
   const isSynthesizing = status === "synthesizing";
@@ -270,9 +276,10 @@ export function SyezPanel({
 
   return (
     <div
-      id="syez-export-root"
+      id={readOnly ? undefined : "syez-export-root"}
       className={`
-        rounded-xl border-2 p-5 transition-all duration-500 sticky bottom-4 z-20
+        rounded-xl border-2 p-5 transition-all duration-500
+        ${sticky ? "sticky bottom-4 z-20" : "relative z-0"}
         ${isActive
           ? "border-teal shadow-[0_0_20px_rgba(20,184,166,0.1)] bg-teal/5"
           : "border-white/10 bg-white/[0.02]"
@@ -319,7 +326,7 @@ export function SyezPanel({
           </div>
         </div>
 
-        {isActive && (
+        {isActive && !readOnly && (
           <div className="flex gap-2 no-print">
             <button
               type="button"
@@ -441,6 +448,7 @@ export function SyezPanel({
                         )}
                       </span>
                     </div>
+                    {readOnly ? null : (
                     <button
                       type="button"
                       disabled={committing === idx || !debateId}
@@ -449,6 +457,7 @@ export function SyezPanel({
                     >
                       {committing === idx ? t("syez.btn.committing") : t("syez.btn.commit")}
                     </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -497,7 +506,7 @@ export function SyezPanel({
         )}
       </div>
 
-      {isDone && onCommitStep && debateId != null && (
+      {isDone && !readOnly && onCommitStep && debateId != null && (
         <form
           onSubmit={(e) => void handleOwnCommit(e)}
           className="no-print mt-5 pt-5 border-t border-red-500/20 space-y-2"
@@ -532,7 +541,7 @@ export function SyezPanel({
         </form>
       )}
 
-      {isDone && onContinueThread && debateId != null && (
+      {isDone && !readOnly && onContinueThread && debateId != null && (
         <form
           onSubmit={(e) => void handleContinueSubmit(e)}
           className="no-print mt-5 pt-5 border-t border-white/[0.07] space-y-2"

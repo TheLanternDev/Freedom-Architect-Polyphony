@@ -22,7 +22,7 @@ interface Props {
 export function AgentCard({ agent }: Props) {
   const { t } = useLang();
   const meta = AGENT_META[agent.name] ?? {
-    color: "bg-navy-800 border-white/10",
+    color: "bg-surface-raised border-border",
     initials: agent.name.slice(0, 2).toUpperCase(),
   };
   const roleKey = `agent.role.${agent.name}`;
@@ -44,7 +44,6 @@ export function AgentCard({ agent }: Props) {
 
   return (
     <motion.div
-      layout
       initial={false}
       animate={{
         scale: isSpeaking ? 1.01 : 1,

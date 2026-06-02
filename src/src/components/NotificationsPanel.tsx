@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { useLang } from "@/lib/i18n";
+import { SidebarSection } from "@/components/ui/SidebarSection";
 
 interface DueRow {
   id: number;
@@ -23,7 +24,6 @@ const LS_NOTIF_PERM = "aw_notif_permission";
 export function NotificationsPanel() {
   const { t } = useLang();
   const [items, setItems] = useState<DueRow[]>([]);
-  const [open, setOpen] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -77,45 +77,32 @@ export function NotificationsPanel() {
   const upcoming = items.filter((i) => !i.needs_attention);
 
   return (
-    <div className="no-print mt-3">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between text-[11px] uppercase tracking-widest text-white/30 hover:text-teal/70 transition-colors"
-      >
-        <span className="flex items-center gap-1.5">
-          {t("notif.title")}
-          {urgent.length > 0 && (
-            <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500/80 text-[9px] text-white font-bold">
-              {urgent.length}
-            </span>
-          )}
-        </span>
-        <span>{open ? "−" : "+"}</span>
-      </button>
-
-      {open && (
-        <div className="mt-2 space-y-2 max-h-[300px] overflow-y-auto">
+    <SidebarSection
+      label={t("notif.title")}
+      collapsible
+      badge={urgent.length}
+      badgeUrgent={urgent.length > 0}
+      className="no-print"
+    >
+      <div className="space-y-2 pt-1 max-h-[280px] overflow-y-auto aw-scroll">
           {!notifEnabled && "Notification" in window && (
             <button
               type="button"
               onClick={requestNotifPermission}
-              className="w-full text-[10px] px-2 py-1.5 rounded border border-teal/25 text-teal/70 hover:bg-teal/10 transition-colors"
+              className="w-full text-[10px] px-2 py-1.5 rounded-control border border-teal/25 text-teal/80 hover:bg-teal-dim transition-colors duration-premium"
             >
               {t("notif.enable_browser")}
             </button>
           )}
 
           {items.length === 0 && (
-            <p className="text-[11px] text-white/25 px-1">
-              {t("notif.empty")}
-            </p>
+            <p className="aw-caption">{t("notif.empty")}</p>
           )}
 
           {urgent.map((row) => (
             <div
               key={row.id}
-              className="rounded-lg border border-red-500/30 bg-red-950/20 px-3 py-2"
+              className="rounded-surface border border-red-500/30 bg-red-950/20 px-3 py-2"
             >
               <div className="flex items-center gap-1.5 mb-1">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
@@ -137,21 +124,20 @@ export function NotificationsPanel() {
           {upcoming.map((row) => (
             <div
               key={row.id}
-              className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+              className="rounded-surface border border-border bg-surface-raised/40 px-3 py-2"
             >
-              <p className="text-[11px] text-white/65 leading-snug line-clamp-2">
+              <p className="text-[11px] text-text-secondary leading-snug line-clamp-2">
                 {row.text}
               </p>
               {row.follow_up_at && (
-                <span className="text-[9px] text-white/30 font-mono mt-1 block">
+                <span className="text-[9px] text-text-tertiary font-mono mt-1 block">
                   FU: {row.follow_up_at.slice(0, 16)}
                 </span>
               )}
             </div>
           ))}
-        </div>
-      )}
-    </div>
+      </div>
+    </SidebarSection>
   );
 }
 

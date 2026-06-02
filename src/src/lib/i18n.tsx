@@ -43,6 +43,10 @@ export const DICT: Record<string, Phrase> = {
   },
   "app.btn.reset": { pl: "Resetuj", en: "Reset" },
   "app.mobile_mode_label": { pl: "Tryb (skrót mobilny)", en: "Mode (mobile shortcut)" },
+  "app.workspace.seal": {
+    pl: "9 perspektyw · debata, nie czat",
+    en: "9 perspectives · debate, not chat",
+  },
   "app.error.unknown": {
     pl: "Nieznany błąd. Sprawdź czy backend działa na porcie 8000.",
     en: "Unknown error. Check whether the backend is running on port 8000.",
@@ -121,6 +125,18 @@ export const DICT: Record<string, Phrase> = {
     en: "Supervisory Council — perspectives",
   },
   "app.section.synthesis": { pl: "Synteza (Syez)", en: "Synthesis (Syez)" },
+  "thread.prior_turn": { pl: "Tura", en: "Turn" },
+  "thread.your_followup": { pl: "Ty (kontynuacja)", en: "You (follow-up)" },
+  "thread.expand": { pl: "Rozwiń", en: "Expand" },
+  "thread.collapse": { pl: "Zwiń", en: "Collapse" },
+  "thread.prior_summary": {
+    pl: "{n} perspektyw{synthesis}",
+    en: "{n} perspectives{synthesis}",
+  },
+  "thread.prior_has_synthesis": {
+    pl: " · synteza gotowa",
+    en: " · synthesis ready",
+  },
   "app.lang.toggle_tooltip": {
     pl: "Przełącz na angielski",
     en: "Switch to Polish",
@@ -175,6 +191,7 @@ export const DICT: Record<string, Phrase> = {
   "mode.full.label": { pl: "Pełna Rada", en: "Full Council" },
   "mode.full.hint": { pl: "Wszystkie 9 perspektyw", en: "All 9 perspectives" },
   "mode.title": { pl: "Tryb Rady", en: "Council Mode" },
+  "mode.compact_title": { pl: "Tryby skrócone", en: "Focused modes" },
 
   "mode.fa2.title": { pl: "Tryb FA2 (biznes)", en: "FA2 mode (business)" },
   "mode.fa2.dreams.label": { pl: "Fundraising / wizja", en: "Fundraising / vision" },
@@ -403,6 +420,22 @@ export const DICT: Record<string, Phrase> = {
   },
   "brief.onboarding.dismiss": { pl: "Rozumiem, ukryj", en: "Got it, hide" },
   "brief.quick.title": { pl: "Gotowe briefy (1 klik)", en: "Starter briefs (1 click)" },
+  "brief.hero.title": {
+    pl: "Jaki temat stawiasz przed Radą?",
+    en: "What do you bring before the Council?",
+  },
+  "brief.hero.subtitle": {
+    pl: "Opisz marzenie, decyzję lub wzorzec — w swoich słowach, bez skrótów.",
+    en: "Describe a dream, decision, or pattern — in your own words, without shortcuts.",
+  },
+  "brief.chars.min_words": {
+    pl: "Minimum 5 słów, aby rozpocząć debatę",
+    en: "Minimum 5 words to start the debate",
+  },
+  "brief.chars.remaining": {
+    pl: "pozostało znaków",
+    en: "characters remaining",
+  },
   "brief.tpl.quit": {
     pl:
       "Właśnie odszedłem z pracy albo poważnie rozważam odejście. Czuję ulgę i strach jednocześnie i potrzebuję perspektywy Rady zanim zrobię kolejny ruch.",

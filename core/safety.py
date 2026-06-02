@@ -1,16 +1,18 @@
 """Protokoły bezpieczeństwa. Zdrowie Patryka > postęp projektu.
 
-Detekcja po granicach słów (regex), nie substring — żeby
-„nie chcę żyć bez tej decyzji" nie wpadało w false-positive,
-a „nie_chce_zyc" (znormalizowane) — owszem.
+Detekcja wyłącznie po jawnej ideacji samobójczej / zagrożeniu życia (whitelist regex).
+Słowa typu presja, opór, blokada, „boję się", „nie mogę" nie triggerują flow.
 
 Moduł był w personal_v1/protocols/safety.py — przeniesiony do core/,
 bo dotyczy KAŻDEJ debaty (personal i fa2), nie tylko personal_v1.
 """
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
+
+logger = logging.getLogger(__name__)
 
 FILOZOFIA = (
     "Architekt i Patryk to jedno. System nie narzuca — pyta. "
@@ -18,47 +20,58 @@ FILOZOFIA = (
     "Marzenia to kompas. Ciało nie kłamie. Cień ma energię."
 )
 
-# frazy/słowa-klucze (już znormalizowane: lowercase, bez diakrytyków)
-# Obie listy aktywne niezależnie od języka — safety_check zawsze sprawdza wszystkie.
-RED_PATTERNS_PL = [
-    # "nie chcę żyć" / "nie chcę już żyć" / "nie chcę żyć dalej/tak/więcej"
-    r"\bnie\s+chce\s+(?:juz\s+)?zyc(?:\s+(?:dalej|wiecej|tak)\b|[.!?]?\s*$)",
-    r"\bnie\s+chce\s+(?:juz\s+)?(?:byc|istniec)\b",
-    # "skończyć ze sobą" oraz odwrotny szyk "ze sobą (już) skończyć",
-    # "chcę ze sobą skończyć", "mam dość, chcę ze sobą skończyć"
-    r"\bskonczyc\s+ze\s+soba\b",
+# Wzorce po _normalize (lowercase, ASCII, bez diakrytyków). Tylko jawne sygnały kryzysu.
+CRISIS_PATTERNS_PL = [
+    # nie chcę (już) żyć — nie łapie „nie chcę motywacji" ani „nie chcę żyć bez decyzji"
+    r"\bnie\s+chce\s+(?:juz\s+)?zyc(?!\s+bez\b)"
+    r"(?:\s+(?:dalej|wiecej|tak)\b|\s*[,;]|[.!?]?\s*$)",
+    # „nie chcę być nachalnym" (rola/sprzedaż) ≠ „nie chcę już być" (kryzys)
+    r"\bnie\s+chce\s+(?:juz\s+)?(?:byc|istniec)"
+    r"(?:\s+(?:sam|sobie|tu|tutaj|nikim|niczym|dalej)\b|\s*[,;]|[.!?]?\s*$)",
+    r"\bchce\s+(?:sie\s+)?zabic(?:\s+(?:sie|siebie))?\b",
+    r"\b(?:mysle|mysli)\s+o\s+(?:samobojstwie|odebraniu\s+sobie\s+zycia|smierci)\b",
+    r"\bchce\s+skonczyc\s+ze\s+soba\b",
     r"\bze\s+soba\s+(?:juz\s+)?(?:chce\s+)?skonczyc\b",
-    r"\bnie\s+wytrzymam\s+(?:dluzej|tego\s+dluzej)\b",
+    r"\bchce\s+ze\s+soba\s+skonczyc\b",
+    r"\btargnac\s+sie\s+na\s+(?:swoje\s+)?zycie\b",
     r"\bsamoboj\w*",
     r"\bodebrac\s+sobie\s+zycie\b",
-    r"\b(?:krzywdze|zranic|skrzywdzic)\s+(?:siebie|sie)\b",
-    r"\bzabic\s+(?:sie|siebie)\b",
-    # Dodatkowe warianty których brakuje w oryginale
     r"\bchce\s+umrzec\b",
-    r"\bnie\s+ma\s+sensu\s+(?:zyc|zycie)\b",
-    # "najlepiej by mnie nie było" / "żeby mnie (już) nie było" / "gdyby mnie nie było"
-    # — wyrażenie ideacyjne (życzenie nieistnienia), nie zwykła metafora.
     r"\b(?:najlepiej\s+)?(?:zeby|gdyby|by)\s+mnie\s+(?:juz\s+)?nie\s+bylo\b",
 ]
 
-RED_PATTERNS_EN = [
+CRISIS_PATTERNS_EN = [
     r"\bdon'?t\s+want\s+to\s+(?:live|be\s+alive|exist)\s+(?:anymore|any\s+more)\b",
-    r"\bwant\s+to\s+(?:kill|hurt|harm)\s+my?self\b",
-    r"\bend\s+(?:it|my\s+life|my\s+pain|everything)\b",
+    r"\b(?:want\s+to\s+)?kill\s+myself\b",
+    r"\bhurt\s+myself\b",
+    r"\bharm\s+myself\b",
     r"\bsuicid\w*",
     r"\bself[\s\-]?harm\b",
-    r"\bno\s+reason\s+to\s+(?:live|go\s+on|keep\s+going)\b",
-    r"\bcan'?t\s+(?:go\s+on|take\s+it\s+(?:anymore|any\s+more))\b",
-    r"\bbet?ter\s+off\s+(?:dead|without\s+me)\b",
+    r"\bend\s+my\s+life\b",
+    r"\b(?:thoughts?\s+of|thinking\s+about)\s+suicide\b",
 ]
 
-RED_PATTERNS = RED_PATTERNS_PL + RED_PATTERNS_EN
-_COMPILED = [re.compile(p) for p in RED_PATTERNS]
+CRISIS_PATTERNS = CRISIS_PATTERNS_PL + CRISIS_PATTERNS_EN
+_COMPILED = [re.compile(p) for p in CRISIS_PATTERNS]
 
+# Cytaty — treść w cudzysłowie nie jest skanowana (cudzy głos / produkt / marketing).
+_QUOTED_BLOCK = re.compile(
+    r'„[^"]*"|"[^"]*"|\'[^\']*\'|«[^»]*»',
+    re.DOTALL,
+)
 
-# Litery bez rozkładu NFKD (encode('ascii','ignore') skasowałby je całkowicie,
-# np. "było" → "byo"). Mapujemy ręcznie do form ASCII przed normalizacją,
-# inaczej wzorce z tymi znakami nigdy nie trafią.
+# Dopasowanie w oknie przed frazą: opis problemu klienta / cytat / produkt.
+_THIRD_PARTY_BEFORE = re.compile(
+    r"(?:"
+    r"\b(?:klient\w*|uzytkownik\w*|pacjent\w*|koleg\w*|szef\w*)\s+"
+    r"(?:mowi|powiedzial|pisze|napisal|twierdzi|relacjonuje)"
+    r"|w\s+(?:marketingu|cytacie|opisie\s+produktu)"
+    r"|\bpomagac\s+ludziom\b"
+    r"|opis\w*\s+(?:produktu|oferty|uslugi)"
+    r")",
+    re.IGNORECASE,
+)
+
 _PREMAP = str.maketrans({"ł": "l", "Ł": "l", "ø": "o", "Ø": "o", "đ": "d", "Đ": "d"})
 
 
@@ -66,6 +79,21 @@ def _normalize(s: str) -> str:
     s = s.translate(_PREMAP)
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
     return s.lower()
+
+
+def _strip_quoted_blocks(text: str) -> str:
+    return _QUOTED_BLOCK.sub(" ", text)
+
+
+def _first_crisis_hit(norm: str) -> re.Match[str] | None:
+    """Pierwsze dopasowanie whitelisty poza cytatem / cudzym kontekstem."""
+    for rx in _COMPILED:
+        for m in rx.finditer(norm):
+            before = norm[max(0, m.start() - 120) : m.start()]
+            if _THIRD_PARTY_BEFORE.search(before):
+                continue
+            return m
+    return None
 
 
 KRYZYS_MSG = (
@@ -85,7 +113,13 @@ def safety_check(text: str) -> tuple[bool, str]:
     """
     if not text or not text.strip():
         return True, ""
-    norm = _normalize(text)
-    if any(rx.search(norm) for rx in _COMPILED):
+    screened = _strip_quoted_blocks(text)
+    norm = _normalize(screened)
+    hit = _first_crisis_hit(norm)
+    if hit is not None:
+        logger.warning(
+            "safety_halt: crisis phrase in brief (span=%r)",
+            norm[max(0, hit.start() - 20) : hit.end() + 20],
+        )
         return False, KRYZYS_MSG
     return True, ""

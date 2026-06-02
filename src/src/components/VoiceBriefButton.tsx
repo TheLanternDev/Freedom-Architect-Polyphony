@@ -143,16 +143,16 @@ export function VoiceBriefButton({
         onClick={toggle}
         disabled={disabled}
         title={listening ? labelListening : labelIdle}
-        className={`shrink-0 text-[11px] px-3 py-2 rounded-lg border transition-colors disabled:opacity-35 ${
+        className={`inline-flex items-center gap-2 shrink-0 text-[12px] px-3 py-2 rounded-control border transition-all duration-premium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 disabled:opacity-35 ${
           listening
-            ? "border-red-500/50 bg-red-500/10 text-red-300 animate-pulse"
-            : "border-white/15 bg-white/[0.05] hover:border-teal/45 hover:bg-teal/10"
+            ? "border-red-500/45 bg-red-500/10 text-red-300 focus-visible:outline-red-400/50 animate-pulse"
+            : "border-border bg-surface-raised/60 text-text-tertiary hover:border-teal/35 hover:text-teal-light hover:bg-teal-dim focus-visible:outline-teal/40 active:scale-[0.98]"
         }`}
       >
         {listening ? labelListening : labelIdle}
       </button>
       {interim && (
-        <span className="text-[10px] text-white/35 italic truncate max-w-[200px]">
+        <span className="text-[10px] text-text-tertiary italic truncate max-w-[200px]">
           {interim}
         </span>
       )}

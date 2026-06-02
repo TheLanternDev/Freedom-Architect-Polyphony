@@ -3,12 +3,15 @@ import { LocalSetupModal } from "@/components/LocalSetupModal";
 import { useDebate } from "@/hooks/useDebate";
 import { AgentCard } from "@/components/AgentCard";
 import { SyezPanel } from "@/components/SyezPanel";
+import { PriorTurnView } from "@/components/PriorTurnView";
 import { BriefForm } from "@/components/BriefForm";
 import { ModeSidebar } from "@/components/ModeSidebar";
 import { TensionMeter } from "@/components/TensionMeter";
 import { CommitmentsTimeline } from "@/components/CommitmentsTimeline";
 import { DebateHistory } from "@/components/DebateHistory";
 import { ProductManifest } from "@/components/ProductManifest";
+import { FadeIn } from "@/components/ui/FadeIn";
+import { SectionDivider } from "@/components/ui/SectionDivider";
 import { DreamsPanel } from "@/components/DreamsPanel";
 import {
   OnboardingPanel,
@@ -19,12 +22,12 @@ import { ActiveProjectLimitModal, type ActiveProjectInfo } from "@/components/Ac
 import { DreamWizard } from "@/components/DreamWizard";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { IntegrationsModal } from "@/components/IntegrationsModal";
+import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { OfflineBanner, addToOfflineQueue } from "@/components/OfflineBanner";
 import {
   LoginScreen,
   getStoredJwt,
   setStoredJwt,
-  getStoredUserDisplay,
 } from "@/components/LoginScreen";
 import { useLang } from "@/lib/i18n";
 import {
@@ -131,13 +134,14 @@ export default function App() {
     }
   }, [inDemo, demoPublicConfig, mode]);
 
-  const toggleCouncilMode = useCallback(() => {
-    const next = councilMode === "personal" ? "fa2" : "personal";
-    setCouncilMode(next);
-    setCouncilModeState(next);
-    // bez reloadu — komponenty (ModeSidebar, DreamsPanel) re-renderują się
-    // dzięki kluczowi `key={councilMode}` na drzewie
-  }, [councilMode]);
+  const selectCouncilMode = useCallback(
+    (next: "personal" | "fa2") => {
+      if (next === councilMode) return;
+      setCouncilMode(next);
+      setCouncilModeState(next);
+    },
+    [councilMode],
+  );
 
   // sprawdź tryb backendu (do banera niespójności)
   useEffect(() => {
@@ -197,6 +201,10 @@ export default function App() {
   const isActive =
     state.status === "agents_speaking" || state.status === "synthesizing";
   const agentList = Object.values(state.agents);
+  const showBriefSetup =
+    state.status === "idle" &&
+    agentList.length === 0 &&
+    (state.turns?.length ?? 0) === 0;
 
   const STATUS_LABEL: Record<string, string> = {
     idle: t("app.status.idle"),
@@ -258,10 +266,7 @@ export default function App() {
     : undefined;
 
   return (
-    <div
-      key={councilMode}
-      className="min-h-screen bg-navy text-white font-sans flex"
-    >
+    <div key={councilMode} className="aw-app-shell" data-council-mode={councilMode}>
       <LocalSetupModal
         open={setupOpen}
         onClose={() => setSetupOpen(false)}
@@ -276,7 +281,7 @@ export default function App() {
       {/* AKSJOMAT 0 — kompas Fragmentu. Stale widoczny w trybie personal,
           jako delikatne przypomnienie że to nie jest todo, tylko postawa. */}
       {councilMode === "personal" && (
-        <div className="fixed bottom-4 right-4 z-40 max-w-[320px] no-print">
+        <div className="no-print fixed z-20 bottom-[5.75rem] left-4 lg:left-[calc(272px+1.25rem)] max-w-[288px] pointer-events-auto">
           <FragmentCompass compact />
         </div>
       )}
@@ -315,162 +320,66 @@ export default function App() {
           onClose={() => setDreamWizardOpen(false)}
         />
       )}
-      <aside className="no-print w-[248px] shrink-0 border-r border-white/[0.06] px-4 py-6 hidden lg:flex flex-col">
-        <div className="mb-2 px-2">
-          <span className="text-[11px] uppercase tracking-widest text-white/30">
-            {t("app.brand")}
-          </span>
+      <aside className="no-print w-[272px] shrink-0 border-r border-border bg-surface/60 hidden lg:flex flex-col h-screen sticky top-0 overflow-hidden aw-scroll">
+        {/* Brand */}
+        <div className="shrink-0 px-6 pt-8 pb-5 border-b border-border/80">
+          <p className="aw-eyebrow mb-2">{t("app.brand")}</p>
+          <h1 className="font-display text-[18px] text-text-primary leading-tight tracking-display">
+            {t("app.title.supervisory")}{" "}
+            <em className="aw-accent-highlight not-italic">{t("app.title.council")}</em>
+          </h1>
         </div>
-        <ModeSidebar
-          selected={mode}
-          onChange={setMode}
-          disabled={isActive}
-          allowedModes={allowedDemoModes}
-        />
-        <DreamsPanel disabled={isActive || inDemo} />
-        {councilMode === "personal" && !inDemo && (
-          <div className="mt-4">
-            <DailyRitualPanel />
+
+        {/* Primary navigation — council modes */}
+        <div className="shrink-0 px-5 py-5">
+          <ModeSidebar
+            selected={mode}
+            onChange={setMode}
+            disabled={isActive}
+            allowedModes={allowedDemoModes}
+          />
+        </div>
+
+        {/* Context panels — scrollable middle */}
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain aw-scroll px-5 space-y-5 pb-4">
+          <DreamsPanel disabled={isActive || inDemo} />
+          {councilMode === "personal" && !inDemo && <DailyRitualPanel />}
+          {councilMode === "personal" && <NotificationsPanel />}
+        </div>
+
+        {/* History — anchored bottom, capped height so it never eats the middle pane */}
+        <div className="shrink-0 max-h-[min(38vh,260px)] flex flex-col px-5 pb-6 pt-4 border-t border-border/80 bg-surface shadow-[0_-10px_28px_rgba(0,0,0,0.45)] z-10 relative">
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <DebateHistory onSelect={loadHistoricalDebate} disabled={isActive} />
           </div>
-        )}
-        {councilMode === "personal" && <NotificationsPanel />}
-        <DebateHistory onSelect={loadHistoricalDebate} disabled={isActive} />
+        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="border-b border-white/[0.06] px-6 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-[18px] font-medium truncate">
-              {t("app.title.supervisory")}{" "}
-              <span className="text-teal">{t("app.title.council")}</span>
-            </span>
-            <span className="text-[10px] px-2 py-[2px] rounded-full bg-white/5 border border-white/10 text-white/40 shrink-0">
-              v3.3 / spec v1.1
-            </span>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <span
-              className={`text-[12px] px-3 py-1 rounded-full border ${
-                isActive
-                  ? "bg-teal/10 border-teal/30 text-teal"
-                  : state.status === "done"
-                  ? "bg-green-900/20 border-green-500/30 text-green-400"
-                  : state.status === "error"
-                  ? "bg-red-900/20 border-red-500/30 text-red-400"
-                  : state.status === "safety_halt"
-                  ? "bg-amber-950/40 border-amber-500/50 text-amber-200"
-                  : "bg-white/5 border-white/10 text-white/40"
-              }`}
-            >
-              {state.pendingMsg && agentList.length === 0
-                ? state.pendingMsg
-                : STATUS_LABEL[state.status] ?? state.status}
-            </span>
-
-            {!inDemo && (
-              <button
-                type="button"
-                onClick={toggleCouncilMode}
-                disabled={isActive}
-                title={
-                  councilMode === "personal"
-                    ? "Przełącz na wersję biznesową (FA2)"
-                    : "Przełącz na wersję osobistą (Mój Świat)"
-                }
-                className={`no-print inline-flex items-center gap-[6px] text-[11px] font-mono px-3 py-1 rounded-full border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
-                  councilMode === "fa2"
-                    ? "border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-300/60"
-                    : "border-teal/40 bg-teal/10 text-teal hover:border-teal/60"
-                }`}
-              >
-                <span
-                  className={
-                    councilMode === "personal" ? "text-teal" : "text-white/35"
-                  }
-                >
-                  Osobista
-                </span>
-                <span className="text-white/20">/</span>
-                <span
-                  className={
-                    councilMode === "fa2" ? "text-amber-300" : "text-white/35"
-                  }
-                >
-                  Biznesowa
-                </span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setSetupOpen(true)}
-              className="no-print text-[11px] px-2 py-1 rounded-full border border-white/12 text-white/45 hover:text-white/80 hover:border-white/25 transition-colors"
-            >
-              {t("setup.btn_connection")}
-            </button>
-
-            {!inDemo && (
-              <button
-                type="button"
-                onClick={() => setIntegrationsOpen(true)}
-                className="no-print text-[11px] px-2 py-1 rounded-full border border-white/12 text-white/45 hover:text-white/80 hover:border-white/25 transition-colors"
-              >
-                {t("integrations.title")}
-              </button>
-            )}
-
-            {getStoredJwt() && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (inDemo) clearDemoSession();
-                  else setStoredJwt(null);
-                  setAuthenticated(false);
-                  setDemoStatus(null);
-                }}
-                className="no-print text-[11px] px-2 py-1 rounded-full border border-white/12 text-white/45 hover:text-white/80 hover:border-white/25 transition-colors"
-                title={getStoredUserDisplay() ?? undefined}
-              >
-                {inDemo ? t("demo.new_session") : t("login.logout")}
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setLang(lang === "pl" ? "en" : "pl")}
-              title={t("app.lang.toggle_tooltip")}
-              aria-label={t("app.lang.toggle_tooltip")}
-              className="no-print inline-flex items-center gap-[3px] text-[11px] font-mono px-2 py-1 rounded-full border border-white/15 bg-white/[0.04] hover:border-teal/40 hover:bg-teal/10 transition-colors"
-            >
-              <span
-                className={
-                  lang === "pl" ? "text-teal" : "text-white/35"
-                }
-              >
-                PL
-              </span>
-              <span className="text-white/20">/</span>
-              <span
-                className={
-                  lang === "en" ? "text-teal" : "text-white/35"
-                }
-              >
-                EN
-              </span>
-            </button>
-
-            {state.status !== "idle" && (
-              <button
-                type="button"
-                onClick={reset}
-                disabled={isActive}
-                className="no-print text-[12px] text-white/30 hover:text-white/60 transition-colors disabled:cursor-not-allowed"
-              >
-                {t("app.btn.reset")}
-              </button>
-            )}
-          </div>
-        </header>
+        <WorkspaceHeader
+          status={state.status}
+          statusLabel={STATUS_LABEL[state.status] ?? state.status}
+          pendingMsg={state.pendingMsg}
+          showPending={!!(state.pendingMsg && agentList.length === 0)}
+          councilMode={councilMode}
+          inDemo={inDemo}
+          lang={lang}
+          isActive={isActive}
+          authenticatedJwt={!!getStoredJwt()}
+          onCouncilModeSelect={selectCouncilMode}
+          onOpenSetup={() => setSetupOpen(true)}
+          onOpenIntegrations={() => setIntegrationsOpen(true)}
+          onLogout={() => {
+            if (inDemo) clearDemoSession();
+            else setStoredJwt(null);
+            setAuthenticated(false);
+            setDemoStatus(null);
+          }}
+          onToggleLang={() => setLang(lang === "pl" ? "en" : "pl")}
+          onReset={reset}
+          t={t}
+          demoLogoutLabel={inDemo ? t("demo.new_session") : t("login.logout")}
+        />
 
         {inDemo && (
           <div
@@ -521,9 +430,10 @@ export default function App() {
           </div>
         )}
 
-        <main className="max-w-5xl mx-auto px-6 py-8 space-y-8 w-full pb-24">
-          <section className="lg:hidden no-print mb-6 space-y-4">
-            <p className="text-[11px] uppercase tracking-widest text-white/35">
+        <main className="aw-workspace">
+          <FadeIn>
+          <section className="lg:hidden no-print space-y-5">
+            <p className="aw-eyebrow text-text-tertiary">
               {t("app.mobile_mode_label")}
             </p>
             <ModeSidebar
@@ -533,8 +443,11 @@ export default function App() {
               allowedModes={allowedDemoModes}
             />
           </section>
+          </FadeIn>
 
-          <section className="space-y-4">
+          <FadeIn delay={0.06}>
+          {showBriefSetup && (
+          <section className="space-y-10">
             <ProductManifest />
             <BriefForm
               onSubmit={handleStart}
@@ -547,11 +460,14 @@ export default function App() {
               allowedModes={allowedDemoModes}
             />
           </section>
+          )}
+          </FadeIn>
 
           {state.status === "safety_halt" && (
+            <FadeIn>
             <div
               role="alert"
-              className="rounded-lg border-2 border-amber-500/60 bg-amber-950/50 px-5 py-4 space-y-3"
+              className="aw-alert border-2 border-amber-500/60 bg-amber-950/50 space-y-3"
             >
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <h2 className="text-[15px] font-semibold text-amber-100">
@@ -572,38 +488,75 @@ export default function App() {
               ) : null}
               <p className="text-[12px] text-amber-200/70">{t("safety.halt.footer")}</p>
             </div>
+            </FadeIn>
           )}
 
           {state.status === "error" && (
-            <div className="rounded-lg border border-red-500/30 bg-red-900/10 px-4 py-3 text-[13px] text-red-400">
+            <FadeIn>
+            <div className="aw-alert border-red-500/30 bg-red-900/10 text-red-400">
               {state.error ?? t("app.error.unknown")}
+            </div>
+            </FadeIn>
+          )}
+
+          {/* Wątek: zarchiwizowane wcześniejsze tury (Ruch 1: dane w state.turns; Ruch 2: render). */}
+          {(state.turns?.length ?? 0) > 0 && (
+            <div className="space-y-10">
+              {state.turns!.map((turn, i) => (
+                <PriorTurnView
+                  key={`${turn.debateId ?? "t"}-${i}`}
+                  turn={turn}
+                  index={i}
+                />
+              ))}
             </div>
           )}
 
+          {/* Prompt-bubble bieżącej kontynuacji — pokazuje follow-up usera tuż przed nową Radą.
+              Renderujemy tylko gdy to NIE jest pierwsza tura (brief #1 jest już widoczny w BriefForm). */}
+          {(state.turns?.length ?? 0) > 0 && state.currentPromptText && (
+            <FadeIn delay={0.04}>
+            <div className="space-y-4">
+              <SectionDivider label={t("thread.your_followup")} />
+              <div className="aw-prose-bubble-accent">
+                {state.currentPromptText}
+              </div>
+            </div>
+            </FadeIn>
+          )}
+
           {agentList.length > 0 && (
+            <FadeIn delay={0.05}>
             <section>
-              <h2 className="text-[11px] uppercase tracking-widest text-white/30 mb-4">
-                {t("app.section.council")}
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <SectionDivider
+                label={
+                  (state.turns?.length ?? 0) > 0
+                    ? `${t("thread.prior_turn")} #${state.turns!.length + 1} · ${t("app.section.council")}`
+                    : t("app.section.council")
+                }
+                className="mb-6"
+              />
+              <div className="aw-grid-council">
                 {agentList.map((agent) => (
                   <AgentCard key={agent.name} agent={agent} />
                 ))}
               </div>
             </section>
+            </FadeIn>
           )}
 
           {(state.liveTensions?.length ?? 0) > 0 && (
+            <FadeIn delay={0.06}>
             <TensionMeter pairs={state.liveTensions ?? []} />
+            </FadeIn>
           )}
 
           {(agentList.length > 0 ||
             state.status === "synthesizing" ||
             state.status === "done") && (
+            <FadeIn delay={0.08}>
             <section>
-              <h2 className="text-[11px] uppercase tracking-widest text-white/30 mb-4">
-                {t("app.section.synthesis")}
-              </h2>
+              <SectionDivider label={t("app.section.synthesis")} className="mb-6" />
               <SyezPanel
                 synthesis={state.synthesis}
                 synthesisStructured={state.synthesisStructured}
@@ -627,6 +580,7 @@ export default function App() {
                 <CommitmentsTimeline projectId={state.project.id} />
               )}
             </section>
+            </FadeIn>
           )}
         </main>
       </div>

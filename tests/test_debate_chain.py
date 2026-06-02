@@ -150,6 +150,88 @@ def test_continuation_extra_ctx_respects_2000_char_budget():
     assert len(ctx) <= _CONTINUATION_EXTRA_CTX_LIMIT
 
 
+def test_resolve_root_debate_ids_for_thread(fresh_db_path):
+    """resolve_root_debate_ids: każda tura wątku wskazuje na ten sam root."""
+
+    async def inner():
+        await init_db(fresh_db_path)
+        t1 = await _insert_chain_debate(
+            fresh_db_path,
+            brief="Root wątku do testu root_debate_id — minimum pięć słów.",
+            synthesis="S1",
+            parent_id=None,
+        )
+        t2 = await _insert_chain_debate(
+            fresh_db_path,
+            brief="Druga tura — kontynuacja wątku po pierwszej debacie testowej.",
+            synthesis="S2",
+            parent_id=t1,
+        )
+        t3 = await _insert_chain_debate(
+            fresh_db_path,
+            brief="Trzecia tura — najnowszy liść wątku testowego do roota.",
+            synthesis="S3",
+            parent_id=t2,
+        )
+        solo = await _insert_chain_debate(
+            fresh_db_path,
+            brief="Solo bez rodzica — debata samodzielna do testu root_id.",
+            synthesis="solo",
+            parent_id=None,
+        )
+
+        async with acquire_http_db(fresh_db_path) as db:
+            roots = await repo.resolve_root_debate_ids(db, [t1, t2, t3, solo])
+
+        assert roots[t1] == t1
+        assert roots[t2] == t1
+        assert roots[t3] == t1
+        assert roots[solo] == solo
+
+    asyncio.run(inner())
+
+
+def test_history_endpoint_returns_root_debate_id(client_no_redis):
+    """/history wzbogaca każdą debatę o root_debate_id (po stronie backendu)."""
+    # Posiej dwie tury wątku przez /debate/stream byłoby drogie; używamy bezpośrednio repo.
+    import asyncio as _asyncio
+    from db.backend import acquire_http_db as _acquire
+    from db.connection import DB_PATH as _DB
+
+    async def seed():
+        async with _acquire(_DB) as db:
+            t1 = await repo.insert_debate(
+                db,
+                category="decyzja",
+                mode="codzienny",
+                brief_description="Brief roota wątku — minimum pięć słów w treści.",
+                intention=None,
+                extra_context=None,
+                dream_id=None,
+                parent_debate_id=None,
+            )
+            t2 = await repo.insert_debate(
+                db,
+                category="decyzja",
+                mode="codzienny",
+                brief_description="Brief tury drugiej — kontynuacja po pierwszej debacie.",
+                intention=None,
+                extra_context=None,
+                dream_id=None,
+                parent_debate_id=t1,
+            )
+            await db.commit()
+            return t1, t2
+
+    t1, t2 = _asyncio.run(seed())
+    r = client_no_redis.get("/history?limit=10")
+    assert r.status_code == 200
+    debates = r.json()["debates"]
+    by_id = {int(row["id"]): row for row in debates}
+    assert by_id[t1].get("root_debate_id") == t1
+    assert by_id[t2].get("root_debate_id") == t1
+
+
 def test_list_debate_chain_tenant_isolation(fresh_db_path):
     """Wątek tenant-a nie jest widoczny dla tenant-b (list_debate_chain)."""
 

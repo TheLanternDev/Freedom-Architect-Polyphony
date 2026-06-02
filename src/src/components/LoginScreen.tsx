@@ -119,18 +119,14 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
 
   if (demoConfig?.enabled) {
     return (
-      <div className="min-h-screen bg-navy flex items-center justify-center">
-        <div className="w-full max-w-md mx-4 rounded-2xl border border-amber-400/20 bg-white/[0.02] p-6 shadow-2xl">
-          <p className="text-[10px] uppercase tracking-widest text-amber-300/80 mb-2">
-            {t("demo.badge")}
-          </p>
-          <h1 className="text-[20px] font-medium text-white mb-1">
+      <div className="aw-app-shell items-center justify-center">
+        <div className="aw-card w-full max-w-md mx-4 shadow-elevated border-gold/20">
+          <p className="aw-eyebrow mb-3">{t("demo.badge")}</p>
+          <h1 className="font-display text-display-md text-text-primary mb-2">
             {t("app.brand")}
           </h1>
-          <p className="text-[12px] text-white/45 mb-4 leading-relaxed">
-            {t("demo.intro")}
-          </p>
-          <ul className="text-[11px] text-white/35 space-y-1 mb-6 list-disc pl-4">
+          <p className="aw-body mb-5">{t("demo.intro")}</p>
+          <ul className="aw-caption space-y-1.5 mb-8 list-disc pl-4 marker:text-text-tertiary">
             <li>
               {t("demo.limit_debates").replace(
                 "{n}",
@@ -150,53 +146,49 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
             type="button"
             disabled={busy}
             onClick={() => void startDemo()}
-            className="w-full py-2.5 rounded-lg bg-teal text-navy font-medium text-[13px] hover:bg-teal-light transition-colors disabled:opacity-30"
+            className="aw-btn-primary w-full disabled:opacity-30"
           >
             {busy ? "..." : t("demo.btn_start")}
           </button>
-          <p className="text-[10px] text-white/25 mt-4 text-center leading-relaxed">
-            {t("demo.footer")}
-          </p>
+          <p className="aw-caption mt-5 text-center">{t("demo.footer")}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-navy flex items-center justify-center">
-      <div className="w-full max-w-sm mx-4 rounded-2xl border border-white/10 bg-white/[0.02] p-6 shadow-2xl">
-        <h1 className="text-[20px] font-medium text-white mb-1">
+    <div className="aw-app-shell items-center justify-center">
+      <div className="aw-card w-full max-w-sm mx-4 shadow-elevated">
+        <h1 className="font-display text-display-md text-text-primary mb-2">
           {t("app.brand")}
         </h1>
-        <p className="text-[12px] text-white/40 mb-6">
-          {t("login.subtitle")}
-        </p>
+        <p className="aw-body mb-8">{t("login.subtitle")}</p>
 
-        <div className="flex gap-2 mb-5">
+        <div className="flex gap-2 mb-6">
           <button
             type="button"
             onClick={() => setMode("login")}
-            className={`flex-1 text-[12px] py-1.5 rounded-lg border transition-colors ${mode === "login" ? "border-teal/50 bg-teal/10 text-teal" : "border-white/10 text-white/40 hover:text-white/60"}`}
+            className={`flex-1 text-[12px] py-2 rounded-control border transition-colors duration-premium ${mode === "login" ? "border-gold/40 bg-gold-dim text-gold" : "border-border text-text-tertiary hover:text-text-secondary"}`}
           >
             {t("login.tab_login")}
           </button>
           <button
             type="button"
             onClick={() => setMode("register")}
-            className={`flex-1 text-[12px] py-1.5 rounded-lg border transition-colors ${mode === "register" ? "border-teal/50 bg-teal/10 text-teal" : "border-white/10 text-white/40 hover:text-white/60"}`}
+            className={`flex-1 text-[12px] py-2 rounded-control border transition-colors duration-premium ${mode === "register" ? "border-gold/40 bg-gold-dim text-gold" : "border-border text-text-tertiary hover:text-text-secondary"}`}
           >
             {t("login.tab_register")}
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <input
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder={t("login.username")}
             autoComplete="username"
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:border-teal/60"
+            className="aw-input-base"
           />
           {mode === "register" && (
             <input
@@ -204,7 +196,7 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               placeholder={t("login.display_name")}
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:border-teal/60"
+              className="aw-input-base"
             />
           )}
           <input
@@ -213,7 +205,7 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder={t("login.password")}
             autoComplete={mode === "login" ? "current-password" : "new-password"}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-[13px] text-white placeholder:text-white/20 focus:outline-none focus:border-teal/60"
+            className="aw-input-base"
           />
 
           {error && (
@@ -223,7 +215,7 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
           <button
             type="submit"
             disabled={busy || !username.trim() || password.length < 4}
-            className="w-full py-2.5 rounded-lg bg-teal text-navy font-medium text-[13px] hover:bg-teal-light transition-colors disabled:opacity-30"
+            className="aw-btn-primary w-full disabled:opacity-30"
           >
             {busy
               ? "..."
@@ -236,7 +228,7 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
         <button
           type="button"
           onClick={skipLogin}
-          className="w-full mt-4 text-[11px] text-white/25 hover:text-white/50 transition-colors"
+          className="aw-btn-ghost w-full mt-5"
         >
           {t("login.skip")}
         </button>

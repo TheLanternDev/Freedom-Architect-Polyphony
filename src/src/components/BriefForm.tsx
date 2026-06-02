@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  FileText,
+  GitBranch,
+  Paperclip,
+  Sparkles,
+  Users,
+  X,
+} from "lucide-react";
 import { useLang } from "@/lib/i18n";
+import { FadeIn } from "@/components/ui/FadeIn";
 import type { Brief } from "@/types/debate";
 import { VoiceBriefButton } from "@/components/VoiceBriefButton";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
+import { cn } from "@/lib/cn";
+import { Icon } from "@/components/ui/Icon";
 
 const ONBOARD_KEY = "aw-onboarding-dismissed";
 
@@ -29,6 +41,11 @@ interface Props {
   allowedModes?: string[];
 }
 
+function tplPreview(text: string, max = 88): string {
+  const oneLine = text.replace(/\s+/g, " ").trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
+}
+
 export function BriefForm({
   onSubmit,
   disabled,
@@ -45,6 +62,7 @@ export function BriefForm({
   const [showOnboard, setShowOnboard] = useState(true);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachNote, setAttachNote] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -57,6 +75,11 @@ export function BriefForm({
   const MAX_LEN = maxDescriptionLen;
   const charCount = description.length;
   const overLimit = charCount > MAX_LEN;
+  const wordCount = description.trim().split(/\s+/).filter(Boolean).length;
+  const canSubmit = !disabled && wordCount >= 5 && !overLimit;
+  const charPct = MAX_LEN > 0 ? Math.min(charCount / MAX_LEN, 1) : 0;
+  const charWarn = charPct >= 0.85 && !overLimit;
+  const charsRemaining = MAX_LEN - charCount;
 
   const templates = useMemo(
     () =>
@@ -66,18 +89,21 @@ export function BriefForm({
           descKey: "brief.tpl.quit",
           mode: "pelna" as const,
           category: "decyzja" as const,
+          icon: FileText,
         },
         {
           labelKey: "brief.tpl.dream.label",
           descKey: "brief.tpl.dream",
           mode: "marzen" as const,
           category: "marzenie" as const,
+          icon: Sparkles,
         },
         {
           labelKey: "brief.tpl.pattern.label",
           descKey: "brief.tpl.pattern",
           mode: "schematy" as const,
           category: "schemat" as const,
+          icon: GitBranch,
         },
       ],
     [],
@@ -101,6 +127,7 @@ export function BriefForm({
     setCategory(cat);
     onAggressiveSchemaChange(false);
     onModeChange?.(mode);
+    setSelectedTemplate(descKey);
   }
 
   async function extractViaBackend(f: File): Promise<string> {
@@ -118,7 +145,7 @@ export function BriefForm({
 
   async function handleFiles(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    e.target.value = ""; // pozwól wybrać ten sam plik ponownie
+    e.target.value = "";
     const skipped: string[] = [];
     const accepted: Attachment[] = [];
     for (const f of files) {
@@ -140,7 +167,9 @@ export function BriefForm({
     if (accepted.length) {
       setAttachments((prev) => [...prev, ...accepted]);
     }
-    setAttachNote(skipped.length ? t("brief.attach.unsupported") + skipped.join(", ") : "");
+    setAttachNote(
+      skipped.length ? t("brief.attach.unsupported") + skipped.join(", ") : "",
+    );
   }
 
   function removeAttachment(idx: number) {
@@ -148,7 +177,6 @@ export function BriefForm({
     setAttachNote("");
   }
 
-  /** Skleja załączniki w extra_context z twardym limitem backendu (2000 zn.). */
   function buildExtraContext(): { value?: string; truncated: boolean } {
     if (!attachments.length) return { value: undefined, truncated: false };
     const blocks = attachments.map((a) => `[${a.name}]\n${a.content.trim()}`);
@@ -161,7 +189,7 @@ export function BriefForm({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (description.trim().split(/\s+/).length < 5 || overLimit) return;
+    if (!canSubmit) return;
     const mode: Brief["mode"] = aggressiveSchema ? "schematy" : selectedMode;
     const { value: extraContext, truncated } = buildExtraContext();
     if (truncated) setAttachNote(t("brief.attach.truncated"));
@@ -175,175 +203,326 @@ export function BriefForm({
     });
   }
 
+  const visibleTemplates = templates.filter(
+    (tpl) => !allowedModes?.length || allowedModes.includes(tpl.mode),
+  );
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-10 pb-4">
+      <FadeIn>
+        <header className="space-y-3">
+          <span className="aw-council-seal">
+            <Icon icon={Users} size="sm" className="opacity-80" />
+            {t("app.workspace.seal")}
+          </span>
+          <h2 className="font-display text-display-lg text-text-primary tracking-display">
+            {t("brief.hero.title")}
+          </h2>
+          <p className="aw-body max-w-2xl">{t("brief.hero.subtitle")}</p>
+        </header>
+      </FadeIn>
+
       {showOnboard && (
-        <div className="rounded-xl border border-teal/25 bg-teal/[0.06] px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <FadeIn delay={0.05}>
+          <div className="rounded-card border border-teal/20 bg-teal-dim/50 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <p className="text-[11px] uppercase tracking-widest text-teal/80 mb-1">
+            <p className="aw-eyebrow text-teal-light mb-1.5">
               {t("brief.onboarding.title")}
             </p>
-            <p className="text-[13px] text-white/75 leading-snug">{t("brief.onboarding.body")}</p>
+            <p className="text-[13px] text-text-secondary leading-relaxed">
+              {t("brief.onboarding.body")}
+            </p>
           </div>
           <button
             type="button"
             onClick={dismissOnboarding}
-            className="no-print shrink-0 self-start text-[11px] px-3 py-1.5 rounded-lg border border-teal/35 text-teal hover:bg-teal/15 transition-colors"
+            className="no-print shrink-0 aw-btn-secondary text-[12px]"
           >
             {t("brief.onboarding.dismiss")}
           </button>
         </div>
+        </FadeIn>
       )}
 
-      <div>
-        <p className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
-          {t("brief.quick.title")}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {templates
-            .filter(
-              (tpl) =>
-                !allowedModes?.length || allowedModes.includes(tpl.mode),
-            )
-            .map((tpl) => (
-            <button
-              key={tpl.labelKey}
-              type="button"
-              disabled={disabled}
-              onClick={() => applyTemplate(tpl.descKey, tpl.mode, tpl.category)}
-              className="text-[11px] px-3 py-1.5 rounded-full border border-white/12 bg-white/[0.03] hover:border-teal/40 hover:bg-teal/10 disabled:opacity-35 transition-colors"
-            >
-              {t(tpl.labelKey)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <label className="block text-[12px] text-white/50 uppercase tracking-wider">
-            {t("brief.label")}
-          </label>
-          <VoiceBriefButton
-            disabled={disabled}
-            lang={lang}
-            onTranscript={(said) =>
-              setDescription((prev) => (prev ? `${prev} ${said}` : said))
-            }
-            labelIdle={t("brief.voice.idle")}
-            labelListening={t("brief.voice.active")}
-            unsupportedHint={t("brief.voice.unsupported")}
-          />
-        </div>
-        <textarea
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={disabled}
-          placeholder={t("brief.placeholder")}
-          rows={4}
-          className={`w-full bg-white/5 border rounded-lg px-4 py-3 text-[14px] text-white placeholder:text-white/20 resize-none focus:outline-none transition-colors disabled:opacity-40 ${overLimit ? "border-red-500/70 focus:border-red-500" : "border-white/10 focus:border-teal/60"}`}
-        />
-        {charCount > 0 && (
-          <div className={`text-[11px] mt-1 text-right ${overLimit ? "text-red-400" : "text-white/30"}`}>
-            {charCount.toLocaleString()} / {MAX_LEN.toLocaleString()}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <label className="no-print inline-flex items-center gap-2 text-[12px] px-3 py-1.5 rounded-lg border border-white/12 bg-white/[0.03] hover:border-teal/40 hover:bg-teal/10 cursor-pointer transition-colors aria-disabled:opacity-35">
-            <input
-              type="file"
-              multiple
-              accept=".txt,.md,.csv,.json,.log,.text,.pdf,.docx,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              disabled={disabled}
-              onChange={handleFiles}
-              className="hidden"
-            />
-            📎 {t("brief.attach.btn")}
-          </label>
-          <span className="text-[11px] text-white/35">{t("brief.attach.hint")}</span>
-        </div>
-        {attachments.length > 0 && (
-          <ul className="mt-2 space-y-1">
-            {attachments.map((a, i) => (
-              <li
-                key={`${a.name}-${i}`}
-                className="flex items-center justify-between gap-2 text-[12px] bg-white/[0.03] border border-white/10 rounded-md px-3 py-1.5"
+      {/* Gotowe briefy */}
+      {visibleTemplates.length > 0 && (
+        <FadeIn delay={0.08}>
+        <section>
+          <p className="aw-eyebrow mb-4 text-text-tertiary">
+            {t("brief.quick.title")}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {visibleTemplates.map((tpl, i) => (
+              <FadeIn key={tpl.labelKey} delay={0.1 + i * 0.05} y={6}>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() =>
+                  applyTemplate(tpl.descKey, tpl.mode, tpl.category)
+                }
+                className={cn(
+                  "group aw-template-card w-full",
+                  selectedTemplate === tpl.descKey && "is-selected",
+                )}
               >
-                <span className="truncate text-white/70">
-                  {a.name}{" "}
-                  <span className="text-white/30">
-                    ({a.content.length.toLocaleString()})
+                <span className="flex items-center gap-2 mb-2">
+                  <span
+                    className={cn(
+                      "flex items-center justify-center w-7 h-7 rounded-control border border-border bg-surface text-text-tertiary transition-colors duration-premium",
+                      "group-hover:border-[var(--aw-accent-border)] group-hover:text-[var(--aw-accent-light)]",
+                      selectedTemplate === tpl.descKey &&
+                        "border-[var(--aw-accent-border)] text-[var(--aw-accent-light)] bg-[var(--aw-accent-dim)]",
+                    )}
+                  >
+                    <Icon icon={tpl.icon} size="sm" />
+                  </span>
+                  <span className="text-[13px] font-medium text-text-primary">
+                    {t(tpl.labelKey)}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => removeAttachment(i)}
-                  disabled={disabled}
-                  className="no-print shrink-0 text-[11px] text-white/40 hover:text-red-400 transition-colors disabled:opacity-35"
-                >
-                  {t("brief.attach.remove")}
-                </button>
-              </li>
+                <span className="block text-[11px] text-text-tertiary leading-relaxed line-clamp-2">
+                  {tplPreview(t(tpl.descKey))}
+                </span>
+              </button>
+              </FadeIn>
             ))}
-          </ul>
-        )}
-        {attachNote && (
-          <p className="text-[11px] text-amber-400/80 mt-1">{attachNote}</p>
-        )}
-      </div>
+          </div>
+        </section>
+        </FadeIn>
+      )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div>
-          <label className="block text-[12px] text-white/50 mb-1 uppercase tracking-wider">
-            {t("brief.category")}
-          </label>
-          <select
-            value={category}
-            onChange={(e) =>
-              setCategory(e.target.value as Brief["category"])
-            }
+      {/* Brief dla Rady — dokument roboczy */}
+      <FadeIn delay={0.12}>
+      <section className="aw-brief-panel">
+        <div
+          className={cn(
+            "aw-brief-panel-inner",
+            overLimit && "is-overlimit",
+          )}
+        >
+          <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-border bg-surface/80">
+            <span className="aw-eyebrow shrink-0">{t("brief.label")}</span>
+            <div className="flex flex-wrap items-center gap-3 ml-auto">
+              <label className="flex items-center gap-2">
+                <span className="text-[11px] text-text-tertiary uppercase tracking-wide-label">
+                  {t("brief.category")}
+                </span>
+                <select
+                  value={category}
+                  onChange={(e) => {
+                    setCategory(e.target.value as Brief["category"]);
+                    setSelectedTemplate(null);
+                  }}
+                  disabled={disabled}
+                  className="aw-select"
+                >
+                  <option value="decyzja">{t("brief.category.decision")}</option>
+                  <option value="projekt">{t("brief.category.project")}</option>
+                  <option value="marzenie">{t("brief.category.dream")}</option>
+                  <option value="schemat">{t("brief.category.pattern")}</option>
+                </select>
+              </label>
+
+              <label
+                className={cn(
+                  "aw-toggle",
+                  aggressiveSchema
+                    ? "border-amber-500/40 bg-amber-950/25"
+                    : "border-border hover:border-text-tertiary/30",
+                  disabled && "opacity-40 cursor-not-allowed",
+                )}
+              >
+                <span
+                  className={cn(
+                    "aw-toggle-track",
+                    aggressiveSchema
+                      ? "bg-amber-500/30 border-amber-500/50"
+                      : "bg-surface border-border",
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={aggressiveSchema}
+                    disabled={disabled}
+                    onChange={(e) => onAggressiveSchemaChange(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <span
+                    className={cn(
+                      "aw-toggle-thumb bg-text-secondary",
+                      aggressiveSchema ? "left-[17px] bg-amber-200" : "left-[2px]",
+                    )}
+                  />
+                </span>
+                <span className="text-[11px] text-text-secondary leading-tight">
+                  {t("brief.aggressive.title")}
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <textarea
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              setSelectedTemplate(null);
+            }}
             disabled={disabled}
-            className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[13px] text-white focus:outline-none focus:border-teal/60 disabled:opacity-40"
-          >
-            <option value="decyzja">{t("brief.category.decision")}</option>
-            <option value="projekt">{t("brief.category.project")}</option>
-            <option value="marzenie">{t("brief.category.dream")}</option>
-            <option value="schemat">{t("brief.category.pattern")}</option>
-          </select>
-        </div>
-        <div className="flex items-end">
-          <label className="flex items-center gap-3 cursor-pointer select-none pb-2">
-            <input
-              type="checkbox"
-              checked={aggressiveSchema}
+            placeholder={t("brief.placeholder")}
+            rows={8}
+            aria-describedby="brief-char-meter brief-min-words"
+            className="aw-brief-textarea"
+          />
+
+          <div className="flex flex-wrap items-center gap-3 px-5 py-3.5 border-t border-border bg-surface/60">
+            <label className={cn("aw-attach-btn", disabled && "opacity-35 pointer-events-none")}>
+              <input
+                type="file"
+                multiple
+                accept=".txt,.md,.csv,.json,.log,.text,.pdf,.docx,text/*,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                disabled={disabled}
+                onChange={handleFiles}
+                className="hidden"
+              />
+              <Icon icon={Paperclip} size="sm" />
+              {t("brief.attach.btn")}
+            </label>
+
+            <VoiceBriefButton
               disabled={disabled}
-              onChange={(e) => onAggressiveSchemaChange(e.target.checked)}
-              className="rounded border-white/20 bg-white/5 text-teal focus:ring-teal/40"
+              lang={lang}
+              onTranscript={(said) => {
+                setDescription((prev) => (prev ? `${prev} ${said}` : said));
+                setSelectedTemplate(null);
+              }}
+              labelIdle={t("brief.voice.idle")}
+              labelListening={t("brief.voice.active")}
+              unsupportedHint={t("brief.voice.unsupported")}
             />
-            <span className="text-[13px] text-white/75 leading-tight">
-              {t("brief.aggressive.title")}
-              <span className="block text-[11px] text-white/35 mt-0.5">
-                {t("brief.aggressive.hint")}{" "}
-                <code className="text-teal/80">{t("brief.aggressive.code")}</code>{" "}
-                {t("brief.aggressive.hint_after")}
-              </span>
+
+            <span className="hidden sm:inline text-[11px] text-text-tertiary ml-1">
+              {t("brief.attach.hint")}
             </span>
-          </label>
+
+            <div id="brief-char-meter" className="aw-char-meter">
+              <span
+                className={cn(
+                  "text-[11px] tabular-nums font-mono",
+                  overLimit ? "text-red-400" : charWarn ? "text-amber-300" : "text-text-tertiary",
+                )}
+              >
+                {charCount.toLocaleString()} / {MAX_LEN.toLocaleString()}
+              </span>
+              <div className="aw-char-meter-bar" aria-hidden>
+                <div
+                  className={cn(
+                    "aw-char-meter-fill",
+                    overLimit && "is-over",
+                    charWarn && "is-warn",
+                  )}
+                  style={{ width: `${Math.min(charPct * 100, 100)}%` }}
+                />
+              </div>
+              {!overLimit && charCount > 0 && (
+                <span className="text-[10px] text-text-tertiary/80">
+                  {charsRemaining.toLocaleString()} {t("brief.chars.remaining")}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {attachments.length > 0 && (
+            <ul className="px-5 pb-4 pt-1 space-y-1.5 border-t border-border/60">
+              {attachments.map((a, i) => (
+                <li key={`${a.name}-${i}`} className="aw-attach-chip">
+                  <span className="truncate text-text-secondary">
+                    {a.name}{" "}
+                    <span className="text-text-tertiary font-mono text-[10px]">
+                      ({a.content.length.toLocaleString()})
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(i)}
+                    disabled={disabled}
+                    className="aw-attach-chip-remove"
+                    aria-label={t("brief.attach.remove")}
+                  >
+                    <Icon icon={X} size="sm" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <p
+          id="brief-min-words"
+          className={cn(
+            "text-[11px] mt-2 px-1 transition-colors duration-premium",
+            wordCount > 0 && wordCount < 5 ? "text-amber-300/90" : "text-text-tertiary/70",
+          )}
+        >
+          {wordCount < 5 ? t("brief.chars.min_words") : "\u00A0"}
+        </p>
+
+        {attachNote && (
+          <p className="text-[11px] text-amber-400/85 mt-2 px-1">{attachNote}</p>
+        )}
+
+        {aggressiveSchema && (
+          <p className="aw-caption mt-3 px-1">
+            {t("brief.aggressive.hint")}{" "}
+            <code className="text-teal-light">{t("brief.aggressive.code")}</code>{" "}
+            {t("brief.aggressive.hint_after")}
+          </p>
+        )}
+      </section>
+      </FadeIn>
+
+      {/* Sticky action bar */}
+      <div className="aw-action-bar">
+        <div className="aw-action-bar-inner">
+          <div className="hidden sm:block min-w-0 flex-1">
+            {disabled ? (
+              <p className="text-[12px] text-teal-light flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-light animate-pulse shrink-0" />
+                {t("brief.btn.running")}
+              </p>
+            ) : (
+              <p className="text-[12px] text-text-tertiary">
+                {wordCount >= 5
+                  ? t("brief.btn.start")
+                  : t("brief.chars.min_words")}
+              </p>
+            )}
+          </div>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className={cn(
+              "aw-btn-primary px-8 py-3 text-[14px]",
+              "inline-flex items-center gap-2 w-full sm:w-auto justify-center",
+              disabled && "aw-btn-running",
+              canSubmit && "shadow-[var(--aw-accent-glow)]",
+            )}
+          >
+            {disabled ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-app/60 animate-pulse" />
+                {t("brief.btn.running")}
+              </>
+            ) : canSubmit ? (
+              <>
+                {t("brief.btn.start")}
+                <Icon icon={ArrowRight} size="sm" className="opacity-70" />
+              </>
+            ) : (
+              t("brief.btn.start")
+            )}
+          </button>
         </div>
       </div>
-
-      <button
-        type="submit"
-        disabled={
-          disabled || description.trim().split(/\s+/).filter(Boolean).length < 5 || overLimit
-        }
-        className="w-full py-3 rounded-lg bg-teal text-navy font-medium text-[14px] hover:bg-teal-light transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-      >
-        {disabled ? t("brief.btn.running") : t("brief.btn.start")}
-      </button>
     </form>
   );
 }

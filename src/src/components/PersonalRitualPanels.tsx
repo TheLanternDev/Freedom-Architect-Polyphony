@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
+import { SidebarSection } from "@/components/ui/SidebarSection";
 
 const LS_ONBOARDING_DONE = "aw_onboarding_v1_done";
 
@@ -103,7 +104,6 @@ export function OnboardingPanel() {
 
 export function DailyRitualPanel() {
   const [data, setData] = useState<{ poranek: string[]; wieczor: string[] } | null>(null);
-  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -124,21 +124,12 @@ export function DailyRitualPanel() {
   const label = block === "poranek" ? "Rytuał poranny" : "Rytuał wieczorny";
 
   return (
-    <div className="no-print rounded-lg border border-white/10 bg-white/[0.02] p-3">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between text-[11px] uppercase tracking-widest text-white/40 hover:text-white/70"
-      >
-        <span>🌱 {label}</span>
-        <span>{open ? "−" : "+"}</span>
-      </button>
-      {open && (
-        <ul className="mt-3 space-y-2 text-[13px] text-white/75">
-          {list.map((q, i) => (
-            <li key={i} className="leading-relaxed">• {q}</li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <SidebarSection label={label} collapsible className="no-print">
+      <ul className="pt-1 space-y-2 text-[13px] text-text-secondary">
+        {list.map((q, i) => (
+          <li key={i} className="leading-relaxed pl-0.5">· {q}</li>
+        ))}
+      </ul>
+    </SidebarSection>
   );
 }

@@ -5,13 +5,12 @@
  * trzy elementy systemu (Uśmiech ↔ Perspektywa ↔ Droga) jako żywy, samopod-
  * trzymujący się układ. Klik w element rozwija krótki opis. Brak progresu,
  * brak procentów, brak "zaznacz jako zrobione" — bo to jest postawa, nie cel.
- *
- * Plik czytany razem z `core/dream_architect.py:Fragment` i `CLAUDE.md` (sekcja
- * AKSJOMAT 0). Każda zmiana wizualnego centrum systemu MUSI zachowywać
- * symetrię trzech elementów (żaden nie jest "pierwszy").
  */
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { Icon } from "@/components/ui/Icon";
 
 type FragmentNode = "smile" | "perspective" | "path";
 
@@ -56,66 +55,83 @@ const NODES: Array<{
 
 export function FragmentCompass({ compact = false }: { compact?: boolean }) {
   const [active, setActive] = useState<FragmentNode | null>(null);
+  const [expanded, setExpanded] = useState(!compact);
   const node = active ? NODES.find((n) => n.key === active) ?? null : null;
 
   return (
     <div
-      className={
-        "rounded-2xl border border-white/10 bg-white/[0.03] " +
-        (compact ? "p-3" : "p-4")
-      }
+      className="rounded-card border border-border/80 bg-surface/95 backdrop-blur-md shadow-elevated"
       aria-label="Fragment — kompas (Uśmiech, Perspektywa, Droga)"
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] uppercase tracking-widest text-white/40">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-white/[0.02] transition-colors rounded-card"
+      >
+        <span className="aw-eyebrow text-text-tertiary text-[9px]">
           Fragment · kompas
         </span>
-        <span className="text-[10px] text-white/30" title="AKSJOMAT 0">
-          AKSJOMAT 0
+        <span className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[9px] text-text-tertiary/70" title="AKSJOMAT 0">
+            AKSJOMAT 0
+          </span>
+          <Icon
+            icon={ChevronDown}
+            size="sm"
+            className={cn(
+              "text-text-tertiary transition-transform duration-premium",
+              expanded && "rotate-180",
+            )}
+          />
         </span>
-      </div>
+      </button>
 
-      <div className="flex items-stretch gap-2">
-        {NODES.map((n) => {
-          const isActive = active === n.key;
-          return (
-            <button
-              key={n.key}
-              onClick={() => setActive(isActive ? null : n.key)}
-              className={
-                "flex-1 rounded-xl border px-3 py-2 text-left transition " +
-                (isActive
-                  ? "border-teal/50 bg-teal/10"
-                  : "border-white/10 bg-white/[0.02] hover:border-white/25")
-              }
-              aria-pressed={isActive}
-            >
-              <div className="text-xl leading-none mb-1" aria-hidden>
-                {n.icon}
-              </div>
-              <div className="text-[13px] font-medium text-white/90">
-                {n.pl}
-              </div>
-              {!compact && (
-                <div className="text-[11px] text-white/45 mt-0.5">
-                  {n.short}
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {expanded && (
+        <div className={cn("px-3 pb-3", compact ? "pt-0" : "pt-0")}>
+          <div className="flex items-stretch gap-1.5">
+            {NODES.map((n) => {
+              const isActive = active === n.key;
+              return (
+                <button
+                  key={n.key}
+                  type="button"
+                  onClick={() => setActive(isActive ? null : n.key)}
+                  className={cn(
+                    "flex-1 rounded-control border px-2 py-2 text-left transition-all duration-premium",
+                    isActive
+                      ? "border-teal/40 bg-teal-dim"
+                      : "border-border bg-surface-raised/50 hover:border-border/80",
+                  )}
+                  aria-pressed={isActive}
+                >
+                  <div className="text-base leading-none mb-1" aria-hidden>
+                    {n.icon}
+                  </div>
+                  <div className="text-[11px] font-medium text-text-secondary">
+                    {n.pl}
+                  </div>
+                  {!compact && (
+                    <div className="text-[9px] text-text-tertiary mt-0.5 leading-snug">
+                      {n.short}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-      {node && (
-        <p className="mt-3 text-[12px] leading-relaxed text-white/70">
-          {node.detail}
-        </p>
-      )}
-      {!node && !compact && (
-        <p className="mt-3 text-[11px] leading-relaxed text-white/35">
-          To nie jest lista do odhaczenia. To kompas. Każdy element zasila
-          dwa pozostałe — wejdź z dowolnego.
-        </p>
+          {node && (
+            <p className="mt-2.5 text-[11px] leading-relaxed text-text-secondary">
+              {node.detail}
+            </p>
+          )}
+          {!node && !compact && (
+            <p className="mt-2.5 text-[10px] leading-relaxed text-text-tertiary">
+              To nie jest lista do odhaczenia. To kompas — wejdź z dowolnego
+              elementu.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

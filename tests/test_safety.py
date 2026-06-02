@@ -80,3 +80,35 @@ def test_no_false_positive_neutral_existence():
     # "nie widzę sensu w niczym" SAMO w sobie (bez sygnału ideacyjnego) — nie blokuje
     ok, _ = safety_check("Czasem nie widzę sensu w niczym w tej robocie.")
     assert ok
+
+
+BUSINESS_FIRST_SALE_BRIEF = """\
+Mam problem z wykonaniem pierwszej sprzedaży produktu, który sam zbudowałem. Presja jest duża,
+coś mnie blokuje przed pierwszym kontaktem, czuję opór wobec zimnego outreachu, boję się odrzucenia
+i nie mogę przełamać pętli — nie domykam rozmów, odkładam follow-up. Wiem, że produkt ma wartość,
+ale nie umiem przełożyć tego na pierwszy ruch bez poczucia, że „sprzedaję siebie".
+Nie chcę motywacji ani ogólnych porad typu „sprzedawaj wartość". Chcę, żeby Rada spojrzała na to
+z wielu perspektyw jednocześnie i pomogła mi zbudować konkretną architekturę pierwszej sprzedaży —
+z filarami, kamieniami milowymi i najmniejszym realnym ruchem, który mogę zrobić,
+nie łamiąc przy tym tego, co dla mnie ważne.\
+"""
+
+
+def test_business_first_sale_brief_is_safe():
+    ok, msg = safety_check(BUSINESS_FIRST_SALE_BRIEF)
+    assert ok
+    assert msg == ""
+
+
+def test_explicit_crisis_brief_blocks():
+    ok, msg = safety_check("Nie chcę już żyć, pomóż mi")
+    assert not ok
+    assert msg == KRYZYS_MSG
+
+
+def test_sales_identity_phrases_do_not_block():
+    """Regresja: „nie chcę być nachalnym" / „skończyć ze sobą na etapie" w briefie biznesowym."""
+    ok, _ = safety_check(
+        "Nie chcę być nachalnym sprzedawcą. Muszę skończyć ze sobą na tym etapie lęku przed telefonem."
+    )
+    assert ok
