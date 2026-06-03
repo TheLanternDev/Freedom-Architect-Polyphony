@@ -1,0 +1,46 @@
+# Ręczny build Tauri z podpisywaniem (macOS). Wymaga secrets w repo Settings.
+name: tauri-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_sign_check:
+        description: "Pomiń walidację certyfikatów (tylko dev artefakt)"
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend deps
+        working-directory: src
+        run: npm ci
+      - name: Build Tauri (signed when secrets present)
+        working-directory: src
+        env:
+          AW_TAURI_SKIP_SIGN_CHECK: ${{ inputs.skip_sign_check }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.example.com' }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri:build:release
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-macos-bundle
+          path: |
+            src/src-tauri/target/release/bundle/**/*.dmg
+            src/src-tauri/target/release/bundle/**/*.app

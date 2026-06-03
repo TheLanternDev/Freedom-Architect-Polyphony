@@ -101,6 +101,7 @@ from api.services.completion_service import auto_72h_schematy_body
 from api.services.dream_service import (
     distill_dream,
     dream_architecture_sse,
+    insert_debate_for_stream,
     persist_dream_and_project,
 )
 from api.services.mode_helpers import (
@@ -905,6 +906,23 @@ async def _stream_debate_inner(
                 full_voices = evt.full_voices
             else:
                 yield evt
+
+        # ── Debate row (po Radzie — brak orphanów przy zerwaniu SSE) ─────────
+        if db is not None and debate_id is None:
+            try:
+                debate_id = await insert_debate_for_stream(
+                    db,
+                    brief,
+                    dream_id=dream.dream_id if dream is not None else None,
+                    continuation_parent_id=continuation_parent_id,
+                )
+            except Exception as e:
+                _log_orchestrator_issue(
+                    "debate_insert_post_council",
+                    e,
+                    level="error",
+                    project_id=project_id,
+                )
 
         # ── Live tensions ────────────────────────────────────────────────────
         pairs: list[dict[str, Any]] = []

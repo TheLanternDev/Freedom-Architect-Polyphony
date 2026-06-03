@@ -62,16 +62,37 @@ def validate_production_cors() -> None:
         )
 
 
+def postgres_configured() -> bool:
+    u = (os.getenv("DATABASE_URL") or "").strip().lower()
+    return u.startswith(("postgresql://", "postgres://"))
+
+
+def jwt_secret_strength_ok() -> bool:
+    """PyJWT zaleca ≥32 bajty entropii dla HS256."""
+    secret = (os.getenv("ARCHITEKT_JWT_SECRET") or "").strip()
+    return len(secret) >= 32
+
+
 def production_preflight_errors() -> list[str]:
     """Krytyczne braki konfiguracji produkcyjnej (teksty do logów i SystemExit)."""
     if not is_production():
         return []
     errors: list[str] = []
     demo = demo_mode_enabled()
+    if not postgres_configured():
+        errors.append(
+            "DATABASE_URL=postgresql://… wymagany w produkcji — SQLite nie ma RLS; "
+            "multi-user wymaga Postgres + migracji RLS (0001–0005)."
+        )
     if not jwt_secret_configured():
         errors.append(
             "ARCHITEKT_JWT_SECRET wymagany w produkcji — logowanie JWT (/auth/login) "
             "i izolacja tenantów."
+        )
+    elif not jwt_secret_strength_ok():
+        errors.append(
+            "ARCHITEKT_JWT_SECRET za krótki (< 32 znaki) — użyj losowego sekretu "
+            "≥32 bajtów (PyJWT / OWASP)."
         )
     try:
         validate_production_cors()
@@ -152,7 +173,16 @@ def jwt_secret_configured() -> bool:
 
 
 def require_tenant_claim() -> bool:
-    return os.getenv("AW_REQUIRE_TENANT_JWT_CLAIM", "").lower() in ("1", "true", "yes")
+    # Multi-user: JWT bez claimu `tenant_id` jest odrzucany. Domyślnie ON w
+    # produkcji (fallback `tenant_id := sub` jest akceptowalny tylko dev/single-user;
+    # w prod wymagamy jawnego tenanta, by uniknąć kolizji `sub` między wydawcami).
+    # Jawny opt-out: AW_REQUIRE_TENANT_JWT_CLAIM=0.
+    v = os.getenv("AW_REQUIRE_TENANT_JWT_CLAIM", "").strip().lower()
+    if v in ("1", "true", "yes"):
+        return True
+    if v in ("0", "false", "no"):
+        return False
+    return is_production()
 
 
 def enforce_tenant_header_match() -> bool:

@@ -278,7 +278,7 @@ export function SyezPanel({
     <div
       id={readOnly ? undefined : "syez-export-root"}
       className={`
-        rounded-xl border-2 p-5 transition-all duration-500
+        rounded-xl border-2 transition-all duration-500 overflow-hidden
         ${sticky ? "sticky bottom-4 z-20" : "relative z-0"}
         ${isActive
           ? "border-teal shadow-[0_0_20px_rgba(20,184,166,0.1)] bg-teal/5"
@@ -286,6 +286,8 @@ export function SyezPanel({
         }
       `}
     >
+      <div className="flex items-stretch">
+      <div className="flex-1 min-w-0 p-5">
       <div className="flex flex-wrap items-start gap-3 mb-4">
         <div className="flex items-center gap-3 flex-1 min-w-[200px]">
           <div className="w-9 h-9 rounded-full bg-teal/20 border border-teal/40 flex items-center justify-center text-[13px] font-medium text-teal flex-shrink-0">
@@ -352,10 +354,6 @@ export function SyezPanel({
           </div>
         )}
       </div>
-
-      {commitErr && (
-        <p className="text-[12px] text-red-400 mb-3">{commitErr}</p>
-      )}
 
       {lastCommitmentEcho && isDone && (
         <div className="mb-4 rounded-lg border border-red-500/25 bg-red-950/20 px-3 py-2 text-[11px] text-red-100/90">
@@ -488,7 +486,7 @@ export function SyezPanel({
                 </ul>
               </div>
             )}
-            <div className="text-[13px] text-white/80 leading-relaxed">
+            <div className="font-serif text-[15px] leading-[1.85] text-[#C9C8D4]">
               {segments.map((seg, idx) =>
                 seg.kind === "mermaid" ? (
                   <MermaidBlock key={`m-${idx}`} chart={seg.value} />
@@ -506,67 +504,71 @@ export function SyezPanel({
         )}
       </div>
 
-      {isDone && !readOnly && onCommitStep && debateId != null && (
-        <form
-          onSubmit={(e) => void handleOwnCommit(e)}
-          className="no-print mt-5 pt-5 border-t border-red-500/20 space-y-2"
-        >
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <label className="block text-[11px] uppercase tracking-widest text-red-300/80">
-              {t("syez.force_commit.title")}
-            </label>
-            {debateMode === "schematy" && (
-              <span className="text-[9px] px-2 py-0.5 rounded-full border border-amber-500/35 text-amber-200/90">
-                72h
-              </span>
-            )}
-          </div>
-          <p className="text-[10px] text-white/40 leading-snug">{t("syez.force_commit.lead")}</p>
-          <textarea
-            value={ownCommit}
-            onChange={(e) => setOwnCommit(e.target.value)}
-            rows={3}
-            placeholder={t("syez.force_commit.placeholder")}
-            className="w-full rounded-lg bg-black/40 border border-red-500/20 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25 focus:outline-none focus:border-red-400/50 resize-y min-h-[72px]"
-          />
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={ownBusy || status !== "done"}
-              className="text-[12px] px-4 py-2 rounded-lg bg-red-900/35 border border-red-500/45 text-red-100 hover:bg-red-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
-            >
-              {ownBusy ? t("syez.btn.committing") : t("syez.force_commit.btn")}
-            </button>
-          </div>
-        </form>
-      )}
+      </div>{/* /left-col */}
 
-      {isDone && !readOnly && onContinueThread && debateId != null && (
-        <form
-          onSubmit={(e) => void handleContinueSubmit(e)}
-          className="no-print mt-5 pt-5 border-t border-white/[0.07] space-y-2"
-        >
-          <label className="block text-[11px] uppercase tracking-widest text-white/35">
-            {t("syez.continue.label")}
-          </label>
-          <textarea
-            value={followUp}
-            onChange={(e) => setFollowUp(e.target.value)}
-            rows={3}
-            placeholder={t("syez.continue.placeholder")}
-            className="w-full rounded-lg bg-black/35 border border-white/15 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25 focus:outline-none focus:border-teal/50 resize-y min-h-[72px]"
-          />
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={continuing || status !== "done"}
-              className="text-[12px] px-4 py-2 rounded-lg bg-teal/20 border border-teal/45 text-teal hover:bg-teal/30 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
-            >
-              {continuing ? t("syez.continue.btn_starting") : t("syez.continue.btn")}
-            </button>
-          </div>
-        </form>
+      {/* Prawa kolumna — domknięcie (AX2): commit + kontynuacja */}
+      {!readOnly && !!(onCommitStep || onContinueThread) && (
+        <div className="w-[220px] shrink-0 border-l border-white/[0.06] p-4 flex flex-col gap-4 no-print">
+          {commitErr && (
+            <p className="text-[12px] text-red-400">{commitErr}</p>
+          )}
+          {isDone && onCommitStep && debateId != null && (
+            <form onSubmit={(e) => void handleOwnCommit(e)} className="space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="block text-[11px] uppercase tracking-widest text-red-300/80">
+                  {t("syez.force_commit.title")}
+                </label>
+                {debateMode === "schematy" && (
+                  <span className="text-[9px] px-2 py-0.5 rounded-full border border-amber-500/35 text-amber-200/90">
+                    72h
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-white/40 leading-snug">{t("syez.force_commit.lead")}</p>
+              <textarea
+                value={ownCommit}
+                onChange={(e) => setOwnCommit(e.target.value)}
+                rows={3}
+                placeholder={t("syez.force_commit.placeholder")}
+                className="w-full rounded-lg bg-black/40 border border-red-500/20 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25 focus:outline-none focus:border-red-400/50 resize-y min-h-[72px]"
+              />
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={ownBusy || status !== "done"}
+                  className="text-[12px] px-4 py-2 rounded-lg bg-red-900/35 border border-red-500/45 text-red-100 hover:bg-red-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                >
+                  {ownBusy ? t("syez.btn.committing") : t("syez.force_commit.btn")}
+                </button>
+              </div>
+            </form>
+          )}
+          {isDone && onContinueThread && debateId != null && (
+            <form onSubmit={(e) => void handleContinueSubmit(e)} className="space-y-2">
+              <label className="block text-[11px] uppercase tracking-widest text-white/35">
+                {t("syez.continue.label")}
+              </label>
+              <textarea
+                value={followUp}
+                onChange={(e) => setFollowUp(e.target.value)}
+                rows={3}
+                placeholder={t("syez.continue.placeholder")}
+                className="w-full rounded-lg bg-black/35 border border-white/15 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25 focus:outline-none focus:border-teal/50 resize-y min-h-[72px]"
+              />
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={continuing || status !== "done"}
+                  className="text-[12px] px-4 py-2 rounded-lg bg-teal/20 border border-teal/45 text-teal hover:bg-teal/30 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                >
+                  {continuing ? t("syez.continue.btn_starting") : t("syez.continue.btn")}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       )}
+      </div>{/* /flex */}
     </div>
   );
 }

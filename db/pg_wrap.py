@@ -99,26 +99,55 @@ class PgConnection:
         sql_pg = qmarks_to_pg(sql_work)
         params_t = tuple(params)
 
-        # RLS (migracja 0002): przed KAŻDYM query ustaw GUC architekt.tenant_id
-        # z aktywnego ContextVar. Policy `tenant_isolation` na tabelach z
-        # tenant_id porównuje wiersz z tym GUC. `set_config(_, _, false)` =
-        # session-level (asyncpg pool ma 1 connection per query w tej klasie,
-        # więc race między requestami zamykamy nadpisywaniem PRZED query).
-        # Stage 1 hardening: RLS GUC fail-closed.
-        # Przy błędzie set_config NIE kontynuujemy query — brak kontekstu tenanta
-        # oznacza ryzyko wycieku danych między tenantami. Wyjątek propaguje jako
-        # 500 do wywołującego (lepsze niż cichy cross-tenant access).
+        # RLS (migracja 0002): GUC architekt.tenant_id jest TRANSACTION-LOCAL
+        # (`set_config(_, _, true)`) i ustawiany wewnątrz jawnej transakcji razem
+        # z właściwym query. Policy `tenant_isolation` porównuje wiersz z tym GUC.
+        # Stage 2 hardening: transaction-local oznacza, że GUC NIE przeżywa zwrotu
+        # połączenia do puli asyncpg — automatyczny reset na końcu transakcji
+        # eliminuje ryzyko, że kolejny request odziedziczy tenant poprzednika
+        # (izolacja przez mechanizm, nie przez konwencję „set przed każdym query").
+        # Fail-closed: przy błędzie set_config przerywamy query (RuntimeError → 500),
+        # bo brak kontekstu tenanta = ryzyko cross-tenant access.
         # Jedyny wyjątek: ImportError db.tenant (testy jednostkowe bez DB) — tam
         # RLS Postgres nie istnieje, więc import-miss jest bezpieczny.
+        async def _dispatch() -> Any:
+            up = sql_work.upper().strip()
+            if up.startswith("SELECT") or up.startswith("WITH"):
+                rows = await self._c.fetch(sql_pg, *params_t)
+                return _RowsCursor(list(rows))
+
+            ins = re.match(r"INSERT\s+INTO\s+(\w+)", sql_work, re.I)
+            if (
+                ins
+                and ins.group(1).lower() in INSERT_RETURNING_TABLES
+                and "RETURNING" not in sql_pg.upper()
+            ):
+                sql_ret = sql_pg.rstrip().rstrip(";") + " RETURNING id"
+                row = await self._c.fetchrow(sql_ret, *params_t)
+                rid = int(row["id"]) if row else None
+                return _ExecCursor(rowcount=1, lastrowid=rid)
+
+            status = await self._c.execute(sql_pg, *params_t)
+            rc = self._parse_rowcount(status)
+            return _ExecCursor(rowcount=rc)
+
         try:
             from db.tenant import current_tenant_id
         except ImportError:
-            pass  # testy jednostkowe bez modułu db.tenant — RLS Postgres nieaktywne
-        else:
+            return await _dispatch()  # testy jednostkowe bez db.tenant — RLS nieaktywne
+
+        tid = (current_tenant_id() or "").strip()
+        if not tid:
+            raise RuntimeError(
+                "RLS: pusty tenant_id — query przerwane (fail-closed). "
+                "Request musi przejść przez http_guard lub jawnie ustawić ContextVar."
+            )
+
+        async with self._c.transaction():
             try:
                 await self._c.execute(
-                    "SELECT set_config('architekt.tenant_id', $1, false)",
-                    current_tenant_id(),
+                    "SELECT set_config('architekt.tenant_id', $1, true)",
+                    tid,
                 )
             except Exception as e:  # pragma: no cover
                 logger.error(
@@ -127,26 +156,7 @@ class PgConnection:
                 raise RuntimeError(
                     f"Nie można ustawić kontekstu tenanta RLS — query przerwane: {e}"
                 ) from e
-
-        up = sql_work.upper().strip()
-        if up.startswith("SELECT") or up.startswith("WITH"):
-            rows = await self._c.fetch(sql_pg, *params_t)
-            return _RowsCursor(list(rows))
-
-        ins = re.match(r"INSERT\s+INTO\s+(\w+)", sql_work, re.I)
-        if (
-            ins
-            and ins.group(1).lower() in INSERT_RETURNING_TABLES
-            and "RETURNING" not in sql_pg.upper()
-        ):
-            sql_ret = sql_pg.rstrip().rstrip(";") + " RETURNING id"
-            row = await self._c.fetchrow(sql_ret, *params_t)
-            rid = int(row["id"]) if row else None
-            return _ExecCursor(rowcount=1, lastrowid=rid)
-
-        status = await self._c.execute(sql_pg, *params_t)
-        rc = self._parse_rowcount(status)
-        return _ExecCursor(rowcount=rc)
+            return await _dispatch()
 
     async def commit(self) -> None:
         """asyncpg w puli — komendy DDL/DML są zatwierdzane automatycznie."""

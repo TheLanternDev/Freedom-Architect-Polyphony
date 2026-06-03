@@ -48,9 +48,10 @@ CREATE INDEX IF NOT EXISTS idx_debates_dream_id ON debates(dream_id);
 CREATE INDEX IF NOT EXISTS idx_debates_created_at ON debates(created_at);
 
 CREATE TABLE IF NOT EXISTS dream_debate_link (
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     dream_id  TEXT NOT NULL REFERENCES dreams(id) ON DELETE CASCADE,
     debate_id INTEGER NOT NULL REFERENCES debates(id) ON DELETE CASCADE,
-    PRIMARY KEY (dream_id, debate_id)
+    PRIMARY KEY (tenant_id, dream_id, debate_id)
 );
 
 CREATE TABLE IF NOT EXISTS agent_voices (

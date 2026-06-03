@@ -1,0 +1,44 @@
+# Stack produkcyjny: Postgres (RLS) + Redis + API.
+# Wymaga pliku `.env` w korzeniu (patrz `.env.example` + docs/PRODUCTION_CHECKLIST.md).
+# Uruchomienie: docker compose -f docker-compose.prod.yml up --build
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: architekt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ustaw POSTGRES_PASSWORD w .env}
+      POSTGRES_DB: architekt
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U architekt -d architekt"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      AW_ENV: production
+      DATABASE_URL: postgresql://architekt:${POSTGRES_PASSWORD}@postgres:5432/architekt
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pg_data:

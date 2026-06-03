@@ -1,26 +1,21 @@
 import { useCallback, useEffect, useState } from "react";
+import { Clock, Eye, Flag, MessageCircle, Settings } from "lucide-react";
 import { LocalSetupModal } from "@/components/LocalSetupModal";
 import { useDebate } from "@/hooks/useDebate";
-import { AgentCard } from "@/components/AgentCard";
+import { CouncilCircle } from "@/components/CouncilCircle";
 import { SyezPanel } from "@/components/SyezPanel";
 import { PriorTurnView } from "@/components/PriorTurnView";
 import { BriefForm } from "@/components/BriefForm";
-import { ModeSidebar } from "@/components/ModeSidebar";
-import { TensionMeter } from "@/components/TensionMeter";
 import { CommitmentsTimeline } from "@/components/CommitmentsTimeline";
-import { DebateHistory } from "@/components/DebateHistory";
-import { ProductManifest } from "@/components/ProductManifest";
 import { FadeIn } from "@/components/ui/FadeIn";
+import { Icon } from "@/components/ui/Icon";
 import { SectionDivider } from "@/components/ui/SectionDivider";
+import { OnboardingPanel, DailyRitualPanel } from "@/components/PersonalRitualPanels";
 import { DreamsPanel } from "@/components/DreamsPanel";
-import {
-  OnboardingPanel,
-  DailyRitualPanel,
-} from "@/components/PersonalRitualPanels";
-import { FragmentCompass } from "@/components/FragmentCompass";
+import { DebateHistory } from "@/components/DebateHistory";
+import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { ActiveProjectLimitModal, type ActiveProjectInfo } from "@/components/ActiveProjectLimitModal";
 import { DreamWizard } from "@/components/DreamWizard";
-import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { IntegrationsModal } from "@/components/IntegrationsModal";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { OfflineBanner, addToOfflineQueue } from "@/components/OfflineBanner";
@@ -82,6 +77,7 @@ export default function App() {
     readSetupDismissed(),
   );
   const [setupOpen, setSetupOpen] = useState(() => !readSetupDismissed());
+  const [sidePanel, setSidePanel] = useState<"dreams" | "history" | "notifications" | null>(null);
   const [councilMode, setCouncilModeState] = useState(() => getCouncilMode());
   const [backendMode, setBackendMode] = useState<string | null>(null);
   const [dreamWizardOpen, setDreamWizardOpen] = useState(false);
@@ -145,6 +141,7 @@ export default function App() {
 
   // sprawdź tryb backendu (do banera niespójności)
   useEffect(() => {
+    setBackendMode(null); // reset przy każdej zmianie trybu — eliminuje fałszywy flash
     let cancelled = false;
     (async () => {
       try {
@@ -278,13 +275,7 @@ export default function App() {
         onClose={() => setIntegrationsOpen(false)}
       />
       {councilMode === "personal" && <OnboardingPanel />}
-      {/* AKSJOMAT 0 — kompas Fragmentu. Stale widoczny w trybie personal,
-          jako delikatne przypomnienie że to nie jest todo, tylko postawa. */}
-      {councilMode === "personal" && (
-        <div className="no-print fixed z-20 bottom-[5.75rem] left-4 lg:left-[calc(272px+1.25rem)] max-w-[288px] pointer-events-auto">
-          <FragmentCompass compact />
-        </div>
-      )}
+      {/* AKSJOMAT 0 — kompas Fragmentu wbudowany w BriefForm (Krok 4 redesignu) */}
       {/* AKSJOMAT 2 — konfrontacja gdy backend zwraca 409 active_project_limit.
           Zamiast suchego błędu: pełen dialog z aktywnymi projektami i trzema
           świadomymi opcjami (kończę / archiwizuję / rezygnuję). */}
@@ -320,40 +311,123 @@ export default function App() {
           onClose={() => setDreamWizardOpen(false)}
         />
       )}
-      <aside className="no-print w-[272px] shrink-0 border-r border-border bg-surface/60 hidden lg:flex flex-col h-screen sticky top-0 overflow-hidden aw-scroll">
-        {/* Brand */}
-        <div className="shrink-0 px-6 pt-8 pb-5 border-b border-border/80">
-          <p className="aw-eyebrow mb-2">{t("app.brand")}</p>
-          <h1 className="font-display text-[18px] text-text-primary leading-tight tracking-display">
-            {t("app.title.supervisory")}{" "}
-            <em className="aw-accent-highlight not-italic">{t("app.title.council")}</em>
-          </h1>
-        </div>
-
-        {/* Primary navigation — council modes */}
-        <div className="shrink-0 px-5 py-5">
-          <ModeSidebar
-            selected={mode}
-            onChange={setMode}
-            disabled={isActive}
-            allowedModes={allowedDemoModes}
-          />
-        </div>
-
-        {/* Context panels — scrollable middle */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain aw-scroll px-5 space-y-5 pb-4">
-          <DreamsPanel disabled={isActive || inDemo} />
-          {councilMode === "personal" && !inDemo && <DailyRitualPanel />}
-          {councilMode === "personal" && <NotificationsPanel />}
-        </div>
-
-        {/* History — anchored bottom, capped height so it never eats the middle pane */}
-        <div className="shrink-0 max-h-[min(38vh,260px)] flex flex-col px-5 pb-6 pt-4 border-t border-border/80 bg-surface shadow-[0_-10px_28px_rgba(0,0,0,0.45)] z-10 relative">
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <DebateHistory onSelect={loadHistoricalDebate} disabled={isActive} />
+      {/* ── Icon rail — zastępuje 272px sidebar (Krok 1 redesignu) ── */}
+      <aside className="no-print w-[52px] shrink-0 border-r border-border bg-[#0A0C14] hidden lg:flex flex-col h-screen sticky top-0 z-10">
+        {/* AW brand mark */}
+        <div className="shrink-0 h-14 flex items-center justify-center border-b border-border/60">
+          <div className="w-8 h-8 rounded-lg bg-gold/10 border border-gold/25 flex items-center justify-center text-[10px] font-semibold text-gold leading-none select-none">
+            AW
           </div>
         </div>
+
+        {/* Nav icons */}
+        <nav className="flex-1 flex flex-col items-center pt-3 gap-1" aria-label="Nawigacja główna">
+          {/* Brief / Debata — zamyka wysuwany panel */}
+          <button
+            type="button"
+            title="Brief / Debata"
+            onClick={() => setSidePanel(null)}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
+              showBriefSetup && !sidePanel
+                ? "bg-gold/10 text-gold"
+                : "text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary"
+            }`}
+          >
+            <Icon icon={MessageCircle} size="sm" />
+          </button>
+          {/* Marzenia — wysuwany panel */}
+          <button
+            type="button"
+            title="Marzenia i projekty"
+            onClick={() => setSidePanel((p) => p === "dreams" ? null : "dreams")}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
+              sidePanel === "dreams"
+                ? "bg-gold/10 text-gold"
+                : "text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary"
+            }`}
+          >
+            <Icon icon={Eye} size="sm" />
+          </button>
+          {/* Powiadomienia / Zobowiązania — wysuwany panel */}
+          <button
+            type="button"
+            title="Powiadomienia i zobowiązania"
+            onClick={() => setSidePanel((p) => p === "notifications" ? null : "notifications")}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
+              sidePanel === "notifications"
+                ? "bg-gold/10 text-gold"
+                : "text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary"
+            }`}
+          >
+            <Icon icon={Flag} size="sm" />
+          </button>
+          {/* Historia — wysuwany panel */}
+          <button
+            type="button"
+            title="Historia debat"
+            onClick={() => setSidePanel((p) => p === "history" ? null : "history")}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
+              sidePanel === "history"
+                ? "bg-gold/10 text-gold"
+                : "text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary"
+            }`}
+          >
+            <Icon icon={Clock} size="sm" />
+          </button>
+        </nav>
+
+        {/* Bottom — settings */}
+        <div className="shrink-0 pb-4 flex flex-col items-center border-t border-border/60 pt-3">
+          <button
+            type="button"
+            title="Ustawienia"
+            onClick={() => setSetupOpen(true)}
+            className="w-9 h-9 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary transition-colors duration-150"
+          >
+            <Icon icon={Settings} size="sm" />
+          </button>
+        </div>
       </aside>
+
+      {/* ── Wysuwany panel kontekstowy — otwierany przyciskami railu ── */}
+      {sidePanel && (
+        <aside className="no-print w-[240px] shrink-0 border-r border-border bg-surface/60 hidden lg:flex flex-col h-screen sticky top-0 overflow-hidden">
+          {/* Header panelu */}
+          <div className="shrink-0 h-14 flex items-center justify-between px-4 border-b border-border/80">
+            <p className="aw-eyebrow">
+              {sidePanel === "dreams" && "Marzenia i projekty"}
+              {sidePanel === "history" && "Historia debat"}
+              {sidePanel === "notifications" && "Powiadomienia"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setSidePanel(null)}
+              className="text-text-tertiary hover:text-text-secondary transition-colors text-[18px] leading-none"
+              aria-label="Zamknij panel"
+            >
+              ×
+            </button>
+          </div>
+          {/* Zawartość panelu */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain aw-scroll px-4 py-4 space-y-4">
+            {sidePanel === "dreams" && (
+              <>
+                <DreamsPanel disabled={isActive || inDemo} />
+                {councilMode === "personal" && !inDemo && <DailyRitualPanel />}
+              </>
+            )}
+            {sidePanel === "history" && (
+              <DebateHistory onSelect={(id) => { loadHistoricalDebate(id); setSidePanel(null); }} disabled={isActive} />
+            )}
+            {sidePanel === "notifications" && councilMode === "personal" && (
+              <NotificationsPanel />
+            )}
+            {sidePanel === "notifications" && councilMode !== "personal" && (
+              <p className="text-[12px] text-text-tertiary">Powiadomienia dostępne w trybie personal.</p>
+            )}
+          </div>
+        </aside>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0">
         <WorkspaceHeader
@@ -431,24 +505,9 @@ export default function App() {
         )}
 
         <main className="aw-workspace">
-          <FadeIn>
-          <section className="lg:hidden no-print space-y-5">
-            <p className="aw-eyebrow text-text-tertiary">
-              {t("app.mobile_mode_label")}
-            </p>
-            <ModeSidebar
-              selected={mode}
-              onChange={setMode}
-              disabled={isActive}
-              allowedModes={allowedDemoModes}
-            />
-          </section>
-          </FadeIn>
-
           <FadeIn delay={0.06}>
           {showBriefSetup && (
           <section className="space-y-10">
-            <ProductManifest />
             <BriefForm
               onSubmit={handleStart}
               disabled={isActive || demoExhausted}
@@ -536,18 +595,11 @@ export default function App() {
                 }
                 className="mb-6"
               />
-              <div className="aw-grid-council">
-                {agentList.map((agent) => (
-                  <AgentCard key={agent.name} agent={agent} />
-                ))}
-              </div>
+              <CouncilCircle
+                agents={agentList}
+                tensions={state.liveTensions ?? []}
+              />
             </section>
-            </FadeIn>
-          )}
-
-          {(state.liveTensions?.length ?? 0) > 0 && (
-            <FadeIn delay={0.06}>
-            <TensionMeter pairs={state.liveTensions ?? []} />
             </FadeIn>
           )}
 

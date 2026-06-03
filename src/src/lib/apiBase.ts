@@ -44,6 +44,8 @@ function isTauriWebview(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+export { isTauriWebview };
+
 function needsLocalApiFallback(): boolean {
   if (typeof window === "undefined") return false;
   try {

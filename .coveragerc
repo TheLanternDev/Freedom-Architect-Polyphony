@@ -20,7 +20,6 @@
 # Aktualizuj listę razem z decyzjami AKSJOMATU 2 ("kończysz / archiwizujesz / wracasz").
 omit =
     core/autonomy.py
-    core/identity.py
     core/db/connection.py
     core/db/__init__.py
     db/migrations/*

@@ -126,6 +126,10 @@ jobs:
           psql "$DATABASE_URL" -f db/schema_postgres.sql
           psql "$DATABASE_URL" -f db/migrations/0001_add_tenant_isolation.sql
           psql "$DATABASE_URL" -f db/migrations/0002_enable_rls.sql
+          psql "$DATABASE_URL" -f db/migrations/0003_feedback_table.sql
+          psql "$DATABASE_URL" -f db/migrations/0004_onboarding_answers.sql
+          psql "$DATABASE_URL" -f db/migrations/0005_dream_debate_link_tenant.sql
+          psql "$DATABASE_URL" -f db/migrations/0006_users_revoke_public.sql
       - name: Create NOSUPERUSER NOBYPASSRLS app role (jak na prod)
         run: |
           psql "$DATABASE_URL" <<'SQL'
@@ -157,3 +161,41 @@ jobs:
             exit 1
           fi
           echo "✅ RLS enforced: cross-tenant SELECT zwraca 0."
+      - name: Smoke RLS — feedback cross-tenant (0003)
+        run: |
+          OUTPUT=$(PGPASSWORD=test psql "postgresql://app_test@localhost:5432/architekt" -At <<'SQL'
+          SET architekt.tenant_id = 'A';
+          INSERT INTO feedback (tenant_id, rating, what_worked) VALUES ('A', 5, 'ok');
+          SET architekt.tenant_id = 'B';
+          SELECT COUNT(*) FROM feedback;
+          SQL
+          )
+          B_COUNT=$(echo "$OUTPUT" | tail -1)
+          if [ "$B_COUNT" != "0" ]; then
+            echo "❌ feedback RLS broken — tenant B saw $B_COUNT row(s)."
+            exit 1
+          fi
+          echo "✅ feedback RLS OK."
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Frontend unit tests
+        working-directory: src
+        run: npm run test:unit
+
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t architekt-wolnosci:ci .
+      - name: Verify image imports (config module present)
+        run: |
+          docker run --rm architekt-wolnosci:ci python -c "import config.llm_providers; print('ok')"

@@ -40,6 +40,15 @@ def _public_paths() -> frozenset[str]:
     return p
 
 
+def _admin_self_auth_paths(path: str) -> bool:
+    """Endpointy z własnym fail-closed (`ARCHITEKT_ADMIN_TOKEN` w handlerze).
+
+    Pomijamy wspólną weryfikację JWT/legacy w guardzie — inaczej Bearer admin
+    token koliduje z `Authorization` używanym do JWT (P0-A1).
+    """
+    return path == "/metrics" or path.startswith("/admin/")
+
+
 async def architekt_http_guard(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
@@ -49,6 +58,9 @@ async def architekt_http_guard(
 
     path = request.url.path
     if path in _public_paths() or path.startswith("/assets/") or path.startswith("/auth/"):
+        return await call_next(request)
+
+    if _admin_self_auth_paths(path):
         return await call_next(request)
 
     # Faza 4 — multi-user: ustaw ContextVar tenant_id na podstawie auth.
@@ -93,6 +105,31 @@ async def architekt_http_guard(
     svc_val = (request.headers.get(hdr_svc) or "").strip()
     if api_key and svc_val and hmac.compare_digest(svc_val, api_key):
         request.state.architekt_auth = "service_header"
+        # Faza 4: ścieżka BFF/proxy. Współdzielony klucz serwisowy NIE niesie
+        # tożsamości — musi ją przekazać BFF w nagłówkach (X-Tenant-Id / X-User-Id).
+        # Bez tego cały ruch przez BFF działałby jako jeden tenant `default` →
+        # cross-user leak. W trybie multi-user (JWT aktywne) brak tenanta = 403.
+        th = settings.tenant_header_name()
+        fwd_tid = (request.headers.get(th) or "").strip()
+        uh = (os.getenv("AW_USER_HEADER") or "X-User-Id").strip()
+        fwd_uid = (request.headers.get(uh) or "").strip()
+        if jwt_on:
+            if not fwd_tid:
+                return JSONResponse(
+                    {
+                        "detail": (
+                            f"Service-header w trybie multi-user wymaga nagłówka tenanta "
+                            f"({th}) — BFF musi propagować tożsamość usera (opcjonalnie {uh})."
+                        )
+                    },
+                    status_code=403,
+                )
+            set_current_tenant_id(fwd_tid)
+            set_current_user_id(fwd_uid or fwd_tid)
+        elif fwd_tid:
+            # Single-tenant deployment: nagłówki opcjonalne, ale honorujemy je gdy są.
+            set_current_tenant_id(fwd_tid)
+            set_current_user_id(fwd_uid or fwd_tid)
         return await call_next(request)
 
     auth = (request.headers.get("authorization") or "").strip()

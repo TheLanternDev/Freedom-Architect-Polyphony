@@ -18,6 +18,20 @@ logger = logging.getLogger(__name__)
 
 _pg_pool: Any = None
 
+
+def runtime_use_postgres() -> bool:
+    """Aktywny backend runtime — True tylko gdy pula PG została zainicjalizowana."""
+    return _pg_pool is not None
+
+
+def _require_pg_pool() -> Any:
+    if _pg_pool is None:
+        raise RuntimeError(
+            "PostgreSQL pool is not initialized — sprawdź DATABASE_URL, "
+            "dostępność serwera i logi startu (w produkcji startup powinien się zatrzymać wcześniej)."
+        )
+    return _pg_pool
+
 _SCHEMA_PG_PATH = Path(__file__).resolve().parent / "schema_postgres.sql"
 _MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
@@ -79,8 +93,11 @@ def _split_pg_schema(sql_text: str) -> list[str]:
 
 async def init_database(sqlite_init_cb: Any) -> None:
     """sqlite_init_cb: async callable () -> None uruchamiane tylko dla SQLite."""
+    from api.settings import is_production
+
     global _pg_pool
     if use_postgres():
+        pool: Any = None
         try:
             import asyncpg
         except ImportError as e:
@@ -90,27 +107,44 @@ async def init_database(sqlite_init_cb: Any) -> None:
         url = database_url()
         max_sz = int(os.getenv("PG_POOL_MAX_SIZE", "16") or "16")
         max_sz = max(2, min(max_sz, 64))
-        _pg_pool = await asyncpg.create_pool(url, min_size=1, max_size=max_sz)
-        schema_sql = _SCHEMA_PG_PATH.read_text(encoding="utf-8")
-        # ⚠️  JEDYNE dozwolone użycie rawowego `_pg_pool.acquire()` bez PgConnection wrappera.
-        # PgConnection.execute() ustawia GUC `architekt.tenant_id` przed każdym query —
-        # co jest wymagane przez RLS policy tenant_isolation. Tutaj celowo pomijamy ten
-        # mechanizm, bo:
-        #   a) Migracje DDL muszą widzieć WSZYSTKIE wiersze (brak tenant_id w kontekście).
-        #   b) RLS policy przepuszcza query gdy GUC == '' (patrz migration 0002).
-        # Poza init_database NIE używaj _pg_pool.acquire() bezpośrednio — każdy request-time
-        # query musi przechodzić przez PgConnection (acquire_http_db / debate_stream_db).
-        async with _pg_pool.acquire() as conn:
-            # 1) Schema = current desired state (tworzy brakujące tabele na nowej bazie).
-            for stmt in _split_pg_schema(schema_sql):
-                await conn.execute(stmt)
-            # 2) Migracje = doprowadzenie ISTNIEJĄCYCH baz do tego stanu (ALTER itp.).
-            await _run_pg_migrations(conn)
-        logger.info(
-            "PostgreSQL pool initialized (%s)",
-            re.sub(r":([^@/]*)@", r":****@", url),
-        )
-        return
+        try:
+            pool = await asyncpg.create_pool(url, min_size=1, max_size=max_sz)
+            _pg_pool = pool
+            schema_sql = _SCHEMA_PG_PATH.read_text(encoding="utf-8")
+            # ⚠️  JEDYNE dozwolone użycie rawowego `_pg_pool.acquire()` bez PgConnection wrappera.
+            # PgConnection.execute() ustawia GUC `architekt.tenant_id` przed każdym query —
+            # co jest wymagane przez RLS policy tenant_isolation. Tutaj celowo pomijamy ten
+            # mechanizm, bo:
+            #   a) Migracje DDL muszą widzieć WSZYSTKIE wiersze (brak tenant_id w kontekście).
+            #   b) RLS policy przepuszcza query gdy GUC == '' (patrz migration 0002).
+            # Poza init_database NIE używaj _pg_pool.acquire() bezpośrednio — każdy request-time
+            # query musi przechodzić przez PgConnection (acquire_http_db / debate_stream_db).
+            async with _pg_pool.acquire() as conn:
+                for stmt in _split_pg_schema(schema_sql):
+                    await conn.execute(stmt)
+                await _run_pg_migrations(conn)
+            logger.info(
+                "PostgreSQL pool initialized (%s)",
+                re.sub(r":([^@/]*)@", r":****@", url),
+            )
+            return
+        except Exception as exc:
+            if pool is not None:
+                await pool.close()
+            _pg_pool = None
+            if is_production():
+                raise RuntimeError(
+                    f"Inicjalizacja PostgreSQL nieudana w produkcji ({exc}). "
+                    "RLS i izolacja tenantów wymagają działającego Postgresa — brak fallbacku SQLite."
+                ) from exc
+            logger.warning(
+                "⚠️ DEV ONLY: PostgreSQL niedostępny (%s) — fallback na SQLite (%s). "
+                "RLS nie działa na SQLite; ustaw działający Postgres lub usuń DATABASE_URL.",
+                exc,
+                os.getenv("ARCHITEKT_DB_PATH", "data/architekt.db"),
+            )
+            await sqlite_init_cb()
+            return
 
     await sqlite_init_cb()
 
@@ -122,14 +156,32 @@ async def shutdown_database() -> None:
         _pg_pool = None
 
 
+async def probe_db_ready(sqlite_db_path: Path) -> tuple[bool, str]:
+    """Ping aktywnego backendu — (ok, reason) dla /health/ready."""
+    if runtime_use_postgres():
+        try:
+            async with _require_pg_pool().acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            return True, ""
+        except Exception as exc:
+            return False, f"postgresql: {exc}"
+    try:
+        import aiosqlite
+
+        async with aiosqlite.connect(sqlite_db_path) as raw:
+            await raw.execute("SELECT 1")
+        return True, ""
+    except Exception as exc:
+        return False, f"sqlite: {exc}"
+
+
 @asynccontextmanager
 async def acquire_http_db(sqlite_db_path: Path) -> AsyncIterator[Any]:
     """Pojedyncze połączenie na żądanie FastAPI."""
-    if use_postgres():
-        assert _pg_pool is not None
+    if runtime_use_postgres():
         from db.pg_wrap import PgConnection
 
-        async with _pg_pool.acquire() as raw:
+        async with _require_pg_pool().acquire() as raw:
             yield PgConnection(raw)
         return
 
@@ -157,11 +209,10 @@ async def acquire_http_db(sqlite_db_path: Path) -> AsyncIterator[Any]:
 @asynccontextmanager
 async def debate_stream_db(sqlite_db_path: Path) -> AsyncIterator[Any]:
     """Jedno połączenie na cały cykl SSE debaty."""
-    if use_postgres():
-        assert _pg_pool is not None
+    if runtime_use_postgres():
         from db.pg_wrap import PgConnection
 
-        async with _pg_pool.acquire() as raw:
+        async with _require_pg_pool().acquire() as raw:
             yield PgConnection(raw)
         return
 

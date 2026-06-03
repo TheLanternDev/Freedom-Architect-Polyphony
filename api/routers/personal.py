@@ -10,6 +10,9 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from api.settings import is_production
+from db.tenant import current_tenant_id
+
 from personal_v1.rituals.onboarding import PYTANIA as ONBOARDING_PYTANIA
 from personal_v1.rituals.daily import PYTANIA_PORANNE, PYTANIA_WIECZORNE
 
@@ -49,6 +52,7 @@ async def onboarding_save(request: Request, payload: OnboardingSavePayload):
         DB_PATH = None  # type: ignore[assignment]
 
     persisted = False
+    persist_error: str | None = None
     if (repo is not None and acquire_http_db is not None
             and hasattr(repo, "upsert_onboarding_answer")):
         try:
@@ -63,17 +67,27 @@ async def onboarding_save(request: Request, payload: OnboardingSavePayload):
                     )
                 await db.commit()
             persisted = True
-        except Exception:
-            # Fallback poniżej.
-            pass
+        except Exception as e:
+            persist_error = str(e)
 
     if not persisted:
+        if is_production():
+            raise HTTPException(
+                503,
+                detail=(
+                    "Nie udało się zapisać odpowiedzi onboardingowych w bazie — "
+                    f"{'błąd: ' + persist_error if persist_error else 'sprawdź migrację onboarding_answers.'}"
+                ),
+            )
+        # Dev-only fallback JSONL.
         out_dir = Path(os.getenv("AW_FEEDBACK_DIR") or "data")
         out_dir.mkdir(parents=True, exist_ok=True)
         with (out_dir / "onboarding_answers.jsonl").open("a", encoding="utf-8") as f:
             for a in payload.answers:
                 f.write(json.dumps({
-                    "ts": ts, "user_subject": sub,
+                    "ts": ts,
+                    "tenant_id": current_tenant_id(),
+                    "user_subject": sub,
                     "question_idx": a.question_idx,
                     "answer": a.answer.strip(),
                 }, ensure_ascii=False) + "\n")

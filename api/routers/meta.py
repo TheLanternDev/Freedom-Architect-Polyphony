@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException
-
-from db import get_db
+from fastapi import APIRouter, HTTPException, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 router = APIRouter(tags=["meta"])
+
+# P1-A7: publiczny probe k8s — limit per IP żeby nie floodować SELECT 1.
+_ready_limiter = Limiter(key_func=get_remote_address)
 
 
 @router.get("/health")
@@ -50,12 +53,18 @@ async def health():
 
 
 @router.get("/health/ready")
-async def health_ready(db=Depends(get_db)):
+@_ready_limiter.limit("120/minute")
+async def health_ready(request: Request):
     import main as m
+
+    from db import DB_PATH
+    from db.backend import probe_db_ready
 
     if not m.DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="db niedostępna")
-    await db.execute("SELECT 1")
+    ok, reason = await probe_db_ready(DB_PATH)
+    if not ok:
+        raise HTTPException(status_code=503, detail=reason or "db niedostępna")
     return {"ready": True}
 
 

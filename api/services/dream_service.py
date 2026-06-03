@@ -68,13 +68,27 @@ async def persist_dream_and_project(
     *,
     continuation_parent_id: Optional[int] = None,
 ) -> tuple[Optional[int], Optional[int]]:
-    """Zapisuje marzenie + projekt + debatę. Zwraca (debate_id, project_id)."""
+    """Zapisuje marzenie + projekt (debata dopiero po Radzie). Zwraca (None, project_id)."""
     if db is None or not DB_AVAILABLE:
         return None, None
     await repo.insert_dream(db, dream)
     project_id = await repo.ensure_project_for_dream(
         db, dream.dream_id, dream.functionality_checklist
     )
+    await db.commit()
+    return None, project_id
+
+
+async def insert_debate_for_stream(
+    db: Any,
+    brief: Any,
+    *,
+    dream_id: Optional[str] = None,
+    continuation_parent_id: Optional[int] = None,
+) -> Optional[int]:
+    """Tworzy wiersz debaty po zakończeniu Rady — unika orphanów przy zerwaniu SSE."""
+    if db is None or not DB_AVAILABLE:
+        return None
     debate_id = await repo.insert_debate(
         db,
         category=brief.category,
@@ -82,9 +96,10 @@ async def persist_dream_and_project(
         brief_description=brief.description,
         intention=brief.intention,
         extra_context=brief.extra_context,
-        dream_id=dream.dream_id,
+        dream_id=dream_id,
         parent_debate_id=continuation_parent_id,
     )
-    await repo.link_dream_debate(db, dream.dream_id, debate_id)
+    if dream_id:
+        await repo.link_dream_debate(db, dream_id, debate_id)
     await db.commit()
-    return debate_id, project_id
+    return debate_id

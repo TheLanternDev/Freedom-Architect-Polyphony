@@ -13,7 +13,7 @@
 - **TypeScript**: `tsc --noEmit` clean.
 - **RODO (konto)**: `GET /account/export`, `DELETE /account` (JWT, potwierdzenie `USUŃ MOJE KONTO`), purge tenanta w repo.
 - **Observability**: opcjonalny Sentry (`SENTRY_DSN`), globalny handler 500 bez stacktrace, logi bez PII (metadane: path, tenant_id).
-- **Preflight produkcyjny**: przy `AW_ENV=production` start odmawiany bez `ARCHITEKT_JWT_SECRET`, `AW_CORS_ORIGINS` (konkretna lista, nie `*`), `REDIS_URL`, `ANTHROPIC_API_KEY`, `ARCHITEKT_ADMIN_TOKEN`.
+- **Preflight produkcyjny**: przy `AW_ENV=production` start odmawiany bez `DATABASE_URL` (Postgres), `ARCHITEKT_JWT_SECRET`, `AW_CORS_ORIGINS` (konkretna lista, nie `*`), `REDIS_URL`, `ANTHROPIC_API_KEY`, `ARCHITEKT_ADMIN_TOKEN`.
 - **CORS fail-fast**: produkcja nie startuje z `AW_CORS_ORIGINS=*` ani bez zmiennej.
 
 ## Do wykonania ręcznie 🔧
@@ -22,32 +22,46 @@
 ```bash
 cd /Users/tpltd145/Projects/architekt-wolnosci
 source venv/bin/activate
+# terminal 1:
+uvicorn main:app --host 127.0.0.1 --port 8000
+# terminal 2:
 python scripts/smoke_live.py
-# koszt ~$0.001-0.005 (wszyscy agenci wymuszeni na Haiku)
+# tylko health (bez kosztu LLM):
+SMOKE_SKIP_DEBATE=1 python scripts/smoke_live.py
 ```
-Sprawdź: `cost_log.jsonl` przyrasta, `perspectives` ma 9 wpisów, synteza po polsku.
+Sprawdź: `cost_log.jsonl` przyrasta (gdy pełny smoke), `agent_start` × 9, synteza po polsku.
 
 ### 2) Tauri build
 ```bash
 cd src
 npm install              # rollup-native dla Twojej platformy
 npm run tauri:dev        # natywne okno dev
-# albo:
-npm run tauri:build      # bundle (.app / .dmg / .msi)
+# dev bundle (bez weryfikacji certyfikatów):
+npm run tauri:build
+# release (podpis — patrz docs/TAURI_RELEASE.md):
+npm run tauri:build:release
+# lub lokalnie bez certów:
+AW_TAURI_SKIP_SIGN_CHECK=1 npm run tauri:build:release
 ```
-Wymaga: Rust toolchain (`rustc`, `cargo`), Xcode CLT na macOS.
+Wymaga: Rust toolchain (`rustc`, `cargo`), Xcode CLT na macOS. Podpisywanie i auto-update: **`docs/TAURI_RELEASE.md`**.
 
 ### 3) Konfiguracja produkcyjna (serwer publiczny)
 Wymagane ENV (aplikacja **nie wystartuje** bez nich gdy `AW_ENV=production`):
 
 | Zmienna | Cel |
 |---------|-----|
-| `ARCHITEKT_JWT_SECRET` | Logowanie JWT, multi-tenant |
+| `DATABASE_URL` | PostgreSQL z RLS (`postgresql://…`) — **wymagany w prod** |
+| `ARCHITEKT_JWT_SECRET` | Logowanie JWT, multi-tenant (≥32 znaki) |
 | `AW_CORS_ORIGINS` | CSV konkretnych origins, np. `https://twoja-domena.pl` (nie `*`) |
 | `REDIS_URL` | Refresh tokeny, globalny rate-limit, JTI revoke |
 | `ANTHROPIC_API_KEY` | Rada / LLM |
-| `ARCHITEKT_ADMIN_TOKEN` | `/admin/*` |
+| `ARCHITEKT_ADMIN_TOKEN` | `/admin/*`, `/metrics` |
 | `SENTRY_DSN` | (opcjonalnie) agregacja błędów |
+| `LOG_FORMAT=json` | (zalecane) logi strukturalne pod Loki/Datadog |
+
+**Docker prod:** `docker compose -f docker-compose.prod.yml up --build` (wymaga `.env` + `POSTGRES_PASSWORD`).
+
+**Dev compose:** `docker compose up` — tylko SQLite, `AW_ENV=development` (nie używać na prod).
 
 Dodatkowo w `src/.env` (dev) lub sekretach deployu:
 - UI: klucz JWT z `POST /auth/login` w nagłówku `Authorization: Bearer`

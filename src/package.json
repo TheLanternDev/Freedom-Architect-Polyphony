@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "sync-tauri-csp": "node scripts/sync-tauri-csp.mjs",
     "test:unit": "npx vite-node src/hooks/debateSseReducer.test.ts",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "npm run sync-tauri-csp && tauri build",
+    "tauri:build:release": "node scripts/tauri-release-env-check.mjs && npm run tauri:build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

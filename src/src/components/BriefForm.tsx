@@ -5,10 +5,14 @@ import {
   GitBranch,
   Paperclip,
   Sparkles,
+  Sun,
   Users,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { useLang } from "@/lib/i18n";
+import { isCouncilFa2 } from "@/config/product";
+import { FragmentCompass } from "@/components/FragmentCompass";
 import { FadeIn } from "@/components/ui/FadeIn";
 import type { Brief } from "@/types/debate";
 import { VoiceBriefButton } from "@/components/VoiceBriefButton";
@@ -59,7 +63,13 @@ export function BriefForm({
   const { lang, t } = useLang();
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<Brief["category"]>("decyzja");
-  const [showOnboard, setShowOnboard] = useState(true);
+  const [showOnboard, setShowOnboard] = useState(() => {
+    try {
+      return !window.localStorage.getItem(ONBOARD_KEY);
+    } catch {
+      return true;
+    }
+  });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachNote, setAttachNote] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
@@ -207,6 +217,28 @@ export function BriefForm({
     (tpl) => !allowedModes?.length || allowedModes.includes(tpl.mode),
   );
 
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Mode picker — przeniesiony z sidebar (Krok 1 redesignu)
+  const fa2 = isCouncilFa2();
+  const ALL_MODES: { id: NonNullable<Brief["mode"]>; key: string; icon: LucideIcon }[] = [
+    { id: "codzienny", key: "daily",    icon: Sun      },
+    { id: "pelna",     key: "full",     icon: Users    },
+    { id: "schematy",  key: "patterns", icon: GitBranch },
+    { id: "marzen",    key: "dreams",   icon: Sparkles  },
+  ];
+  const visibleModes = ALL_MODES.filter(
+    (m) => !allowedModes?.length || allowedModes.includes(m.id),
+  );
+
+  const submitLabel = (() => {
+    const effectiveMode = aggressiveSchema ? "schematy" : selectedMode;
+    if (fa2) return t("brief.btn.start_fa2") || "Zwołaj Radę Analityczną";
+    if (effectiveMode === "schematy") return t("brief.btn.start_schematy") || "Konfrontuj schemat";
+    if (effectiveMode === "codzienny") return t("brief.btn.start_codzienny") || "Zwołaj Radę";
+    return t("brief.btn.start") || "Zwołaj Radę";
+  })();
+
   return (
     <form onSubmit={handleSubmit} className="space-y-10 pb-4">
       <FadeIn>
@@ -276,16 +308,57 @@ export function BriefForm({
                   >
                     <Icon icon={tpl.icon} size="sm" />
                   </span>
-                  <span className="text-[13px] font-medium text-text-primary">
+                  <span className="text-[15px] font-medium text-text-primary">
                     {t(tpl.labelKey)}
                   </span>
                 </span>
-                <span className="block text-[11px] text-text-tertiary leading-relaxed line-clamp-2">
+                <span className="block text-[13px] text-text-secondary leading-relaxed line-clamp-2">
                   {tplPreview(t(tpl.descKey))}
                 </span>
               </button>
               </FadeIn>
             ))}
+          </div>
+        </section>
+        </FadeIn>
+      )}
+
+      {/* Tryb debaty — pills (przeniesione z sidebar, Krok 1 redesignu) */}
+      {visibleModes.length > 1 && (
+        <FadeIn delay={0.10}>
+        <section>
+          <p className="aw-eyebrow mb-3 text-text-tertiary">
+            {t(fa2 ? "mode.fa2.title" : "mode.title")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {visibleModes.map((m) => {
+              const modeKey = fa2 ? `mode.fa2.${m.key}` : `mode.${m.key}`;
+              const label = t(`${modeKey}.label`);
+              const hint  = t(`${modeKey}.hint`);
+              const active = selectedMode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  disabled={disabled}
+                  title={hint}
+                  onClick={() => {
+                    onModeChange?.(m.id);
+                    setSelectedTemplate(null);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-2 rounded-control border text-[12px] font-medium transition-all duration-premium",
+                    active
+                      ? "border-teal/35 bg-teal-dim text-teal-light"
+                      : "border-border text-text-secondary hover:border-text-tertiary/30 hover:text-text-primary",
+                    disabled && "opacity-40 cursor-not-allowed pointer-events-none",
+                  )}
+                >
+                  <Icon icon={m.icon} size="sm" aria-hidden />
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </section>
         </FadeIn>
@@ -300,65 +373,79 @@ export function BriefForm({
             overLimit && "is-overlimit",
           )}
         >
-          <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-border bg-surface/80">
+          <div className="flex flex-wrap items-center gap-3 px-5 py-3.5 border-b border-border bg-surface/80">
             <span className="aw-eyebrow shrink-0">{t("brief.label")}</span>
-            <div className="flex flex-wrap items-center gap-3 ml-auto">
-              <label className="flex items-center gap-2">
-                <span className="text-[11px] text-text-tertiary uppercase tracking-wide-label">
-                  {t("brief.category")}
-                </span>
-                <select
-                  value={category}
-                  onChange={(e) => {
-                    setCategory(e.target.value as Brief["category"]);
-                    setSelectedTemplate(null);
-                  }}
-                  disabled={disabled}
-                  className="aw-select"
-                >
-                  <option value="decyzja">{t("brief.category.decision")}</option>
-                  <option value="projekt">{t("brief.category.project")}</option>
-                  <option value="marzenie">{t("brief.category.dream")}</option>
-                  <option value="schemat">{t("brief.category.pattern")}</option>
-                </select>
-              </label>
-
-              <label
-                className={cn(
-                  "aw-toggle",
-                  aggressiveSchema
-                    ? "border-amber-500/40 bg-amber-950/25"
-                    : "border-border hover:border-text-tertiary/30",
-                  disabled && "opacity-40 cursor-not-allowed",
-                )}
-              >
-                <span
+            {/* Pola opcjonalne — zwinięte domyślnie (Krok 4 redesignu) */}
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="ml-auto text-[11px] text-text-tertiary hover:text-text-secondary transition-colors flex items-center gap-1"
+            >
+              {showAdvanced ? t("brief.advanced.hide") || "Mniej opcji" : t("brief.advanced.show") || "Więcej opcji"}
+              <Icon
+                icon={ArrowRight}
+                size="sm"
+                className={cn("transition-transform duration-150", showAdvanced ? "-rotate-90" : "rotate-90")}
+              />
+            </button>
+            {showAdvanced && (
+              <div className="w-full flex flex-wrap items-center gap-3 pt-1">
+                <label className="flex items-center gap-2">
+                  <span className="text-[11px] text-text-tertiary uppercase tracking-wide-label">
+                    {t("brief.category")}
+                  </span>
+                  <select
+                    value={category}
+                    onChange={(e) => {
+                      setCategory(e.target.value as Brief["category"]);
+                      setSelectedTemplate(null);
+                    }}
+                    disabled={disabled}
+                    className="aw-select"
+                  >
+                    <option value="decyzja">{t("brief.category.decision")}</option>
+                    <option value="projekt">{t("brief.category.project")}</option>
+                    <option value="marzenie">{t("brief.category.dream")}</option>
+                    <option value="schemat">{t("brief.category.pattern")}</option>
+                  </select>
+                </label>
+                <label
                   className={cn(
-                    "aw-toggle-track",
+                    "aw-toggle",
                     aggressiveSchema
-                      ? "bg-amber-500/30 border-amber-500/50"
-                      : "bg-surface border-border",
+                      ? "border-amber-500/40 bg-amber-950/25"
+                      : "border-border hover:border-text-tertiary/30",
+                    disabled && "opacity-40 cursor-not-allowed",
                   )}
                 >
-                  <input
-                    type="checkbox"
-                    checked={aggressiveSchema}
-                    disabled={disabled}
-                    onChange={(e) => onAggressiveSchemaChange(e.target.checked)}
-                    className="sr-only"
-                  />
                   <span
                     className={cn(
-                      "aw-toggle-thumb bg-text-secondary",
-                      aggressiveSchema ? "left-[17px] bg-amber-200" : "left-[2px]",
+                      "aw-toggle-track",
+                      aggressiveSchema
+                        ? "bg-amber-500/30 border-amber-500/50"
+                        : "bg-surface border-border",
                     )}
-                  />
-                </span>
-                <span className="text-[11px] text-text-secondary leading-tight">
-                  {t("brief.aggressive.title")}
-                </span>
-              </label>
-            </div>
+                  >
+                    <input
+                      type="checkbox"
+                      checked={aggressiveSchema}
+                      disabled={disabled}
+                      onChange={(e) => onAggressiveSchemaChange(e.target.checked)}
+                      className="sr-only"
+                    />
+                    <span
+                      className={cn(
+                        "aw-toggle-thumb bg-text-secondary",
+                        aggressiveSchema ? "left-[17px] bg-amber-200" : "left-[2px]",
+                      )}
+                    />
+                  </span>
+                  <span className="text-[11px] text-text-secondary leading-tight">
+                    {t("brief.aggressive.title")}
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
 
           <textarea
@@ -480,9 +567,13 @@ export function BriefForm({
       </section>
       </FadeIn>
 
-      {/* Sticky action bar */}
+      {/* Sticky action bar — FragmentCompass jako ambient indicator (AKSJOMAT 0) */}
       <div className="aw-action-bar">
         <div className="aw-action-bar-inner">
+          {/* Kompas Fragmentu — inline, nie floating (Krok 4 redesignu) */}
+          <div className="hidden sm:block shrink-0">
+            <FragmentCompass compact />
+          </div>
           <div className="hidden sm:block min-w-0 flex-1">
             {disabled ? (
               <p className="text-[12px] text-teal-light flex items-center gap-2">
@@ -491,9 +582,7 @@ export function BriefForm({
               </p>
             ) : (
               <p className="text-[12px] text-text-tertiary">
-                {wordCount >= 5
-                  ? t("brief.btn.start")
-                  : t("brief.chars.min_words")}
+                {wordCount >= 5 ? " " : t("brief.chars.min_words")}
               </p>
             )}
           </div>
@@ -514,11 +603,11 @@ export function BriefForm({
               </>
             ) : canSubmit ? (
               <>
-                {t("brief.btn.start")}
+                {submitLabel}
                 <Icon icon={ArrowRight} size="sm" className="opacity-70" />
               </>
             ) : (
-              t("brief.btn.start")
+              submitLabel
             )}
           </button>
         </div>

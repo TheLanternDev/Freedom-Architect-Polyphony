@@ -1,21 +1,31 @@
+# DEV ONLY — lokalny stack SQLite + Redis (bez RLS).
+# Produkcja multi-user: `docker compose -f docker-compose.prod.yml up` (+ `.env` z sekretami).
 services:
   api:
     build: .
     ports:
       - "8000:8000"
     environment:
+      AW_ENV: development
       REDIS_URL: redis://redis:6379
       ARCHITEKT_DB_PATH: /data/architekt.db
-      AW_CORS_ORIGINS: "*"
+      AW_CORS_ORIGINS: "http://localhost:1420,http://127.0.0.1:1420,tauri://localhost"
+      AW_INSECURE_NO_AUTH: "1"
     volumes:
       - aw_sqlite:/data
     depends_on:
-      - redis
+      redis:
+        condition: service_started
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
 volumes:
   aw_sqlite:

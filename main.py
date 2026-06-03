@@ -210,6 +210,18 @@ except ImportError:
     feedback_router = None  # type: ignore[assignment]
 
 
+def _redis_required_in_prod() -> bool:
+    from api.startup import redis_required_in_prod
+
+    return redis_required_in_prod()
+
+
+def _handle_init_db_failure(exc: Exception) -> None:
+    from api.startup import handle_init_db_failure
+
+    handle_init_db_failure(exc)
+
+
 def _production_startup_checks() -> None:
     """Preflight produkcyjny: brak krytycznych ENV → odmowa startu (fail-fast)."""
     from api.settings import api_key_legacy, is_production, jwt_secret_configured, production_preflight_errors
@@ -239,7 +251,9 @@ async def lifespan(app: FastAPI):
     _production_startup_checks()
 
     global redis_client
-    # Redis (opcjonalny)
+    import api.runtime as rt
+
+    # Redis — w prod (poza demo) ping fail = odmowa startu; dev/demo = soft-fail.
     try:
         redis_url = (os.getenv("REDIS_URL") or "redis://localhost:6379").strip()
         redis_client = aioredis.from_url(
@@ -249,14 +263,15 @@ async def lifespan(app: FastAPI):
         )
         await redis_client.ping()
         logger.info("✅ Redis podłączony – cache aktywny")
-        import api.runtime as rt
-
         rt.redis_client = redis_client
     except Exception as e:
-        logger.warning(f"⚠️ Redis niedostępny ({e}) – działamy bez cache")
+        if _redis_required_in_prod():
+            logger.critical("🛑 Redis wymagany w produkcji — połączenie nieudane: %s", e)
+            raise SystemExit(
+                f"Startup zablokowany — Redis niedostępny mimo REDIS_URL ({e})."
+            ) from e
+        logger.warning("⚠️ Redis niedostępny (%s) – działamy bez cache", e)
         redis_client = None
-        import api.runtime as rt
-
         rt.redis_client = None
 
     # Baza: SQLite lub Postgres (`DATABASE_URL`) — patrz db.backend
@@ -264,17 +279,19 @@ async def lifespan(app: FastAPI):
         try:
             await init_db()
             try:
-                from db.backend import use_postgres
+                from db.backend import runtime_use_postgres, use_postgres
 
-                if use_postgres():
+                if runtime_use_postgres():
                     logger.info("✅ PostgreSQL — pool aktywny (DATABASE_URL)")
+                elif use_postgres():
+                    logger.info("✅ SQLite (dev fallback po nieudanym Postgres): %s", DB_PATH)
                 else:
                     logger.info("✅ SQLite zainicjalizowany: %s", DB_PATH)
             except Exception:
                 logger.info("✅ DB zainicjalizowany: %s", DB_PATH)
             await _run_phase2_startup_tasks()
         except Exception as e:
-            logger.error("⚠️ init_db failed: %s", e)
+            _handle_init_db_failure(e)
 
     # Auto-scheduler Fazy 2 (AKSJOMAT 2): okresowy stale-sync + follow-upy.
     # ENV AW_MAINTENANCE_INTERVAL_SEC: 0/brak = wyłączone (default), >0 = co N sekund.

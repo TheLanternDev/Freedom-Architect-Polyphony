@@ -41,6 +41,22 @@ def test_migration_enables_and_forces_rls_for_protected_tables():
     assert not re.search(r"ALTER TABLE\s+users\s+ENABLE ROW LEVEL", sql)
 
 
+def test_migration_0006_revokes_public_on_users():
+    path = Path(__file__).resolve().parent.parent / "db" / "migrations" / "0006_users_revoke_public.sql"
+    assert path.is_file()
+    sql = path.read_text()
+    assert "REVOKE ALL ON TABLE users FROM PUBLIC" in sql
+
+
+def test_backend_request_paths_wrap_pg_connection():
+    """P1-A3: HTTP/SSE używają PgConnection (GUC tenant), nie raw asyncpg."""
+    src = Path(__file__).resolve().parent.parent / "db" / "backend.py"
+    text = src.read_text()
+    assert text.count("yield PgConnection(raw)") >= 2
+    init_block = text.split("async def acquire_http_db")[0]
+    assert init_block.count("async with _pg_pool.acquire()") == 1
+
+
 def test_migration_has_idempotent_guards():
     sql = MIG.read_text()
     assert "DROP POLICY IF EXISTS" in sql
@@ -55,6 +71,11 @@ def test_pg_connection_sets_guc_before_query():
     calls: list[tuple[str, tuple]] = []
 
     class FakeRaw:
+        def transaction(self):  # asyncpg.Connection.transaction() — atrapa no-op
+            class _Txn:
+                async def __aenter__(self_inner): return self_inner
+                async def __aexit__(self_inner, *a): return False
+            return _Txn()
         async def execute(self, sql, *args):
             calls.append((sql, args))
             return "INSERT 0 1"

@@ -45,7 +45,7 @@ export default {
         },
       },
       fontFamily: {
-        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
+        sans: ["DM Sans", "system-ui", "-apple-system", "sans-serif"],
         serif: ['"DM Serif Display"', "Georgia", "Cambria", "serif"],
         display: ['"DM Serif Display"', "Georgia", "serif"],
       },

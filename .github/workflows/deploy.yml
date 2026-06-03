@@ -1,0 +1,60 @@
+# Ręczny pipeline deploy — build obrazu + checklist (bez push do rejestru domyślnie).
+# Push: ustaw secrets REGISTRY / REGISTRY_USERNAME / REGISTRY_PASSWORD i odkomentuj krok push.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      push_image:
+        description: "Push obrazu do rejestru (wymaga secrets REGISTRY*)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      image_tag:
+        description: "Tag obrazu"
+        required: false
+        default: "latest"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build -t architekt-wolnosci:${{ inputs.image_tag }} .
+      - name: Smoke import inside image
+        run: |
+          docker run --rm architekt-wolnosci:${{ inputs.image_tag }} \
+            python -c "import config.llm_providers, main; print('imports ok')"
+      - name: Push to registry (optional)
+        if: inputs.push_image == 'true'
+        env:
+          REGISTRY: ${{ secrets.REGISTRY }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          if [ -z "$REGISTRY" ] || [ -z "$REGISTRY_USERNAME" ] || [ -z "$REGISTRY_PASSWORD" ]; then
+            echo "❌ Ustaw secrets: REGISTRY, REGISTRY_USERNAME, REGISTRY_PASSWORD"
+            exit 1
+          fi
+          echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
+          docker tag architekt-wolnosci:${{ inputs.image_tag }} "$REGISTRY/architekt-wolnosci:${{ inputs.image_tag }}"
+          docker push "$REGISTRY/architekt-wolnosci:${{ inputs.image_tag }}"
+          echo "✅ Pushed $REGISTRY/architekt-wolnosci:${{ inputs.image_tag }}"
+
+  deploy-checklist:
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pre-deploy reminder
+        run: |
+          echo "## Deploy checklist (manual)" >> $GITHUB_STEP_SUMMARY
+          echo "- Backup: pg_dump przed rollout (docs/SOFT_LAUNCH.md)" >> $GITHUB_STEP_SUMMARY
+          echo "- ENV prod: DATABASE_URL, JWT≥32, CORS≠*, REDIS, ANTHROPIC, ADMIN_TOKEN" >> $GITHUB_STEP_SUMMARY
+          echo "- Rola DB: NOSUPERUSER NOBYPASSRLS (docs/spec/SPEC_CURRENT.md §8)" >> $GITHUB_STEP_SUMMARY
+          echo "- Rollout: docker compose -f docker-compose.prod.yml up -d --build" >> $GITHUB_STEP_SUMMARY
+          echo "- Po deploy: GET /health/ready + scripts/smoke_live.py" >> $GITHUB_STEP_SUMMARY

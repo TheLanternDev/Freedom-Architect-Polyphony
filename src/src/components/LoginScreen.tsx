@@ -1,33 +1,31 @@
 /**
  * Faza 4/7: ekran logowania / rejestracji multi-user.
- * Wysyła credentials do /auth/login lub /auth/register, zapisuje JWT w localStorage.
+ * JWT: tokenStorage (Tauri→localStorage, web→sessionStorage). P1-A5.
  */
 import { useCallback, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { useLang } from "@/lib/i18n";
 import {
+  getStoredJwt as readJwt,
+  setStoredJwt as writeJwt,
+} from "@/lib/tokenStorage";
+import {
   type DemoPublicConfig,
   startDemoSession,
 } from "@/lib/demoConfig";
 
-const LS_JWT = "aw_jwt_token";
 const LS_USER = "aw_user_display";
 
 export function getStoredJwt(): string | null {
-  try {
-    return localStorage.getItem(LS_JWT);
-  } catch {
-    return null;
-  }
+  return readJwt();
 }
 
 export function setStoredJwt(token: string | null, displayName?: string) {
   try {
-    if (token) {
-      localStorage.setItem(LS_JWT, token);
-      if (displayName) localStorage.setItem(LS_USER, displayName);
-    } else {
-      localStorage.removeItem(LS_JWT);
+    writeJwt(token);
+    if (token && displayName) {
+      localStorage.setItem(LS_USER, displayName);
+    } else if (!token) {
       localStorage.removeItem(LS_USER);
     }
     window.dispatchEvent(new Event("aw-auth-change"));

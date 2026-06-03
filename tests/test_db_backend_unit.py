@@ -35,6 +35,10 @@ def test_use_postgres_false_for_whitespace(monkeypatch):
     assert bk.use_postgres() is False
 
 
+def test_runtime_use_postgres_false_without_pool():
+    assert bk.runtime_use_postgres() is False
+
+
 def test_split_pg_schema_basic_statements():
     sql = """
     -- header

@@ -21,6 +21,11 @@ except ImportError:  # pragma: no cover
 from pathlib import Path
 from typing import Any, Optional
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover — Windows
+    fcntl = None  # type: ignore[assignment,misc]
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,7 +38,14 @@ def cost_log_path() -> Path:
 def _append_cost_line_sync(path: Path, line: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
-        f.write(line)
+        if fcntl is not None:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        try:
+            f.write(line)
+            f.flush()
+        finally:
+            if fcntl is not None:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
 async def append_cost_log_async(entry: dict[str, Any]) -> None:

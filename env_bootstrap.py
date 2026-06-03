@@ -1,9 +1,9 @@
 """
 Ładowanie zmiennych z pliku `.env` przed resztą aplikacji (FastAPI / agenci).
 
-Domyślna ścieżka: `src/.env` (jeden plik z sekretami + `VITE_*` dla Vite/Tauri).
-Opcjonalnie drugi plik w korzeniu repozytorium (`.env`), jeśli istnieje —
-uzupełnia tylko klucze nadal puste po `src/.env`.
+JEDYNE źródło prawdy sekretów/kluczy API: `.env` w korzeniu repozytorium.
+`src/.env` służy WYŁĄCZNIE frontendowi (Vite/Tauri) i powinien zawierać tylko
+zmienne `VITE_*`; uzupełnia jedynie klucze nadal puste po korzeniowym `.env`.
 
 Nadpisanie jawne: `AW_ENV_FILE=/ścieżka/do/pliku` (tylko ten plik, jeśli istnieje).
 
@@ -24,7 +24,7 @@ def repo_root() -> Path:
 
 
 def resolve_dotenv_paths() -> list[Path]:
-    """Kolejność ładowania: AW_ENV_FILE → src/.env → .env (legacy)."""
+    """Kolejność ładowania: AW_ENV_FILE → .env (źródło prawdy) → src/.env (tylko VITE_*)."""
     explicit = os.getenv("AW_ENV_FILE", "").strip()
     if explicit:
         p = Path(explicit).expanduser()
@@ -34,12 +34,12 @@ def resolve_dotenv_paths() -> list[Path]:
 
     root = repo_root()
     paths: list[Path] = []
-    src_env = root / "src" / ".env"
+    primary = root / ".env"  # JEDYNE źródło prawdy sekretów/kluczy API (override=False → wygrywa)
+    if primary.is_file():
+        paths.append(primary)
+    src_env = root / "src" / ".env"  # tylko VITE_* dla Vite/Tauri; uzupełnia brakujące
     if src_env.is_file():
         paths.append(src_env)
-    legacy = root / ".env"
-    if legacy.is_file():
-        paths.append(legacy)
     return paths
 
 

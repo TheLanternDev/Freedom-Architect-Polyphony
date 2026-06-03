@@ -55,6 +55,8 @@ async def init_db(db_path: Optional[Path] = None) -> None:
             await _migrate_agent_evolution_table(db)
             await _migrate_users_table(db)
             await _migrate_tenant_id_columns(db)  # Faza 4
+            await _migrate_dream_debate_link_tenant(db)
+            await _migrate_feedback_onboarding_tables(db)
             await _migrate_debates_fts(db)         # FTS5 full-text search
             await db.commit()
         logger.info("SQLite initialized at %s", path)
@@ -114,6 +116,84 @@ async def _migrate_tenant_id_columns(db: Any) -> None:
         await db.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{tbl}_tenant_id ON {tbl}(tenant_id)"
         )
+
+
+async def _migrate_dream_debate_link_tenant(db: Any) -> None:
+    """Faza 4+: tenant_id na junction dream↔debate (SQLite — bez RLS, defense-in-depth w repo)."""
+    cur = await db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='dream_debate_link'"
+    )
+    if not await cur.fetchone():
+        return
+    cur = await db.execute("PRAGMA table_info(dream_debate_link)")
+    col_names = {r[1] for r in await cur.fetchall()}
+    if "tenant_id" not in col_names:
+        await db.execute(
+            "ALTER TABLE dream_debate_link ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'"
+        )
+    await db.execute(
+        """
+        UPDATE dream_debate_link
+           SET tenant_id = (
+               SELECT tenant_id FROM dreams WHERE dreams.id = dream_debate_link.dream_id LIMIT 1
+           )
+         WHERE tenant_id = 'default'
+           AND EXISTS (SELECT 1 FROM dreams WHERE dreams.id = dream_debate_link.dream_id)
+        """
+    )
+    await db.execute(
+        """
+        UPDATE dream_debate_link
+           SET tenant_id = (
+               SELECT tenant_id FROM debates WHERE debates.id = dream_debate_link.debate_id LIMIT 1
+           )
+         WHERE tenant_id = 'default'
+           AND EXISTS (SELECT 1 FROM debates WHERE debates.id = dream_debate_link.debate_id)
+        """
+    )
+
+
+async def _migrate_feedback_onboarding_tables(db: Any) -> None:
+    """Tabele feedback / onboarding_answers (Postgres: migracje 0003/0004)."""
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS feedback (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id     TEXT NOT NULL DEFAULT 'default',
+            user_subject  TEXT,
+            rating        INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+            what_worked   TEXT NOT NULL DEFAULT '',
+            what_broke    TEXT NOT NULL DEFAULT '',
+            debate_id     INTEGER,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            CHECK (tenant_id <> '')
+        )
+        """
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_feedback_tenant_id ON feedback(tenant_id)"
+    )
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS onboarding_answers (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id     TEXT NOT NULL DEFAULT 'default',
+            user_subject  TEXT,
+            question_idx  INTEGER NOT NULL CHECK (question_idx >= 0),
+            answer        TEXT NOT NULL,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            CHECK (tenant_id <> ''),
+            UNIQUE (tenant_id, user_subject, question_idx)
+        )
+        """
+    )
+    await db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_onboarding_answers_tenant_user
+            ON onboarding_answers(tenant_id, user_subject)
+        """
+    )
 
 
 async def _migrate_debates_fts(db: Any) -> None:
@@ -246,9 +326,9 @@ async def _migrate_users_table(db: Any) -> None:
 
 async def get_db() -> AsyncIterator[Any]:
     """Jedno połączenie na żądanie — SQLite lub Postgres (`DATABASE_URL`)."""
-    from db.backend import acquire_http_db, use_postgres
+    from db.backend import acquire_http_db, runtime_use_postgres
 
-    if not use_postgres() and not _AIOSQLITE_OK:
+    if not runtime_use_postgres() and not _AIOSQLITE_OK:
         raise RuntimeError("aiosqlite niedostępne — zainstaluj `aiosqlite` lub ustaw DATABASE_URL.")
     async with acquire_http_db(DB_PATH) as db:
         yield db
@@ -448,9 +528,24 @@ class _Repo:
         return int(cur.lastrowid)
 
     async def link_dream_debate(self, db: Any, dream_id: str, debate_id: int) -> None:
+        tid = _tid()
+        cur = await db.execute(
+            """
+            SELECT 1 FROM dreams d
+            INNER JOIN debates b ON b.id = ? AND b.tenant_id = d.tenant_id
+            WHERE d.id = ? AND d.tenant_id = ?
+            """,
+            (debate_id, dream_id, tid),
+        )
+        if not await cur.fetchone():
+            raise ValueError(
+                f"link_dream_debate: dream={dream_id!r} debate={debate_id} "
+                f"nie należą do tenanta {tid!r}"
+            )
         await db.execute(
-            "INSERT OR IGNORE INTO dream_debate_link (dream_id, debate_id) VALUES (?, ?)",
-            (dream_id, debate_id),
+            "INSERT OR IGNORE INTO dream_debate_link (tenant_id, dream_id, debate_id) "
+            "VALUES (?, ?, ?)",
+            (tid, dream_id, debate_id),
         )
 
     async def save_voice(
@@ -1041,20 +1136,60 @@ class _Repo:
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
+    async def insert_feedback(
+        self,
+        db: Any,
+        *,
+        user_subject: str,
+        rating: int,
+        what_worked: str,
+        what_broke: str,
+        debate_id: Optional[int],
+        created_at: str,
+    ) -> None:
+        await db.execute(
+            """
+            INSERT INTO feedback (
+                tenant_id, user_subject, rating, what_worked, what_broke, debate_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (_tid(), user_subject, rating, what_worked, what_broke, debate_id, created_at),
+        )
+
+    async def upsert_onboarding_answer(
+        self,
+        db: Any,
+        *,
+        user_subject: str,
+        question_idx: int,
+        answer: str,
+        updated_at: str,
+    ) -> None:
+        await db.execute(
+            """
+            INSERT INTO onboarding_answers (
+                tenant_id, user_subject, question_idx, answer, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(tenant_id, user_subject, question_idx) DO UPDATE SET
+                answer = excluded.answer,
+                updated_at = excluded.updated_at
+            """,
+            (_tid(), user_subject, question_idx, answer, updated_at, updated_at),
+        )
+
     async def export_tenant_data(self, db: Any, *, tenant_id: str) -> dict[str, Any]:
         """Eksport wszystkich danych tenanta (RODO — prawo dostępu)."""
         tid = tenant_id
         dream_debate_link = await self._rows_to_dicts(
             db,
             """
-            SELECT dream_id, debate_id
+            SELECT tenant_id, dream_id, debate_id
               FROM dream_debate_link
-             WHERE dream_id IN (SELECT id FROM dreams WHERE tenant_id = ?)
-                OR debate_id IN (SELECT id FROM debates WHERE tenant_id = ?)
+             WHERE tenant_id = ?
             """,
-            (tid, tid),
+            (tid,),
         )
-        return {
+        out: dict[str, Any] = {
             "tenant_id": tid,
             "dreams": await self._rows_to_dicts(
                 db, "SELECT * FROM dreams WHERE tenant_id = ?", (tid,)
@@ -1086,6 +1221,21 @@ class _Repo:
                 (tid,),
             ),
         }
+        try:
+            if await self._table_exists(db, "feedback"):
+                out["feedback"] = await self._rows_to_dicts(
+                    db, "SELECT * FROM feedback WHERE tenant_id = ?", (tid,)
+                )
+        except Exception:
+            pass
+        if await self._table_exists(db, "onboarding_answers"):
+            try:
+                out["onboarding_answers"] = await self._rows_to_dicts(
+                    db, "SELECT * FROM onboarding_answers WHERE tenant_id = ?", (tid,)
+                )
+            except Exception:
+                pass
+        return out
 
     async def _delete_where_tenant(
         self, db: Any, table: str, tenant_id: str
@@ -1123,12 +1273,8 @@ class _Repo:
         deleted: dict[str, int] = {}
 
         cur = await db.execute(
-            """
-            DELETE FROM dream_debate_link
-             WHERE dream_id IN (SELECT id FROM dreams WHERE tenant_id = ?)
-                OR debate_id IN (SELECT id FROM debates WHERE tenant_id = ?)
-            """,
-            (tid, tid),
+            "DELETE FROM dream_debate_link WHERE tenant_id = ?",
+            (tid,),
         )
         deleted["dream_debate_link"] = int(cur.rowcount or 0)
 
@@ -1140,6 +1286,10 @@ class _Repo:
             "projects",
         ):
             deleted[table] = await self._delete_where_tenant(db, table, tid)
+
+        for table in ("feedback", "onboarding_answers"):
+            if await self._table_exists(db, table):
+                deleted[table] = await self._delete_where_tenant(db, table, tid)
 
         deleted["debates"] = await self._purge_debates_for_tenant(db, tid)
         deleted["dreams"] = await self._delete_where_tenant(db, "dreams", tid)

@@ -102,6 +102,44 @@ def test_debate_stream_persists_dream_and_debate(client_no_redis, fresh_db_path)
     assert voices == 9
 
 
+def test_persist_dream_defers_debate_until_post_council(fresh_db_path):
+    """P1-B1: marzenie/projekt wcześnie, wiersz debates dopiero po Radzie."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from core.dream_architect import _fallback_dream
+    from db.backend import acquire_http_db
+    from db.connection import init_db
+
+    from api.services.dream_service import insert_debate_for_stream, persist_dream_and_project
+
+    async def inner() -> None:
+        await init_db(fresh_db_path)
+        dream = _fallback_dream("Unit test persist dream without debate row", language="pl")
+        brief = SimpleNamespace(
+            category="decyzja",
+            mode="pelna",
+            description="Unit test persist dream without debate row",
+            intention=None,
+            extra_context=None,
+        )
+        async with acquire_http_db(fresh_db_path) as db:
+            debate_id, project_id = await persist_dream_and_project(db, dream, brief)
+            assert debate_id is None
+            assert project_id is not None
+            row = await db.execute("SELECT COUNT(*) FROM debates")
+            assert (await row.fetchone())[0] == 0
+
+            debate_id = await insert_debate_for_stream(
+                db, brief, dream_id=dream.dream_id
+            )
+            assert debate_id is not None
+            row = await db.execute("SELECT COUNT(*) FROM debates")
+            assert (await row.fetchone())[0] == 1
+
+    asyncio.run(inner())
+
+
 def test_debate_stream_creates_project_only_for_category_projekt(
     client_no_redis, fresh_db_path
 ):

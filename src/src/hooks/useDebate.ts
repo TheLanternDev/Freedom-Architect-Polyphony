@@ -79,6 +79,13 @@ export function useDebate() {
     tRef.current = t;
   }, [t]);
 
+  useEffect(() => {
+    return () => {
+      void readerRef.current?.cancel();
+      readerRef.current = null;
+    };
+  }, []);
+
   const [state, setState] = useState<DebateState>(INITIAL_STATE);
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
 
@@ -105,6 +112,8 @@ export function useDebate() {
   // _runDebateStreamOnce: wewnętrzna warstwa SSE — jeden attempt połączenia.
   // Retry (max 1x) obsługiwany przez runDebateStream przez _retried flag.
   async function _runDebateStreamOnce(url: string, body: unknown, _retried: boolean) {
+    // Deklaracja poza try/catch — dostępna w bloku catch dla guard retry.
+    let receivedFirstEvent = false;
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -153,10 +162,6 @@ export function useDebate() {
       readerRef.current = reader as unknown as ReadableStreamDefaultReader<string>;
 
       let buffer = "";
-      // Guard dla retry: czy backend już przyjął i zaczął obsługiwać debatę?
-      // Retry po odebraniu choć jednego eventu = duplikat debaty w DB.
-      // Retry tylko gdy połączenie padło ZANIM backend wysłał cokolwiek.
-      let receivedFirstEvent = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -189,7 +194,8 @@ export function useDebate() {
       // (c) celowe anulowanie przez użytkownika.
       const isNetworkError = err instanceof TypeError || err instanceof DOMException;
       // receivedFirstEvent jest w closurze — false jeśli błąd przed SSE, true po.
-      const safeToRetry = isNetworkError && !_retried;
+      // Gdy backend już wysłał choć jeden event: retry = duplikat debaty w DB — zabroniony.
+      const safeToRetry = isNetworkError && !_retried && !receivedFirstEvent;
       if (safeToRetry) {
         setState((s) => ({
           ...s,

@@ -21,6 +21,8 @@ from slowapi import Limiter
 
 from api._log import slog
 from api._rate_limit import jwt_or_ip_key
+from api.settings import is_production
+from db.tenant import current_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ async def submit_feedback(request: Request, payload: FeedbackPayload):
     ts = datetime.now(timezone.utc).isoformat()
 
     persisted = False
+    persist_error: str | None = None
     if repo is not None and acquire_http_db is not None and hasattr(repo, "insert_feedback"):
         try:
             async with acquire_http_db(DB_PATH) as db:
@@ -74,11 +77,19 @@ async def submit_feedback(request: Request, payload: FeedbackPayload):
                 await db.commit()
             persisted = True
         except Exception as e:
-            logger.warning("DB persist feedback failed, falling back to JSONL: %s", e)
+            persist_error = str(e)
+            logger.warning("DB persist feedback failed: %s", e)
 
     if not persisted:
-        # Fallback: append do jsonl. Świadomie nie blokujemy soft launchu
-        # gdyby migracja `feedback` tabeli była jeszcze nie wdrożona.
+        if is_production():
+            raise HTTPException(
+                503,
+                detail=(
+                    "Nie udało się zapisać feedbacku w bazie — "
+                    f"{'błąd: ' + persist_error if persist_error else 'sprawdź migracje feedback.'}"
+                ),
+            )
+        # Dev-only fallback: JSONL gdy migracja/tabela jeszcze niedostępna.
         import json
         import os
         from pathlib import Path
@@ -87,7 +98,9 @@ async def submit_feedback(request: Request, payload: FeedbackPayload):
         out_dir.mkdir(parents=True, exist_ok=True)
         with (out_dir / "feedback.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps({
-                "ts": ts, "user_subject": sub,
+                "ts": ts,
+                "tenant_id": current_tenant_id(),
+                "user_subject": sub,
                 "rating": payload.rating,
                 "what_worked": payload.what_worked.strip(),
                 "what_broke": payload.what_broke.strip(),

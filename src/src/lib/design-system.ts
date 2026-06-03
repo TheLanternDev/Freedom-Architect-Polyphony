@@ -30,7 +30,7 @@ export const radius = {
 } as const;
 
 export const typography = {
-  fontSans: 'Inter, system-ui, -apple-system, sans-serif',
+  fontSans: "'DM Sans', system-ui, -apple-system, sans-serif",
   fontDisplay: '"DM Serif Display", Georgia, serif',
 } as const;
 
