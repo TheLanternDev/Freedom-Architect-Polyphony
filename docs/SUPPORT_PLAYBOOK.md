@@ -1,6 +1,6 @@
 # Szablon supportu (model A — founders / lokalnie)
 
-Zastąp `SUPPORT_EMAIL` adresem z oferty (`docs/FOUNDERS_OFFER.md`).
+Kontakt supportu: **support@example.com** — [DO UZUPEŁNIENIA w GTM_DECISIONS.md](GTM_DECISIONS.md) przed launch.
 
 ## Pierwsza odpowiedź (ogólna)
 

@@ -100,6 +100,47 @@ export const DICT: Record<string, Phrase> = {
     en: "Do not show on startup",
   },
   "setup.btn_connection": { pl: "Połączenie", en: "Connection" },
+  "setup.tab_connection": { pl: "Połączenie", en: "Connection" },
+  "setup.tab_privacy": { pl: "Prywatność i konto", en: "Privacy & account" },
+  "setup.founders_hint": {
+    pl: "Founders BYOK: zarejestruj konto (JWT), aby eksportować dane i korzystać z RODO w aplikacji. Klucz ARCHITEKT_API_KEY to tryb zaawansowany bez per-user izolacji.",
+    en: "Founders BYOK: register (JWT) to export data and use in-app privacy tools. ARCHITEKT_API_KEY is advanced mode without per-user isolation.",
+  },
+
+  "account.intro": {
+    pl: "Eksportuj wszystkie dane tenanta (debates, marzenia, zobowiązania…) lub trwale usuń konto z lokalnej bazy.",
+    en: "Export all tenant data (debates, dreams, commitments…) or permanently delete your account from the local database.",
+  },
+  "account.privacy_link": { pl: "Polityka prywatności", en: "Privacy policy" },
+  "account.export_btn": { pl: "Pobierz eksport JSON", en: "Download JSON export" },
+  "account.exporting": { pl: "Eksportuję…", en: "Exporting…" },
+  "account.export_ok": { pl: "Eksport pobrany.", en: "Export downloaded." },
+  "account.delete_warn": {
+    pl: "Usunięcie jest nieodwracalne na tej instalacji.",
+    en: "Deletion is irreversible on this installation.",
+  },
+  "account.delete_label": {
+    pl: "Wpisz dokładnie, aby potwierdzić:",
+    en: "Type exactly to confirm:",
+  },
+  "account.delete_btn": { pl: "Usuń moje konto", en: "Delete my account" },
+  "account.deleting": { pl: "Usuwam…", en: "Deleting…" },
+  "account.delete_ok": {
+    pl: "Konto usunięte. Wylogowano.",
+    en: "Account deleted. Signed out.",
+  },
+  "account.delete_confirm_mismatch": {
+    pl: "Niepoprawny tekst potwierdzenia.",
+    en: "Confirmation text does not match.",
+  },
+  "account.demo_blocked": {
+    pl: "Eksport i usuwanie konta są niedostępne w wersji demo.",
+    en: "Export and account deletion are not available in demo mode.",
+  },
+  "account.jwt_required": {
+    pl: "Zaloguj się lub zarejestruj, aby zarządzać danymi (POST /auth/login).",
+    en: "Sign in or register to manage your data (POST /auth/login).",
+  },
 
   // Sieć / fetch (useDebate, szczególnie Safari „Load failed”)
   "debate.network.unreachable": {

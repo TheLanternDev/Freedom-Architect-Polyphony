@@ -65,6 +65,17 @@ Sprawdzenie: `GET http://127.0.0.1:8000/health` → `200`, pole `status`: `alive
 
 **Nie wystawiaj** tego procesu na publiczny internet bez reverse proxy i uwierzytelnienia — endpointy nie są zaprojektowane pod anonimowy dostęp z sieci.
 
+## 1b. Pierwsza debata (10 min)
+
+Po działającym `/health`:
+
+1. W UI: **zarejestruj konto** (wymaga `ARCHITEKT_JWT_SECRET` w `src/.env`) lub zaloguj się.
+2. W **Ustawieniach** (ikona zębatki) → zakładka **Prywatność i konto** — opcjonalnie sprawdź eksport (pusty przy nowym koncie).
+3. Wpisz brief (min. ~20 znaków) w trybie **codzienny** i uruchom Radę.
+4. Po zakończeniu: historia debat w panelu bocznym; koszty LLM u dostawcy API (BYOK).
+
+Smoke bez debaty (LLM): `./scripts/smoke_week1.sh` z katalogu repo.
+
 ## 2. UI (przeglądarka)
 
 ```bash

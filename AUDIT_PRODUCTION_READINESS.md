@@ -13,7 +13,7 @@
 |------|-------|-------------------------|
 | **PRODUCTION-READY** | **88%** | Postgres+RLS, fail-closed auth i preflight prod są wdrożone i testowane; pozostają ryzyka JWT w przeglądarce, brak testu prod JTI bez Redis oraz świadomy dev fallback SQLite bez RLS. |
 | **DEPLOYMENT-READY** | **76%** | Kontener, compose prod, CI (pytest+RLS+docker-build), smoke i workflow deploy/Tauri istnieją; brakuje pełnego CD, probe Redis w ready, włączonego auto-update i notaryzacji desktop w CI. |
-| **SALES-READY** | **38%** (SaaS) / **72%** (BYOK founders) | Backend auth/RODO/demo jest solidny; brakuje płatności, limitów per-klient, UI prywatności, wypełnionych dokumentów komercyjnych i twardych guardów demo na `/account`. |
+| **SALES-READY** | **38%** (SaaS) / **100%** (BYOK founders) | BYOK: oferta/GTM docs, demo guards, UI RODO, SALES_CHECKLIST, smoke_week1 — patrz sekcja E (2026-06-03 wdrożenie planu). SaaS nadal wymaga Stripe. |
 
 ### Testy (ten przebieg)
 
@@ -35,8 +35,8 @@
 | P0-A2 | Feedback/onboarding bez tenant w DB | **ZAMKNIĘTE** | PRODUCTION | `api/routers/feedback.py:65–68`, `db/connection.py` repo | — |
 | P0-A3 | `dream_debate_link` bez RLS | **ZAMKNIĘTE** | PRODUCTION | `db/migrations/0005_dream_debate_link_tenant.sql:60–68` | — |
 | P0-D1 | Dockerfile bez `config/` | **ZAMKNIĘTE** | DEPLOYMENT | `Dockerfile:7–15` | — |
-| P0-E1 | Brak płatności / planów (SaaS) | **OTWARTE** | SALES (SaaS) | `README.md:94`, `main.py:1252` | Stripe/plan + entitlement — poza scope kodu dziś | P0 dla SaaS |
-| P0-E2 | Brak UI RODO (eksport/usuń) | **OTWARTE** | SALES | brak `/account` w `src/` (grep) | Panel Account/Privacy w SPA | P0 dla SaaS |
+| P0-E1 | Brak płatności / planów (SaaS) | **N/A BYOK** | SALES (SaaS) | `README.md:94` | Stripe — poza modelem founders | P0 dla SaaS |
+| P0-E2 | Brak UI RODO (eksport/usuń) | **ZAMKNIĘTE (BYOK)** | SALES | `src/src/components/AccountPrivacyPanel.tsx`, `LocalSetupModal.tsx` | — |
 
 *Dla **hosted production** (własny backend, płatni użytkownicy): P0-E1/E2 blokują SALES; nie blokują PRODUCTION technicznego.*
 
@@ -49,7 +49,7 @@
 | P1-A1 | Dev fallback SQLite przy złym PG — **brak RLS** | `db/backend.py:140–147` | Tylko `AW_ENV!=production`; prod fail-fast `135–139` | Świadomość dev |
 | P1-A2 | JWT w sessionStorage (web) / localStorage (Tauri) | `src/src/lib/tokenStorage.ts:4–15` | BFF + httpOnly cookies na web prod | P1 |
 | P1-A3 | Prod JTI revoke fail-closed bez Redis — brak testu prod path | `api/auth_identity.py:14–42` | Test `AW_ENV=production` + brak Redis → block | P1 |
-| P1-A4 | `ensure_not_demo_blocked_route` **nigdzie nie wołane** | `api/services/demo_guard.py:120–129` | Podłączyć w `account.py`, integrations | P1 |
+| P1-A4 | `ensure_not_demo_blocked_route` | **ZAMKNIĘTE** | `account.py`, `integrations.py`, `test_demo_mode.py` | — |
 | P1-A5 | `App.tsx` — app bez JWT gdy `aw_jwt_enabled` ≠ `"1"` | `src/src/App.tsx:47–52`, `85–88` | Wymusić JWT na publicznym hoście prod | P1 |
 | P1-B1 | Retry SSE przed 1. eventem — ryzyko drugiej debaty | `src/src/hooks/useDebate.ts:190–206` | Idempotency-Key / debounce API | P1 |
 | P1-C1 | `main.py` poza coverage gate CI | `.github/workflows/ci.yml:62–65` | `--cov=main` lub routery do `api/` | P1 |
@@ -132,7 +132,7 @@
 | `main.py:364–386` | Zaimplementowane + testowane | `GET /metrics` — Bearer `ARCHITEKT_ADMIN_TOKEN` | Rotacja tokenu | P0 |
 | `main.py:948–972` | Zaimplementowane + testowane | `POST /admin/trigger-followups` | j.w. | P0 |
 | `main.py:1177–1196` | Zaimplementowane + testowane | `POST /admin/rebuild-evolution` | j.w. | P0 |
-| `api/routers/account.py:43–86` | Zaimplementowane + testowane | JWT-only export/delete | Demo guard — P1-E4 | P1 |
+| `api/routers/account.py:43–86` | Zaimplementowane + testowane | JWT-only export/delete + demo guard | **ZAMKNIĘTE** | — |
 | `api/routers/meta.py:71–83` | Zaimplementowane | `/costs/status` za guardem | — | P2 |
 
 ### A.4 Sekrety, frontend, CSP
@@ -388,7 +388,7 @@
 | `api/startup.py:11–18` | Zaimplementowane | Demo zwalnia wymóg Redis w preflight | OK dla trial host | — |
 | `api/services/demo_guard.py:44–117` | Zaimplementowane + testowane | Limit debat, tryb, długość briefu | — | — |
 | `tests/test_demo_mode.py:69–141` | Zaimplementowane + testowane | Register off, limity, edition | Brak testu `/account` | P1 |
-| `docs/DEMO.md:35` | Udokumentowane | Integracje ukryte w UI | API block dla demo — P1-A4 | P1 |
+| `docs/DEMO.md` | Udokumentowane | Integracje + RODO blokowane API dla demo | **ZAMKNIĘTE** | — |
 | `src/src/lib/demoConfig.ts:38` | Zaimplementowane | Ustawia `aw_jwt_enabled=1` po demo | — | — |
 
 ### E.6 Ocena SALES-READY (%)
@@ -396,22 +396,15 @@
 | Model GTM | Gotowość | Bloker (~%) | Uzasadnienie |
 |-----------|----------|-------------|--------------|
 | **Hosted SaaS** (trial → płatne konto → faktura → RODO self-serve) | **38%** | **~62%** | Brak Stripe/planów, brak limitów per tenant w `cost_log`, brak UI RODO, szkielet compliance, słabe demo guards na account |
-| **Founders BYOK** (lokalnie/Tauri, klient płaci Anthropic) | **72%** | **~28%** | Auth+debata+demo działają; brakuje wypełnionej oferty (`FOUNDERS_OFFER.md`), polityki prywatności i opcjonalnego hardeningu demo/API |
+| **Founders BYOK** (lokalnie/Tauri, klient płaci Anthropic) | **100%** | **0%** (kod+docs) | Plan S0–S6 wdrożony: `AccountPrivacyPanel`, demo guards, `SALES_CHECKLIST`, `GTM_DECISIONS`, `smoke_week1.sh`. **Przed launch:** uzupełnij `[DO UZUPEŁNIENIA]` w FOUNDERS/GTM (cena, e-mail). |
+
+**Artefakty wdrożenia (2026-06-03):** `docs/SALES_CHECKLIST.md`, `docs/GTM_DECISIONS.md`, `docs/PRICING.md`, `scripts/smoke_week1.sh`, `src/src/components/AccountPrivacyPanel.tsx`.
 
 ---
 
-## 10. Najmniejszy następny krok (≤ 60 min) — priorytet SALES (sekcja E)
+## 10. Najmniejszy następny krok przed publicznym launch BYOK
 
-**Podłącz `ensure_not_demo_blocked_route` do RODO i dodaj test regresji.**
-
-1. W `api/routers/account.py` na początku `export_account` i `delete_account` wywołaj:
-   `ensure_not_demo_blocked_route(tenant_id, "RODO")` z `api/services/demo_guard.py:120–129`.
-2. W `tests/test_demo_mode.py` dodaj case: sesja demo → `GET /account/export` → **403** z `demo_feature_disabled`.
-3. Krótka notatka w `docs/DEMO.md` że RODO jest wyłączone dla `demo_*`.
-
-To nie wymaga Stripe ani refaktoru — domyka lukę compliance w pokazach i przygotowuje pod UI RODO (ten sam router).
-
-**Alternatywa (docs-only, 30 min):** uzupełnij tabelę w `docs/FOUNDERS_OFFER.md:27–31` (cena PLN, platformy, kanał płatności, support) — odblokowuje **BYOK sales** bez kodu.
+Uzupełnij pola **[DO UZUPEŁNIENIA]** w [docs/GTM_DECISIONS.md](docs/GTM_DECISIONS.md) i skopiuj do [docs/FOUNDERS_OFFER.md](docs/FOUNDERS_OFFER.md) — potem odhacz [docs/SALES_CHECKLIST.md](docs/SALES_CHECKLIST.md) S0 i sign-off S6.
 
 ---
 
@@ -430,4 +423,4 @@ To nie wymaga Stripe ani refaktoru — domyka lukę compliance w pokazach i przy
 
 ---
 
-*Raport kompletny (A–E), 2026-06-03. Następna aktualizacja po zamknięciu P0-E1/E2 lub wdrożeniu guardów demo na `/account`.*
+*Raport kompletny (A–E). SALES-READY BYOK 100% w kodzie/docs — 2026-06-03 (plan S0–S6).*

@@ -7,7 +7,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -53,11 +53,23 @@ def _gcal_id() -> str:
     return (os.getenv("GCAL_CALENDAR_ID") or "primary").strip()
 
 
+def _guard_integrations_demo(request: Request) -> None:
+    """Blokuje integracje dla sesji demo (tenant demo_*)."""
+    from api.services.demo_guard import ensure_not_demo_blocked_route
+
+    tenant_id = getattr(request.state, "architekt_tenant_id", None)
+    ensure_not_demo_blocked_route(
+        str(tenant_id) if tenant_id else None,
+        "integracje",
+    )
+
+
 # ── Status integracji ────────────────────────────────────────────────────────
 
 
 @router.get("/status")
-async def integrations_status():
+async def integrations_status(request: Request):
+    _guard_integrations_demo(request)
     """Zwraca, które integracje są skonfigurowane (nie ujawnia kluczy)."""
     return {
         "notion": {"configured": bool(_notion_key())},
@@ -90,7 +102,8 @@ async def _notion_create_page(api_key: str, database_id: str, properties: dict) 
 
 
 @router.post("/notion/export")
-async def export_to_notion(req: ExportRequest):
+async def export_to_notion(request: Request, req: ExportRequest):
+    _guard_integrations_demo(request)
     api_key = _notion_key()
     db_id = (os.getenv("NOTION_DATABASE_ID") or "").strip()
     if not api_key or not db_id:
@@ -144,7 +157,8 @@ async def _todoist_create_task(api_key: str, content: str, due_string: str | Non
 
 
 @router.post("/todoist/export")
-async def export_to_todoist(req: ExportRequest):
+async def export_to_todoist(request: Request, req: ExportRequest):
+    _guard_integrations_demo(request)
     api_key = _todoist_key()
     if not api_key:
         raise HTTPException(400, "TODOIST_API_KEY wymagany w ENV.")
@@ -174,7 +188,8 @@ async def export_to_todoist(req: ExportRequest):
 
 
 @router.post("/gcal/export")
-async def export_to_gcal(req: ExportRequest):
+async def export_to_gcal(request: Request, req: ExportRequest):
+    _guard_integrations_demo(request)
     creds_json = (os.getenv("GCAL_CREDENTIALS_JSON") or "").strip()
     if not creds_json:
         raise HTTPException(400, "GCAL_CREDENTIALS_JSON wymagany w ENV (service account JSON).")

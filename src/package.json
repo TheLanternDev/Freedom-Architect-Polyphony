@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "sync-tauri-csp": "node scripts/sync-tauri-csp.mjs",
-    "test:unit": "npx vite-node src/hooks/debateSseReducer.test.ts",
+    "test:unit": "npx vite-node src/hooks/debateSseReducer.test.ts && npx vite-node src/components/AccountPrivacyPanel.test.tsx",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "npm run sync-tauri-csp && tauri build",

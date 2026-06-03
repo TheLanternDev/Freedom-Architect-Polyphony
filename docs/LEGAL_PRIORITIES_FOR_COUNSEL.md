@@ -2,13 +2,15 @@
 
 To **nie** jest porada prawna — checklista, co omówić przed pierwszą wpłatą.
 
-1. **Forma sprzedaży:** jednorazowa licencja vs roczna subskrypcja „dostępu do binarek + updates” — implikacje VAT i KSeF w PL.
-2. **Umowa licencyjna (EULA):** zakres prawa użytkowania, zakaz reverse engineeringu (w granicach dopuszczalnych), transfer licencji.
-3. **Wyłączenia i limity odpowiedzialności:** brak gwarancji przydatności handlowej, limit kwotowy szkód — zgodnie z prawem konsumenckim / B2B.
-4. **RODO:** brak hostingu danych przez sprzedawcę vs e-maile wsparcia, newsletter, faktury — kto jest administratorem czego.
-5. **Klucz API użytkownika:** że użytkownik jest stroną umowy z Anthropic; brak pośrednictwa w przetwarzaniu treści przez sprzedawcę przy czystym modelu lokalnym.
-6. **Oprogramowanie third-party:** Node, Rust, biblioteki — jak wymieniasz licencje OSS w pakiecie.
-7. **Jurysdykcja i język umowy:** PL / inne, sąd właściwy.
-8. **Aktualizacje:** czy obowiązek dostarczania poprawek bezpieczeństwa w oknie czasu.
+| # | Temat | Status |
+|---|--------|--------|
+| 1 | Forma sprzedaży: licencja jednorazowa vs subskrypcja updates — VAT/KSeF PL | draft |
+| 2 | EULA: zakres użytkowania, reverse engineering, transfer licencji | u prawnika |
+| 3 | Wyłączenia odpowiedzialności, limit szkód (B2B / konsument) | draft |
+| 4 | RODO: sprzedawca vs użytkownik-admin (BYOK) — patrz COMPLIANCE_PRIVACY Model A | draft |
+| 5 | Klucz API użytkownika — umowa z Anthropic, brak pośrednictwa sprzedawcy | draft |
+| 6 | Licencje OSS w pakiecie (Node, Rust, Python) | draft |
+| 7 | Jurysdykcja i język umowy | draft |
+| 8 | Obowiązek poprawek bezpieczeństwa / okno aktualizacji | draft |
 
 Dopiero po konsultacji: finalny PDF regulaminu / licencji dołączany do zakupu.

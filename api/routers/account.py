@@ -45,6 +45,9 @@ class DeleteAccountRequest(BaseModel):
 async def export_account(request: Request):
     """Prawo dostępu (RODO): JSON wszystkich danych zalogowanego tenanta."""
     tenant_id, _ = _require_jwt_tenant(request)
+    from api.services.demo_guard import ensure_not_demo_blocked_route
+
+    ensure_not_demo_blocked_route(tenant_id, "RODO")
     async for db in get_db():
         payload = await repo.export_tenant_data(db, tenant_id=tenant_id)
         payload["exported_at"] = datetime.now(timezone.utc).isoformat()
@@ -63,6 +66,9 @@ async def delete_account(request: Request, body: DeleteAccountRequest):
         )
 
     tenant_id, _subject = _require_jwt_tenant(request)
+    from api.services.demo_guard import ensure_not_demo_blocked_route
+
+    ensure_not_demo_blocked_route(tenant_id, "RODO")
 
     async for db in get_db():
         deleted = await repo.purge_tenant_data(db, tenant_id=tenant_id)

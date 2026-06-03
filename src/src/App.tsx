@@ -269,6 +269,11 @@ export default function App() {
         onClose={() => setSetupOpen(false)}
         showStartupDismiss={!setupNagDismissed}
         onDismissStartup={dismissSetupStartup}
+        inDemo={inDemo}
+        onAccountDeleted={() => {
+          setAuthenticated(false);
+          setSetupOpen(false);
+        }}
       />
       <IntegrationsModal
         open={integrationsOpen}

@@ -7,6 +7,25 @@ Ten dokument jest szkieletem operatorskim — nie stanowi porady prawnej. Uzupe�
 - **Brief**, kontekst debaty, syntezy i zapisy w SQLite/Postgres mogą zawierać dane osobowe lub szczególnie wrażliwe informacje (np. treści biograficzne).
 - **Log kosztów** (`cost_log.jsonl`) może zawierać skróty kontekstu (`brief_hash`) — nie powinien zawierać pełnego tekstu briefu.
 
+## Model A — BYOK lokalnie (oferta founders)
+
+Ten model jest domyślny dla [FOUNDERS_OFFER.md](FOUNDERS_OFFER.md).
+
+| Rola | Kto przetwarza dane debat | Uwagi |
+|------|---------------------------|--------|
+| **Administrator danych debat** | Użytkownik / kupujący | Plik SQLite (`ARCHITEKT_DB_PATH`) na jego maszynie |
+| **Sprzedawca oprogramowania** | Dostawca licencji | Nie hostuje briefów przy czystym BYOK; e-mail support, ewentualnie faktura |
+| **Dostawca LLM** | Anthropic / xAI / Ollama (użytkownik) | Umowa użytkownika z dostawcą API; briefy wychodzą z urządzenia użytkownika |
+
+**Prawa użytkownika (lokalnie z JWT):**
+
+- Eksport: `GET /account/export` lub UI Ustawienia → Prywatność.
+- Usunięcie: `DELETE /account` z potwierdzeniem `USUŃ MOJE KONTO` — purge tenanta w bazie lokalnej.
+
+**Retencja:** użytkownik kontroluje plik bazy i kopie zapasowe OS. Sprzedawca nie trzyma kopii debat, o ile nie hostuje backendu za użytkownika.
+
+**Wersja demo (`demo_*`):** dane efemeryczne, bez eksportu RODO w API — patrz [DEMO.md](DEMO.md).
+
 ## Lokalnie vs chmura
 
 - **Wyłącznie lokalnie (Tauri / localhost):** ryzyko transferu poza urządzenie jest niższe, nadal oceniaj kopie zapasowe dysku i synchronizację chmurową OS.

@@ -32,7 +32,8 @@ Uruchom backend + UI jak w [`INSTALL.md`](../INSTALL.md). Użytkownik na ekranie
 | Debaty | Limit per sesja (`AW_DEMO_MAX_DEBATES`) |
 | Tryb | Domyślnie tylko `codzienny` (4 agentów — tańszy) |
 | Brief | Max `AW_DEMO_MAX_BRIEF_CHARS` znaków |
-| Integracje / FA2 | Ukryte w UI |
+| Integracje / FA2 | Ukryte w UI; API: `403 demo_feature_disabled` na `/integrations/*` |
+| RODO (`/account/export`, `DELETE /account`) | Zablokowane w API dla `demo_*` |
 | Dane | Izolacja tenanta `demo_*` (nie trwałe konto użytkownika) |
 
 ## API

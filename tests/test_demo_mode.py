@@ -124,6 +124,22 @@ def test_demo_debate_limit_and_status(client_demo):
     assert r3.json()["detail"]["error"] == "demo_limit_reached"
 
 
+def test_demo_account_export_forbidden(client_demo):
+    r = client_demo.post("/auth/demo")
+    headers = _auth_headers(r.json()["access_token"])
+    resp = client_demo.get("/account/export", headers=headers)
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"] == "demo_feature_disabled"
+
+
+def test_demo_integrations_status_forbidden(client_demo):
+    r = client_demo.post("/auth/demo")
+    headers = _auth_headers(r.json()["access_token"])
+    resp = client_demo.get("/integrations/status", headers=headers)
+    assert resp.status_code == 403
+    assert resp.json()["detail"]["error"] == "demo_feature_disabled"
+
+
 def test_demo_rejects_pelna_mode(client_demo):
     r = client_demo.post("/auth/demo")
     headers = _auth_headers(r.json()["access_token"])

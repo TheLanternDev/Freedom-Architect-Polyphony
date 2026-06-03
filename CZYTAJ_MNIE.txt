@@ -1,0 +1,17 @@
+Architekt Wolności — paczka founders (BYOK)
+============================================
+
+Model: uruchamiasz lokalnie; koszty LLM opłacasz u Anthropic (własny klucz API).
+
+Szybki start
+------------
+1. Rozpakuj archiwum do wybranego katalogu.
+2. Przeczytaj INSTALL.md (macOS/Linux) lub docs/BETA_TESTER_WINDOWS.md (Windows).
+3. Skopiuj env/src.env.example → src/.env i uzupełnij ANTHROPIC_API_KEY oraz ARCHITEKT_JWT_SECRET.
+4. Backend: python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt
+5. UI: cd src && npm install && npm run dev
+6. Zarejestruj konto w UI → Ustawienia → Prywatność (eksport/usuń dane).
+
+Smoke (opcjonalnie): ./scripts/smoke_week1.sh (wymaga działającego API na :8000).
+
+Support i dokumentacja: docs/FOUNDERS_OFFER.md, docs/SUPPORT_PLAYBOOK.md, docs/COMPLIANCE_PRIVACY.md.

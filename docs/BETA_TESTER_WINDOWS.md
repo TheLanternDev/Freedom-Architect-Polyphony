@@ -87,6 +87,7 @@ Pierwsze uruchomienie robi `npm install`. Otwórz adres z konsoli (zwykle http:/
 ## Co testować (checklista)
 
 - [ ] Rejestracja i logowanie
+- [ ] Ustawienia → **Prywatność i konto** → eksport JSON (po pierwszej debacie)
 - [ ] Debata od briefu do syntezy
 - [ ] Kontynuacja wątku (pamięć poprzednich rund)
 - [ ] Połączenie /health po restarcie backendu

@@ -10,12 +10,17 @@ import {
   setStoredArchitektApiKey,
 } from "@/lib/apiAuth";
 import { APP_TELEMETRY_ENABLED } from "@/config/product";
+import { AccountPrivacyPanel } from "@/components/AccountPrivacyPanel";
+
+type Tab = "connection" | "privacy";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   showStartupDismiss: boolean;
   onDismissStartup: () => void;
+  inDemo?: boolean;
+  onAccountDeleted?: () => void;
 };
 
 export function LocalSetupModal({
@@ -23,8 +28,11 @@ export function LocalSetupModal({
   onClose,
   showStartupDismiss,
   onDismissStartup,
+  inDemo = false,
+  onAccountDeleted,
 }: Props) {
   const { t } = useLang();
+  const [tab, setTab] = useState<Tab>("connection");
   const [urlInput, setUrlInput] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "fail">("idle");
@@ -107,89 +115,127 @@ export function LocalSetupModal({
           {t("setup.title")}
         </h2>
 
-        <p className="text-[12px] text-white/55 leading-relaxed">
-          {t("setup.intro")}
-        </p>
-
-        <div className="space-y-1.5">
-          <label className="text-[11px] uppercase tracking-wider text-white/35">
-            {t("setup.url_label")}
-          </label>
-          <input
-            type="url"
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="http://127.0.0.1:8000"
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[13px] text-white placeholder:text-white/25 focus:outline-none focus:border-teal/50"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <label className="text-[11px] uppercase tracking-wider text-white/35">
-            {t("setup.architekt_api_label")}
-          </label>
-          <input
-            type="password"
-            value={apiKeyInput}
-            onChange={(e) => setApiKeyInput(e.target.value)}
-            placeholder={t("setup.architekt_api_placeholder")}
-            className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[13px] text-white placeholder:text-white/25 focus:outline-none focus:border-teal/50"
-            autoComplete="off"
-            spellCheck={false}
-          />
-          <p className="text-[10px] text-white/35 leading-snug">{t("setup.architekt_api_note")}</p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.04] border border-white/10">
           <button
             type="button"
-            onClick={applyUrl}
-            className="text-[12px] px-3 py-1.5 rounded-lg border border-teal/40 bg-teal/15 text-teal hover:bg-teal/25 transition-colors"
+            onClick={() => setTab("connection")}
+            className={`flex-1 text-[11px] py-1.5 rounded-md transition-colors ${
+              tab === "connection"
+                ? "bg-teal/20 text-teal"
+                : "text-white/50 hover:text-white/70"
+            }`}
           >
-            {t("setup.apply")}
+            {t("setup.tab_connection")}
           </button>
           <button
             type="button"
-            onClick={runHealthTest}
-            className="text-[12px] px-3 py-1.5 rounded-lg border border-white/15 bg-white/[0.06] hover:border-white/25 transition-colors"
+            onClick={() => setTab("privacy")}
+            className={`flex-1 text-[11px] py-1.5 rounded-md transition-colors ${
+              tab === "privacy"
+                ? "bg-teal/20 text-teal"
+                : "text-white/50 hover:text-white/70"
+            }`}
           >
-            {t("setup.test")}
+            {t("setup.tab_privacy")}
           </button>
-          {getStoredApiBaseOverride() != null && (
-            <button
-              type="button"
-              onClick={clearOverride}
-              className="text-[12px] px-3 py-1.5 rounded-lg border border-white/10 text-white/45 hover:text-white/70 transition-colors"
-            >
-              {t("setup.clear_override")}
-            </button>
-          )}
         </div>
 
-        {testStatus === "ok" && (
-          <p className="text-[12px] text-green-400/95">
-            {t("setup.test_ok")}
-            {testDetail ? ` — ${testDetail}` : ""}
-          </p>
-        )}
-        {testStatus === "fail" && (
-          <p className="text-[12px] text-red-400/95">
-            {t("setup.test_fail")}
-            {testDetail ? `: ${testDetail}` : ""}
-          </p>
+        {tab === "connection" && (
+          <>
+            <p className="text-[12px] text-white/55 leading-relaxed">
+              {t("setup.intro")}
+            </p>
+            <p className="text-[11px] text-white/45 leading-relaxed border-l-2 border-teal/30 pl-2">
+              {t("setup.founders_hint")}
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] uppercase tracking-wider text-white/35">
+                {t("setup.url_label")}
+              </label>
+              <input
+                type="url"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                placeholder="http://127.0.0.1:8000"
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[13px] text-white placeholder:text-white/25 focus:outline-none focus:border-teal/50"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] uppercase tracking-wider text-white/35">
+                {t("setup.architekt_api_label")}
+              </label>
+              <input
+                type="password"
+                value={apiKeyInput}
+                onChange={(e) => setApiKeyInput(e.target.value)}
+                placeholder={t("setup.architekt_api_placeholder")}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[13px] text-white placeholder:text-white/25 focus:outline-none focus:border-teal/50"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-[10px] text-white/35 leading-snug">
+                {t("setup.architekt_api_note")}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={applyUrl}
+                className="text-[12px] px-3 py-1.5 rounded-lg border border-teal/40 bg-teal/15 text-teal hover:bg-teal/25 transition-colors"
+              >
+                {t("setup.apply")}
+              </button>
+              <button
+                type="button"
+                onClick={runHealthTest}
+                className="text-[12px] px-3 py-1.5 rounded-lg border border-white/15 bg-white/[0.06] hover:border-white/25 transition-colors"
+              >
+                {t("setup.test")}
+              </button>
+              {getStoredApiBaseOverride() != null && (
+                <button
+                  type="button"
+                  onClick={clearOverride}
+                  className="text-[12px] px-3 py-1.5 rounded-lg border border-white/10 text-white/45 hover:text-white/70 transition-colors"
+                >
+                  {t("setup.clear_override")}
+                </button>
+              )}
+            </div>
+
+            {testStatus === "ok" && (
+              <p className="text-[12px] text-green-400/95">
+                {t("setup.test_ok")}
+                {testDetail ? ` — ${testDetail}` : ""}
+              </p>
+            )}
+            {testStatus === "fail" && (
+              <p className="text-[12px] text-red-400/95">
+                {t("setup.test_fail")}
+                {testDetail ? `: ${testDetail}` : ""}
+              </p>
+            )}
+
+            <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 space-y-2 text-[11px] text-white/50 leading-relaxed">
+              <p>{t("setup.key_hint")}</p>
+              <p className="text-amber-200/80">{t("setup.security_warn")}</p>
+              <p>
+                {APP_TELEMETRY_ENABLED
+                  ? t("setup.telemetry_on")
+                  : t("setup.telemetry_off")}
+              </p>
+            </div>
+          </>
         )}
 
-        <div className="rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 space-y-2 text-[11px] text-white/50 leading-relaxed">
-          <p>{t("setup.key_hint")}</p>
-          <p className="text-amber-200/80">{t("setup.security_warn")}</p>
-          <p>
-            {APP_TELEMETRY_ENABLED
-              ? t("setup.telemetry_on")
-              : t("setup.telemetry_off")}
-          </p>
-        </div>
+        {tab === "privacy" && (
+          <AccountPrivacyPanel inDemo={inDemo} onAccountDeleted={onAccountDeleted} />
+        )}
 
         <div className="flex flex-wrap gap-2 justify-end pt-1">
           <button
@@ -199,7 +245,7 @@ export function LocalSetupModal({
           >
             {t("setup.close")}
           </button>
-          {showStartupDismiss && (
+          {showStartupDismiss && tab === "connection" && (
             <button
               type="button"
               onClick={onDismissStartup}
