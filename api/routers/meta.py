@@ -65,6 +65,22 @@ async def health_ready(request: Request):
     ok, reason = await probe_db_ready(DB_PATH)
     if not ok:
         raise HTTPException(status_code=503, detail=reason or "db niedostępna")
+
+    # P1-D1: gdy Redis jest WYMAGANY (prod, poza demo, z REDIS_URL) — readiness
+    # musi go realnie sprawdzić. Inaczej LB dostaje "ready" przy padniętym Redis
+    # i kieruje ruch (JTI revoke / rate-limit / refresh) do wadliwej instancji.
+    # W dev/demo/SQLite (Redis nieobowiązkowy) pomijamy — bez zmiany zachowania.
+    from api.startup import redis_required_in_prod
+
+    if redis_required_in_prod():
+        if m.redis_client is None:
+            raise HTTPException(status_code=503, detail="redis wymagany, brak połączenia")
+        try:
+            await asyncio.wait_for(m.redis_client.ping(), timeout=1.0)
+        except Exception:
+            # Timeout / odrzucone połączenie / błąd protokołu → nie jesteśmy ready.
+            raise HTTPException(status_code=503, detail="redis nieosiągalny")
+
     return {"ready": True}
 
 

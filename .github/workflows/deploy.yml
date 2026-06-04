@@ -1,8 +1,14 @@
-# Ręczny pipeline deploy — build obrazu + checklist (bez push do rejestru domyślnie).
-# Push: ustaw secrets REGISTRY / REGISTRY_USERNAME / REGISTRY_PASSWORD i odkomentuj krok push.
+# CD: build obrazu + push do rejestru.
+#  • Tag `v*` (np. v1.2.3) → automatyczny build+push (gdy secrets REGISTRY* ustawione).
+#  • workflow_dispatch → ręczny build, push opcjonalny (input push_image).
+# Secrets wymagane do push: REGISTRY, REGISTRY_USERNAME, REGISTRY_PASSWORD (ustawia [P]).
+# Bez secrets: na tagu push jest POMIJANY (warning, nie błąd); przy ręcznym push=true → błąd.
 name: deploy
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       push_image:
@@ -14,7 +20,7 @@ on:
           - "false"
           - "true"
       image_tag:
-        description: "Tag obrazu"
+        description: "Tag obrazu (gdy ręcznie; na tagu git brany jest ref)"
         required: false
         default: "latest"
 
@@ -23,27 +29,55 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # Jedno źródło prawdy dla tagu obrazu: nazwa gita na tag-push, input przy dispatch.
+      - name: Resolve image tag
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"           # np. v1.2.3
+          else
+            TAG="${{ inputs.image_tag }}"
+            [ -z "$TAG" ] && TAG="latest"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Image tag: $TAG"
+
       - name: Build production image
-        run: docker build -t architekt-wolnosci:${{ inputs.image_tag }} .
+        run: docker build -t architekt-wolnosci:${{ steps.meta.outputs.tag }} .
+
       - name: Smoke import inside image
         run: |
-          docker run --rm architekt-wolnosci:${{ inputs.image_tag }} \
+          docker run --rm architekt-wolnosci:${{ steps.meta.outputs.tag }} \
             python -c "import config.llm_providers, main; print('imports ok')"
-      - name: Push to registry (optional)
-        if: inputs.push_image == 'true'
+
+      - name: Push to registry
+        # Push automatycznie na tag-push, lub ręcznie gdy push_image=true.
+        if: github.event_name == 'push' || inputs.push_image == 'true'
         env:
           REGISTRY: ${{ secrets.REGISTRY }}
           REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
           REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+          TAG: ${{ steps.meta.outputs.tag }}
         run: |
           if [ -z "$REGISTRY" ] || [ -z "$REGISTRY_USERNAME" ] || [ -z "$REGISTRY_PASSWORD" ]; then
-            echo "❌ Ustaw secrets: REGISTRY, REGISTRY_USERNAME, REGISTRY_PASSWORD"
+            if [ "${{ github.event_name }}" = "push" ]; then
+              echo "⚠️  Brak secrets REGISTRY* — pomijam push (obraz zbudowany lokalnie w runnerze)."
+              echo "    Ustaw REGISTRY, REGISTRY_USERNAME, REGISTRY_PASSWORD aby włączyć CD push." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "❌ push_image=true, ale brak secrets: REGISTRY, REGISTRY_USERNAME, REGISTRY_PASSWORD"
             exit 1
           fi
           echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY" -u "$REGISTRY_USERNAME" --password-stdin
-          docker tag architekt-wolnosci:${{ inputs.image_tag }} "$REGISTRY/architekt-wolnosci:${{ inputs.image_tag }}"
-          docker push "$REGISTRY/architekt-wolnosci:${{ inputs.image_tag }}"
-          echo "✅ Pushed $REGISTRY/architekt-wolnosci:${{ inputs.image_tag }}"
+          docker tag architekt-wolnosci:"$TAG" "$REGISTRY/architekt-wolnosci:$TAG"
+          docker push "$REGISTRY/architekt-wolnosci:$TAG"
+          # Na tagu publikujemy też ruchomy `latest`.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            docker tag architekt-wolnosci:"$TAG" "$REGISTRY/architekt-wolnosci:latest"
+            docker push "$REGISTRY/architekt-wolnosci:latest"
+          fi
+          echo "✅ Pushed $REGISTRY/architekt-wolnosci:$TAG"
 
   deploy-checklist:
     runs-on: ubuntu-latest

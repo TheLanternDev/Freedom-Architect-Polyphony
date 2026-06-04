@@ -54,8 +54,8 @@
 | P1-B1 | Retry SSE przed 1. eventem — ryzyko drugiej debaty | `src/src/hooks/useDebate.ts:190–206` | Idempotency-Key / debounce API | P1 |
 | P1-C1 | `main.py` poza coverage gate CI | `.github/workflows/ci.yml:62–65` | `--cov=main` lub routery do `api/` | P1 |
 | P1-C2 | Brak pytest API na żywym Postgres (poza smoke SQL) | `ci.yml:97–178` | Integracyjny job z `DATABASE_URL` | P1 |
-| P1-D1 | `/health/ready` nie sprawdza Redis | `api/routers/meta.py:55–68` | Opcjonalny 503 gdy Redis wymagany w prod | P1 |
-| P1-D2 | Deploy workflow — tylko `workflow_dispatch` | `.github/workflows/deploy.yml` | Sekrety registry + push na tag | P1 |
+| P1-D1 | `/health/ready` sprawdza Redis gdy wymagany | **ZAMKNIĘTE** | `api/routers/meta.py` + `tests/test_health.py` (3 testy) | — |
+| P1-D2 | CD build+push na tag `v*` | **ZAMKNIĘTE (kod)** | `.github/workflows/deploy.yml` + `PRODUCTION_CHECKLIST.md` | Zostaje P1-D2.1: secrets [P] |
 | P1-D3 | Tauri updater wyłączony; brak notaryzacji w CI secrets | `docs/TAURI_RELEASE.md`, `tauri-release.yml` | Włączyć updater + Apple/Win signing | P1 |
 | P1-E1 | Koszty — globalny `cost_log.jsonl`, brak `tenant_id` w wpisie | `core/cost_tracking.py:215–234` | Per-tenant metering dla SaaS | P1 |
 | P1-E2 | Brak reset hasła / weryfikacji e-mail | `api/_rate_limit.py:27` (komentarz) | Flow lifecycle konta | P1 |
@@ -267,7 +267,7 @@
 | Plik:Linia | Stan | Ryzyko | Co zrobić | Priorytet |
 |------------|------|--------|-----------|-----------|
 | `api/routers/meta.py:17–52` | Zaimplementowane | `GET /health` — meta alive | — | — |
-| `api/routers/meta.py:55–68` | Zaimplementowane | `GET /health/ready` — `probe_db_ready`, 503 z powodem | Redis probe | P1 |
+| `api/routers/meta.py:55–88` | Zaimplementowane + testowane | `GET /health/ready` — `probe_db_ready` + ping Redis gdy `redis_required_in_prod()` | — | — |
 | `main.py:364–386` | Zaimplementowane | Prometheus `/metrics` + admin token | — | — |
 | `api/_log.py` | Zaimplementowane | Structured `slog()`; `LOG_FORMAT=json` | Dokumentacja ENV | P2 |
 | `api/_metrics.py` | Zaimplementowane | Stub bez `prometheus_client` w dev | W requirements obrazu | — |
@@ -285,7 +285,7 @@
 | Plik:Linia | Stan | Ryzyko | Co zrobić | Priorytet |
 |------------|------|--------|-----------|-----------|
 | `.github/workflows/ci.yml` | 7 jobów | Brak auto-deploy na push | `deploy.yml` secrets | P1 |
-| `.github/workflows/deploy.yml` | Manual dispatch | Build/push image | REGISTRY_* | P1 |
+| `.github/workflows/deploy.yml` | Trigger `push: tags: v*` + dispatch; auto push gdy secrets | Build/push image + `latest` | Secrets REGISTRY_* (P1-D2.1, [P]) | — |
 | `.github/workflows/tauri-release.yml` | macOS release | Signing secrets operator | P1 |
 | `scripts/smoke_live.py` | Zaimplementowane | Post-deploy health | — | — |
 | `docs/PRODUCTION_CHECKLIST.md` | Zaimplementowane | ENV + smoke | Utrzymywać sync | P2 |

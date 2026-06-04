@@ -88,3 +88,27 @@ UI toggle ─┐
    personal_v1.* (v1)                       business_fa2.* (fa2)
 ```
 Globalny `AW_COUNCIL_MODE` env nadal działa jako fallback gdy header pusty.
+
+---
+
+## CD — automatyczny build+push obrazu (P1-D2)
+
+Workflow `.github/workflows/deploy.yml` buduje i wypycha obraz Dockera **automatycznie po wypchnięciu tagu** `v*`:
+
+```bash
+git tag v1.2.3 && git push origin v1.2.3   # → build + push obrazu do rejestru
+```
+
+Obok tagu publikowany jest też ruchomy `latest`. Ręczne uruchomienie: zakładka **Actions → deploy → Run workflow** (`push_image=true`).
+
+### Sekrety wymagane do push (ustaw w GitHub → Settings → Secrets and variables → Actions)
+
+| Secret | Przykład | Opis |
+|--------|----------|------|
+| `REGISTRY` | `ghcr.io` / `registry.digitalocean.com/twoj-rejestr` | Host rejestru |
+| `REGISTRY_USERNAME` | nazwa użytkownika / `oauth` | Login do rejestru |
+| `REGISTRY_PASSWORD` | token / hasło | **Token** rejestru (nie hasło konta) |
+
+**Bez tych sekretów** push na tagu jest **pomijany z ostrzeżeniem** (workflow nie czerwieni się — obraz i tak buduje się w runnerze, smoke-import przechodzi). To pozwala tagować wydania zanim skonfigurujesz rejestr.
+
+Obraz: `$REGISTRY/architekt-wolnosci:<tag>`. Po deploy: `GET /health/ready` + `scripts/smoke_live.py`.
