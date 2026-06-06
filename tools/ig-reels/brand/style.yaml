@@ -1,0 +1,70 @@
+# Architekt Wolności — wizualny DNA dla promptów wideo
+name: Architekt Wolności
+tagline: Rada Nadzorcza „Mój Świat"
+
+palette:
+  background: "#0A0D14"      # app — głęboki granat
+  surface: "#11151F"
+  gold: "#C5A46E"            # akcent — ciepłe złoto
+  teal: "#3D8B8B"            # akcent — morska zieleń
+  text: "#E8EBF0"
+
+visual_language:
+  - cinematic one continuous shot, no cuts, no montage
+  - slow deliberate camera movement (dolly, crane, orbit)
+  - chiaroscuro lighting with warm gold rim light on dark navy background
+  - architectural metaphors — blueprints, pillars, circles, bridges, dawn light through structure
+  - philosophical, contemplative, premium — never stock-footage generic
+  - subtle particle dust in light beams, shallow depth of field
+  - no logos, no readable text overlays, no watermarks
+
+audio_direction:
+  - ambient cinematic score, low strings and soft piano
+  - subtle room tone, no harsh EDM
+  - if voice: calm Polish male narrator, measured pace, intimate proximity mic
+  - synchronized native audio from model
+
+ig_defaults:
+  aspect_ratio: "9:16"
+  resolution: "720p"
+  duration: 15
+  model: grok-imagine-video
+
+prompt_suffix: |
+  Single unbroken cinematic shot. Color grade: deep navy shadows (#0A0D14), warm gold highlights (#C5A46E), teal accents (#3D8B8B). No text on screen. No jump cuts.
+
+# ── Motywy tożsamości (wstrzykiwane per koncept przez prompts.py) ──────────────
+# Każdy reel zakotwicza JEDEN motyw (pole `identity` w concepts.yaml). Kompilator
+# dosypuje pasujący fragment, więc rozumowanie promptu jest strukturalne, nie
+# ręcznie kopiowane. Tłumaczone na obraz (model psuje czytelny tekst → żadnych napisów).
+brand_motifs:
+  logo_ring: |
+    Brand motif — the AW signature: a luminous ring of nine nodes joined by a gold thread,
+    one brighter convergence point at the center. The logo as light-symbol, never as text.
+  rada: |
+    Identity — the Council of nine: nine DISTINCT inner faculties (intellect, shadow, child,
+    time, witness, relational, emotional, body, deep-diagnosis), held in tension, never merged.
+  syez: |
+    Identity — Syez the synthesizer: a mirror, not a tenth voice. It consolidates the nine
+    honestly, showing tensions, smoothing nothing, adding no perspective of its own.
+  fragment: |
+    Identity — the Fragment cosmology: Smile (curiosity turned inward) <-> Perspective (how you
+    look, not where you arrive) <-> Path (daily movement) as one self-sustaining living system,
+    a compass not a map. Entered through stillness — the pause that exposes the linear-goal trap.
+  aksjomat_0: |
+    Identity — Axiom 0: the Smile<->Perspective<->Path system is supreme; reject the linear
+    goal->achievement->emptiness arrow. Curiosity over conquest.
+  aksjomat_1: |
+    Identity — Axiom 1, Dream Architecture: every element reasons back toward one core dream
+    and value-anchor; without that wider meaning the structure is hollow.
+  aksjomat_2: |
+    Identity — Axiom 2, Completion: always resolve to the single smallest next move that unlocks
+    the rest; the first small ignition matters more than the grand finish.
+  szow: |
+    Identity — Szow, the Shadow (Jung): names what is disowned and self-sabotaging, brutally
+    honest, denser and more detailed than the comfortable light, never softened.
+
+# Sygnatura logo dosypywana gdy koncept ma `signature: true`.
+signature_suffix: |
+  Closing brand signature: a faint luminous ring of nine nodes with a central convergence point
+  resolves briefly in the final beat — the Architekt Wolności mark as light, no text.

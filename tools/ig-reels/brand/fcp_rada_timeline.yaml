@@ -1,0 +1,16 @@
+title: "Rada Polyphony — Moj Swiat"
+width: 1080
+height: 1920
+fps: 30
+total_s: 24.5
+opening_s: 3.2
+# fit = cały kadr seeda widoczny (letterbox); fill = wypełnienie 9:16 z kadrowaniem
+opening_scale: fit
+syez_s: 4.5
+closing_s: 3.0
+# Podkład ambient (seed Grok) — sidechain duck pod narrację Syeza
+ambient_volume: 0.28
+ambient_sidechain_threshold: 0.02
+ambient_sidechain_ratio: 10
+ambient_attack_ms: 300
+ambient_release_ms: 900

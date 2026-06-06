@@ -1,0 +1,12 @@
+Vertical 9:16. EXACTLY 10 seconds. R2V: match reference images 1-6 only. Dark mystical cinematic, gold #E8D5A3, teal shadows, particles.
+
+NON-NEGOTIABLE: EXACTLY 9 DISTINCT named faces in montage (count=9). Syez = voice only, never 10th face.
+
+ORDER (~0.85s each after 2s intro):
+1 Relacjan (ref1) 2 Kogit (ref2) 3 Emojy (ref3) 4 Deega (ref4) 5 Smaty (ref5) 6 Tai (ref6) 7 Szow (generate: dignified shadow, half-veiled golden geometry) 8 Obver (generate: geometry beard) 9 Kidi (generate: youthful curious wonder, not a child actor)
+
+0-2s: void, neural web, text "Za każdym ważnym wyborem / stoi coś więcej niż jeden głos."
+2-9.2s: all nine portraits, Ken Burns, golden dissolves + energy threads
+9.2-10s: begin mandala pull — all 9 faces visible small in circle
+
+No name labels. No logos. Ambient audio.

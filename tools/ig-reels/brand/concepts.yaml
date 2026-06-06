@@ -1,0 +1,299 @@
+# Gotowe koncepcje reelsów — uruchom: aw-reels new [concept_id]
+#
+# ═══ POLITYKA KANONU (NIE ZMIENIAĆ BEZ WYRAŹNEGO POLECENIA) ═══
+# Wygląd dziewięciu agentów Rady + Syeza oraz struktura reela
+# Rada-Polyphony-24.5s-IG.mp4 są ZABLOKOWANE jako domyślny kanon wizualny.
+# Modyfikuj agents_canon, rada_polyphony_moj_swiat lub portrety wyłącznie
+# po jednoznacznej instrukcji użytkownika (np. „zmień portret Szowa”).
+#
+# Pola konceptu:
+#   identity: klucz z brand_motifs (logo_ring | fragment | aksjomat_0/1/2 | rada | syez | szow)
+#   default: true → domyślny koncept przy `aw-reels new` bez argumentu
+#   locked: true → generator nie powinien nadpisywać wyglądu agentów
+#   signature: true → dosyp delikatny logo-motyw (świetlisty pierścień) na końcu ujęcia
+#   tier: hero | standard | minimal — `hero` sugeruje --strict przy własnych promptach
+
+policy:
+  locked_canon: true
+  default_concept: rada_polyphony_moj_swiat
+  reference_mp4: /Users/tpltd145/Downloads/Rada-Polyphony-24.5s-IG.mp4
+  fcp_timeline: brand/fcp_rada_timeline.yaml
+  change_policy: >-
+    Nie zmieniaj wyglądu agentów, kolejności montażu ani struktury domyślnego
+    reela bez wyraźnego polecenia użytkownika.
+
+# Kanoniczne portrety — źródło prawdy dla generatora i FCP bundle.
+# Pliki PNG: assets/council/{id}.png (kolejność = montaż Polyphony).
+# Opisy zablokowane wg załączonych portretów i finalnego MP4 24.5s.
+agents_canon:
+  Relacjan:
+    file: Relacjan.png
+    role: "Relacje i zaufanie"
+    tagline: "Mapuje wpływ, dynamikę i ludzi wokół decyzji"
+    visual: >-
+      Middle-aged Caucasian man, salt-and-pepper beard, warm knowing half-smile,
+      dark charcoal layered robe with fine golden neural-network embroidery.
+      Glowing golden constellation nodes and thread-lines orbit his shoulders.
+      Cinematic chiaroscuro, dignified relational warmth — never generic stock face.
+  Kogit:
+    file: Kogit.png
+    role: "Logika i struktura"
+    tagline: "Zimna architektoniczna jasność"
+    visual: >-
+      East Asian man, 50s–60s, calm focused gaze off-camera, thick dark hair with
+      silver at temples swept back. Dark grey kimono-style robe with gold trim.
+      Large luminous Metatron-cube sacred geometry glowing on chest. Floating
+      golden particles, architectural precision, cold clarity.
+  Emojy:
+    file: Emojy.png
+    role: "Emocje prewerbalne"
+    tagline: "To, czego słowa jeszcze nie niosą"
+    visual: >-
+      Young East Asian man, late teens–20s, messy textured black hair with golden
+      light sparks woven through. Large luminous golden eyes with fine geometric
+      clockwork patterns in irises. Dark high-collared robe with shimmering gold
+      circuitry embroidery. Floating translucent golden octahedrons. Pre-verbal
+      intensity, not childish.
+  Deega:
+    file: Deega.png
+    role: "Głęboka diagnoza"
+    tagline: "Nieświadome pętle i ukryte powtórzenia"
+    visual: >-
+      Mature man, 50s–60s, long dark hair with grey streaks parted center,
+      pointed grey goatee, stern piercing light eyes. Heavy dark robe with ornate
+      golden keys and alchemical sigils embroidered. Floating antique golden keys
+      connected by thin glowing lines in background. Arcane scholar, deep diagnosis.
+  Smaty:
+    file: Smaty.png
+    role: "Somatyczny"
+    tagline: "To, co ciało już wie"
+    visual: >-
+      Muscular middle-aged man, late 40s–50s, chiseled jaw, short dark hair grey
+      at temples, heavy stubble. Powerful athletic build, dark draped toga-like
+      robes. Glowing golden topographic energy veins on chest, arms and skin —
+      liquid-gold currents in fabric. Atmospheric smoke, embodied power, somatic truth.
+  Tai:
+    file: Tai.png
+    role: "Perspektywa czasu"
+    tagline: "Długie wzorce i konsekwencje przyszłości"
+    visual: >-
+      East Asian elder, late 50s–60s, sharp cheekbones, dark hair with prominent
+      silver streaks swept back. Dark textured robe with golden spiral and hourglass
+      embroidery on lapels. Background: floating translucent hourglasses with golden
+      sand, clockwork gears, temporal golden particles. Wise, time-architect mood.
+  Szow:
+    file: Szow.png
+    role: "Cień"
+    tagline: "To, czego najmniej chcesz usłyszeć"
+    visual: >-
+      Man, late 40s–50s, thick dark hair with messy silver-white streaks swept back.
+      Split-face effect: left half consumed by black shadow with golden sparks;
+      right half fair skin overlaid with glowing golden neural-web lines (kintsugi
+      style). Intense amber-gold eyes. Dark layered coat with golden thread patterns.
+      Dignified Jungian shadow — never horror, never softened.
+  Obver:
+    file: Obver.png
+    role: "Obserwator zewnętrzny"
+    tagline: "Meta-perspektywa poza twoją historią"
+    visual: >-
+      Man, late 40s–50s, thick wavy salt-and-pepper hair, short trimmed beard,
+      piercing light eyes looking off-camera. Dark high-collared robe with ornate
+      gold embroidery and geometric gold pendant at neckline. Sacred-geometry golden
+      lines overlaid on face — circles, triangles, nodes. External witness, meta-view.
+  Kidi:
+    file: Kidi.png
+    role: "Dziecięca ciekawość"
+    tagline: "Czysta fascynacja i instynkt"
+    visual: >-
+      Young man, early–mid 20s, thick wavy dark hair, defined jaw, light stubble,
+      intense dark eyes with youthful wonder (not a child actor). Dark robe with
+      intricate glowing golden flame-like embroidery. Fiery bokeh background with
+      floating golden embers. Curious instinct, raw fascination — same dark-gold
+      mystical palette as council.
+  Syez:
+    file: Syez.png
+    role: "Syntetyzer i orkiestrator"
+    tagline: "Lustro dziewięciu głosów — bez własnej perspektywy"
+    visual: >-
+      Middle-aged man, stern commanding presence, short dark hair grey at temples.
+      Dark heavy robes with ornate gold embroidery. Brilliant golden Merkaba /
+      sacred-geometry symbol glowing at center of chest; golden energy wisps
+      radiate outward. Alchemical halo: floating golden hourglass, diamond, flame
+      and sigil symbols around head. Syez is mirror-synthesizer — NEVER a tenth
+      face in the nine-agent mandala; appears only in dedicated 4.5s segment
+      (portrait + Polish narration, no lip-sync to council faces).
+    narration_pl: >-
+      Dziewięć głosów. Jedna polifonia. Syez trzyma mapę — Twoja Rada jest obudzona.
+
+concepts:
+  rada_polyphony_moj_swiat:
+    title: "Rada Polyphony — Mój Świat (kanon 24.5s)"
+    identity: rada
+    tier: hero
+    default: true
+    locked: true
+    hook: "Dziewięć głosów. Jedna polifonia. Twoja decyzja."
+    reference_mp4: /Users/tpltd145/Downloads/Rada-Polyphony-24.5s-IG.mp4
+    duration: 24.5
+    assembly: fcp
+    fcp_timeline: brand/fcp_rada_timeline.yaml
+    scene: |
+      Vertical 9:16 Instagram Reel. EXACTLY 24.5 seconds, 1080×1920, 30fps.
+      Photorealistic dark mystical cinematic — deep blacks, warm gold #E8D5A3,
+      subtle teal shadows. Golden particles, thin sacred geometry lines.
+      LOCKED CANON: match agents_canon portraits exactly; do not redesign faces.
+
+      ═══ NON-NEGOTIABLE COUNT ═══
+      □ EXACTLY NINE different human council faces in montage — count must be 9
+      □ Syez is ONLY voice + dedicated portrait segment — NEVER a tenth face in mandala
+      □ Each named agent appears once, distinct face — do not merge or reuse
+
+      ═══ TIMELINE (match reference_mp4 + fcp_timeline) ═══
+      0.0–3.2s Opening: dark void, golden neural web, slow push-in. Golden serif text:
+      "Za każdym ważnym wyborem / stoi coś więcej niż jeden głos."
+      opening_scale: fit (letterbox seed visible).
+
+      3.2–17.0s Council montage — nine portraits ~1.53s each, strict order:
+      1 Relacjan — neural-network robe, warm relational smile
+      2 Kogit — Metatron cube on chest, calm architectural clarity
+      3 Emojy — glowing golden eyes, floating diamond geometry
+      4 Deega — golden keys and sigils, stern deep-diagnosis gaze
+      5 Smaty — muscular, golden energy veins on chest and arms
+      6 Tai — hourglass and gears, temporal elder perspective
+      7 Szow — split-face shadow/gold, dignified Jungian cień
+      8 Obver — sacred geometry on face, external observer beard
+      9 Kidi — youthful curious wonder, fiery golden embroidery
+      Ken Burns zoom to eyes; golden cross-dissolve + thin energy threads between faces.
+
+      17.0–21.5s Syez segment (4.5s): dedicated portrait per agents_canon.Syez —
+      Merkaba chest glow, alchemical halo; Polish calm male narrator (off-screen):
+      "Dziewięć głosów. Jedna polifonia. Syez trzyma mapę — Twoja Rada jest obudzona."
+      Syez does NOT join the nine-face circle.
+
+      21.5–24.5s Closing: all NINE council faces in golden mandala circle, slow pull-back.
+      Golden serif text:
+      RADA NADZORCZA „MÓJ ŚWIAT"
+      9 Agentów. Jedna Polyfonia.
+      Architekt Wolności
+      Twój system. Twoja wolność.
+      Lower: Founders Cohort • 10 miejsc przy stole • link w bio
+
+      ═══ FORBIDDEN ═══
+      ✗ Fewer than 9 council faces ✗ Duplicate portraits ✗ Syez as 10th mandala node
+      ✗ Name labels on faces ✗ Redesigning locked agent likeness
+
+      Assembly note: xAI/Grok seeds are B-roll only; canonical 24.5s export = FCP bundle
+      (`aw-reels fcp-bundle`). Final reference: reference_mp4.
+    audio: >-
+      Deep cinematic ambient: low drones, warm evolving pads, subtle organic percussion.
+      Syez narration: calm Polish male, measured pace, sidechain duck under voice.
+      Mystic council / inner sanctum mood. Maximum dignity.
+
+  rada_kregu:
+    title: "Rada w kręgu"
+    identity: rada
+    tier: hero
+    hook: "Dziewięć głosów. Jedno napięcie. Twoja decyzja."
+    note: >-
+      Koncepcyjny reel tożsamości Rady. Dla montażu Polyphony z portretami
+      używaj wyłącznie domyślnego locked konceptu rada_polyphony_moj_swiat.
+    scene: |
+      Nine DISTINCT council portraits from agents_canon arranged in a circle on a
+      dark reflective floor — each face matches its locked portrait description:
+      Relacjan (neural gold), Kogit (Metatron), Emojy (golden eyes), Deega (keys),
+      Smaty (lightning body), Tai (hourglass), Szow (split shadow), Obver (geometry
+      face), Kidi (youthful fire). Camera slowly orbits; the nine never merge —
+      they hold tension in formation. Atmospheric fog, gold and teal rim light,
+      cathedral scale, deep navy void. No abstract shapes replacing named faces.
+    audio: "Deep ambient drone, nine faint overlapping tones that never resolve into harmony, soft heartbeat."
+    duration: 15
+
+  architektura_marzenia:
+    title: "Architektura Marzenia"
+    identity: aksjomat_1
+    hook: "Każda decyzja służy czemuś większemu. Inaczej traci sens."
+    scene: |
+      A single warm anchor-light hovers in a dark void — the core dream, the value-anchor.
+      From it, a translucent golden blueprint unfurls: every drawn line bends back toward that one anchor,
+      as if the whole structure is reasoning from a single source of meaning. Pillars and a bridge form,
+      always oriented to the central light. Camera pushes forward through the blueprint into realized
+      golden architecture — but the anchor-light stays visible at the heart. One continuous morphing shot.
+    audio: "Inspiring piano building slowly from a single sustained root note, pencil-on-paper texture."
+    duration: 15
+
+  napięcie_decyzji:
+    title: "Napięcie decyzji"
+    identity: szow
+    hook: "Prawda nie jest wygodna. Jest uczciwa."
+    scene: |
+      Portrait of Szow per agents_canon: split-face man, left shadow right golden neural web,
+      silver-streaked hair, intense amber eyes. Warm gold light faces its own denser cast shadow —
+      two opposing beams meet at the seam, visible friction. Camera slowly zooms into the seam;
+      light fractures into prismatic rays. Dark navy, dramatic chiaroscuro, no comfort, no resolution.
+    audio: "Tension strings, long silences between notes, one deep bass hit when light meets shadow."
+    duration: 12
+
+  wolność_świadomość:
+    title: "Wolność = świadomość"
+    identity: fragment
+    hook: "Nie cel. Uśmiech, Perspektywa, Droga — żywy układ."
+    scene: |
+      Three luminous elements orbit each other in slow equilibrium above a dark terrace at dawn:
+      a warm open glow (curiosity turned inward), a shifting lens that keeps revealing new horizon
+      (perspective), and a path of light moving forward underfoot (the way). They sustain one another —
+      when one dims, the others feed it. A silhouette stands still at the terrace edge, not chasing,
+      just holding the system alive. Gold sunrise through massive stone columns, camera cranes up to infinite horizon.
+    audio: "Expansive orchestral swell that breathes in cycles, wind through columns, distant birds."
+    duration: 15
+
+  doprowadzenie_do_końca:
+    title: "Doprowadzenie do końca"
+    identity: aksjomat_2
+    hook: "Niedokończone marzenie to cień. Najmniejszy ruch — światło."
+    scene: |
+      A half-built luminous arch in darkness. Camera tracks along it; the FIRST missing segment closest
+      to the viewer ignites in gold — the smallest next move — and only then does the next, and the next,
+      each completion triggering the following until the arch closes and floods the scene with warm light.
+      Emphasis on that first small ignition as the thing that unlocks the rest. Single continuous tracking shot.
+    audio: "A single hammer strike, then echoing momentum building into a warm triumphant chord, ambience to silence."
+    duration: 15
+
+  syez_lustro:
+    title: "Syez — lustro prawdy"
+    identity: syez
+    hook: "Nie dziesiąty głos. Lustro pozostałych dziewięciu."
+    scene: |
+      Portrait of Syez per agents_canon: Merkaba chest glow, alchemical halo symbols, stern synthesizer.
+      A massive circular mirror floating in dark space reflects nine separate drifting lights —
+      the mirror consolidates them as one honest composite, tensions intact, contradictions not smoothed.
+      Camera orbits slowly. Teal and gold on navy void. Syez never invents — only reveals.
+      Not a tenth council face in any nine-agent mandala.
+    audio: "Minimalist piano, long reverb tail, subtle glass resonance as the nine lights meet the surface."
+    duration: 10
+
+  fragment_kosmologia:
+    title: "Fragment"
+    identity: fragment
+    hook: "Zatrzymanie. W pauzie widać, że linearny cel to pułapka."
+    scene: |
+      Pure stillness first: a single point of warm light in vast navy darkness, breathing. Then the camera
+      holds — refusing to rush forward — and in that pause the linear arrow of light racing toward a distant
+      goal is revealed to dissolve into emptiness on arrival. The frame quietly reorganizes: the arrow gives
+      way to a slow self-sustaining circle of three lights. Contemplative, almost meditative, the reward is
+      in not moving. One unbroken shot, minimal, reverent.
+    audio: "Near-silence, one low sustained drone, a single soft chime at the moment of the pause."
+    duration: 12
+
+  logo_sygnatura:
+    title: "Sygnatura — pierścień Rady"
+    identity: logo_ring
+    signature: true
+    tier: minimal
+    hook: "Architekt Wolności."
+    scene: |
+      In deep navy void, a luminous ring slowly draws itself — a perfect circle of nine faint nodes
+      connected by a thread of gold light, a single brighter convergence point at its center.
+      The ring rotates once, elegantly, the nine nodes pulsing in sequence then settling.
+      Pure brand signature: minimal, architectural, no text, premium. Suitable as an intro or outro sting.
+    audio: "Single resonant bell tone with long tail, soft ambient pad rising underneath."
+    duration: 8
