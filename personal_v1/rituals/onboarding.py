@@ -32,5 +32,24 @@ PYTANIA = [
     "Jakie jedno zdanie chciałbyś usłyszeć od siebie sprzed roku?",
 ]
 
+# Grupowanie pytań w sekcje (batche) — inteligentne sekwencjonowanie w UI
+# oraz złożenie „Mojego obrazu". Indeksy spójne z PYTANIA (nie zmieniać kolejności).
+_GRUPY = [
+    ("Tożsamość", 3),
+    ("Ciało", 2),
+    ("Cień", 3),
+    ("Marzenia", 2),
+    ("Relacje", 2),
+    ("Historia", 2),
+    ("Wartości", 2),
+    ("Domknięcie", 2),
+    ("Cisza", 2),
+]
+SEKCJE: list[str] = []
+for _nazwa, _ile in _GRUPY:
+    SEKCJE.extend([_nazwa] * _ile)
+assert len(SEKCJE) == len(PYTANIA), "SEKCJE muszą pokrywać każde pytanie"
+
+
 def start_onboarding():
-    return {"pytania": PYTANIA, "ton": "lagodny", "tempo": "ile_chcesz"}
+    return {"pytania": PYTANIA, "sekcje": SEKCJE, "ton": "lagodny", "tempo": "ile_chcesz"}

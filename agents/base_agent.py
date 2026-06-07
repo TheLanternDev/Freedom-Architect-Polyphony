@@ -199,6 +199,61 @@ _PRICES_PER_M: dict[str, tuple[float, float]] = {
 }
 
 
+# ── Counter-hypothesis (anty-echo-chamber) ───────────────────────────────────
+# Jeden agent na debatę (rotacyjnie wg hasha briefu) pełni rolę testu przesłanki.
+# Ponieważ agenci lecą równolegle i nie widzą siebie, agent-kontra dedukuje
+# DOMYŚLNĄ przesłankę z samego briefu — nie z innych głosów. Moduł = wspólny
+# szkielet (struktura testu) + kalibracja per głos (zachowuje charakter agenta).
+# Filozofia: wzmacnia Perspektywę i Uśmiech (AKSJOMAT 0) — ciekawość „a może
+# inaczej?” zamiast 9-krotnego pogłębiania jednej diagnozy.
+
+# Kalibracja tonu per agent — JEDNO zdanie w idiomie danego głosu. Klucz: imię.
+_COUNTER_VOICE: dict[str, str] = {
+    "Kogit":    "Testuj jak kognitywista: nazwij przesłankę jako zdanie logiczne i sprawdź, czy jej zaprzeczenie też się broni.",
+    "Szow":     "Podważ ostro, ale to chłodny test przesłanki, nie Twoje zwykłe cięcie — nie myl jednego z drugim.",
+    "Kidi":     "Testuj jak dziecko, które pyta z ciekawością „a co, jeśli jest dokładnie odwrotnie?” — bez analizy, ze zdziwieniem.",
+    "Tai":      "Sprawdź, czy przeciwna hipoteza nie jest po prostu wcześniejszym ogniwem tej samej pętli czasowej.",
+    "Obver":    "Opisz przeciwną sekwencję bez oceny — czysto, jak obserwator, który dopuszcza, że mapa jest odwrotna.",
+    "Relacjan": "Sprawdź przesłankę przez relacje: a może to, co brief uznaje za problem, jest realną lojalnością wartą ochrony?",
+    "Emojy":    "Testuj emocją: zanim nazwiesz, sprawdź, czy przeciwna hipoteza nie budzi ulgi zamiast oporu.",
+    "Smaty":    "Sprawdź przesłankę ciałem: gdzie czujesz, że ta diagnoza NIE pasuje, gdzie ciało mówi „a jednak nie”.",
+    "Deega":    "Sprawdź, czy przeciwna hipoteza nie jest starszym, prawdziwszym wzorcem niż ten, który brief bierze za oczywisty.",
+}
+
+_COUNTER_SKELETON_PL = (
+    "═══ ROLA TESTU PRZESŁANKI (tylko w TEJ debacie) ═══\n"
+    "Pełnisz dodatkowo rolę testu wspólnej przesłanki Rady. ZANIM dasz swój "
+    "zwykły głos:\n"
+    "(a) Nazwij w jednym zdaniu domyślne założenie, które ten brief traktuje "
+    "jako oczywiste (np. „mury to tylko lęk”, „autentyczność zawsze wyzwala”).\n"
+    "(b) Sformułuj hipotezę PRZECIWNĄ i wskaż, jaka konkretna informacja "
+    "czyniłaby ją prawdziwą.\n"
+    "(c) Dopiero potem swój zwykły głos.\n"
+    "Nie podważasz dla sportu — testujesz, czy diagnoza Rady się broni. "
+    "Zostajesz sobą; to Twój głos zwrócony na założenie, nie nowa rola.\n"
+    "Jeśli brief NIE niesie ukrytej przesłanki wartej testu — powiedz to wprost "
+    "jednym zdaniem i przejdź do zwykłego głosu. Nie wymyślaj kontrowersji.\n"
+    "Kalibracja Twojego głosu: "
+)
+
+_COUNTER_SKELETON_EN = (
+    "═══ PREMISE-TEST ROLE (this debate only) ═══\n"
+    "You additionally carry the role of testing the Council's shared premise. "
+    "BEFORE your usual voice:\n"
+    "(a) Name in one sentence the default assumption this brief treats as "
+    "obvious (e.g. „the walls are just fear”, „authenticity always frees”).\n"
+    "(b) State the OPPOSITE hypothesis and what concrete evidence would make "
+    "it true.\n"
+    "(c) Only then your usual voice.\n"
+    "You do not challenge for sport — you test whether the Council's diagnosis "
+    "holds. You stay yourself; this is your voice turned onto the assumption, "
+    "not a new role.\n"
+    "If the brief carries NO hidden premise worth testing — say so plainly in "
+    "one sentence and move to your usual voice. Do not invent controversy.\n"
+    "Your voice calibration: "
+)
+
+
 class BaseAgent(ABC):
     """Abstrakcyjna klasa bazowa dla każdego agenta Rady."""
 
@@ -229,9 +284,16 @@ class BaseAgent(ABC):
         council_mode: str = "personal",
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        counter_role: bool = False,
     ) -> str:
         """
         Asynchroniczna wersja: realne wywołanie LLM (z cache + retry).
+
+        `counter_role` (anty-echo-chamber): gdy True, agent dostaje dodatkowy
+        moduł testu wspólnej przesłanki (patrz `_COUNTER_SKELETON_*`). Ustawiany
+        przez orchestrator dla DOKŁADNIE jednego agenta na debatę (rotacja wg
+        hasha briefu). Wchodzi do klucza cache, więc nie koliduje z wariantem
+        bez kontry.
 
         `dream`: opcjonalny `DreamArchitecture` z AKSJOMATU 1. Jeśli przekazany,
         jego nagłówek (`as_agent_context()`) jest wstrzykiwany na początek
@@ -270,12 +332,14 @@ class BaseAgent(ABC):
             has_evolution_note=bool(evolution_note and evolution_note.strip()),
             tenant_id=tenant_id,
             user_id=user_id,
+            counter_role=counter_role,
         )
 
     def get_full_instruction(
         self, dream: Optional[Any] = None, *, language: str = "pl",
         council_mode: str = "personal",
         has_evolution_note: bool = False,
+        counter_role: bool = False,
     ) -> str:
         """
         Składa pełną instrukcję systemową:
@@ -382,6 +446,19 @@ class BaseAgent(ABC):
                         "tezy, którą zaraz zakwestionujesz."
                     )
             parts.append(_hygiene)
+
+        # Counter-hypothesis — tylko gdy ten agent pełni rolę testu przesłanki
+        # (i nie jest Syezem). Szkielet (struktura testu) + kalibracja per głos,
+        # żeby kontra brzmiała charakterem agenta, nie generycznym krytykiem.
+        if counter_role and self.name != "Syez":
+            _skeleton = _COUNTER_SKELETON_EN if language == "en" else _COUNTER_SKELETON_PL
+            _voice = _COUNTER_VOICE.get(
+                self.name,
+                "Test the premise in your own characteristic register."
+                if language == "en"
+                else "Testuj przesłankę w swoim charakterystycznym rejestrze.",
+            )
+            parts.append(_skeleton + _voice)
 
         # Per-agent failure mode — chirurgiczny alarm na charakterystycznej pułapce
         # danego głosu. Dotyczy KAŻDEGO agenta (włącznie z Syezem), bo każdy ma
@@ -517,7 +594,10 @@ class BaseAgent(ABC):
         council_mode: str = "personal",
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        counter_role: bool = False,
     ) -> str:
+        # v9: + counter_role (anty-echo-chamber) w kluczu — ten sam brief z
+        # rolą kontry i bez niej to różne prompty, nie mogą dzielić cache.
         # v8: izolacja cache per tenant_id + user_id (multi-tenancy hard isolation).
         #
         # Dlaczego tenant_id / user_id są częścią klucza:
@@ -532,9 +612,9 @@ class BaseAgent(ABC):
         raw = (
             f"{context[:400]}:{model}:{temperature}:{dream_id or ''}:"
             f"{language}:{debate_mode}:{council_mode}:"
-            f"{tenant_id or ''}:{user_id or ''}"
+            f"{tenant_id or ''}:{user_id or ''}:{int(counter_role)}"
         ).encode("utf-8")
-        return f"llm:v8:{name}:{hashlib.sha256(raw).hexdigest()}"
+        return f"llm:v9:{name}:{hashlib.sha256(raw).hexdigest()}"
 
     @retry(
         # Tenacity retry TYLKO dla RateLimitError + APIConnectionError.
@@ -557,6 +637,7 @@ class BaseAgent(ABC):
         has_evolution_note: bool = False,
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
+        counter_role: bool = False,
     ) -> str:
         cfg = dict(self.get_model_config(council_mode=council_mode))
         if debate_mode == "codzienny":
@@ -594,6 +675,7 @@ class BaseAgent(ABC):
             council_mode=council_mode,
             tenant_id=tenant_id,
             user_id=user_id,
+            counter_role=counter_role,
         )
         redis = await self._get_redis()
         if redis is not None:
@@ -620,6 +702,7 @@ class BaseAgent(ABC):
         system_prompt = self.get_full_instruction(
             dream=dream, language=language, council_mode=council_mode,
             has_evolution_note=has_evolution_note,
+            counter_role=counter_role,
         )
         user_msg = self._build_user_message(
             context, language=language, council_mode=council_mode

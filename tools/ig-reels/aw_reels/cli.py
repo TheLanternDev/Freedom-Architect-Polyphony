@@ -14,6 +14,7 @@ from .config import (
     ROOT,
     get_api_key,
     get_default_concept,
+    get_production_next_concept,
     get_elevenlabs_voice_id,
     load_brand_style,
     load_concepts,
@@ -32,6 +33,11 @@ from .script_reason import (
 from .post_finish import finish_reel, DEFAULT_VOICEOVER
 from .post_extend import extend_reel_hybrid
 from .council_assets import load_reference_paths, DEFAULT_MANIFEST
+from .council_narration import (
+    DEFAULT_TIMELINE as DEFAULT_COUNCIL_TIMELINE,
+    build_council_narration,
+    timeline_to_voiceover_script,
+)
 from .fcp_export import build_fcp_bundle
 from .subtitles import burn_subtitles
 from .prompt_lint import LintFinding, format_findings, lint_prompt
@@ -218,6 +224,7 @@ def main() -> None:
 def concepts_cmd() -> None:
     concepts = load_concepts()
     default_id = get_default_concept()
+    prod_id = get_production_next_concept()
     table = Table(title="Koncepcje Architekt Wolności")
     table.add_column("ID", style="cyan")
     table.add_column("Tytuł")
@@ -228,6 +235,8 @@ def concepts_cmd() -> None:
         flags: list[str] = []
         if cid == default_id or c.get("default"):
             flags.append("default")
+        if cid == prod_id or c.get("production_next"):
+            flags.append("prod")
         if c.get("locked"):
             flags.append("locked")
         table.add_row(
@@ -455,6 +464,49 @@ def voiceover_set_cmd(
     console.print(
         f"[green]Voiceover zapisany[/green] ({len(session.voiceover_script)} znaków)\n"
         f"  aw-reels narrate {session_id}"
+    )
+
+
+@main.command("narrate-council")
+@click.argument("session_id")
+@click.option(
+    "--timeline",
+    "timeline_path",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="YAML z segmentami mowy (domyślnie brand/reel3_brief_narration.yaml)",
+)
+@click.option(
+    "--voices",
+    "voices_path",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="YAML mapowania agent → głos ElevenLabs",
+)
+@click.option("-o", "--output", default=None, help="MP3 wyjściowy (domyślnie output/SESSION/narration-council.mp3)")
+def narrate_council_cmd(
+    session_id: str,
+    timeline_path: str | None,
+    voices_path: str | None,
+    output: str | None,
+) -> None:
+    """Wielogłosowa narracja Rady (ElevenLabs per agent + timeline)."""
+    session = _load_session_id(session_id)
+    dest = Path(output) if output else OUTPUT_DIR / session_id / "narration-council.mp3"
+    tl = Path(timeline_path) if timeline_path else DEFAULT_COUNCIL_TIMELINE
+    vp = Path(voices_path) if voices_path else None
+    _progress("ElevenLabs — składanie narracji wielogłosowej…")
+    try:
+        build_council_narration(dest, timeline_path=tl, voices_path=vp)
+    except (RuntimeError, KeyError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+    session.narration_path = str(dest)
+    session.voiceover_script = timeline_to_voiceover_script(tl)
+    session.pipeline_stage = "voiced"
+    session.save()
+    console.print(
+        f"[green]Narracja Rady[/green] → {dest}\n"
+        f"  aw-reels publish {session_id} <ITER> --mix-ambient --force-narrate"
     )
 
 
@@ -1029,20 +1081,43 @@ def branch_edits_cmd(
 @click.option("--preview", is_flag=True, help="Najpierw 480p/8s preview przed pełnym 720p")
 @click.option("--no-confirm", is_flag=True, help="Pomiń pytanie o potwierdzenie (skrypty)")
 @click.option("--no-cache", is_flag=True, help="Wyłącz deduplikację promptów")
+@click.option(
+    "-f", "--prompt-file",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="Nadpisz prompt generacji (np. prompts/reel3-brief-final-prompt.txt)",
+)
+@click.option(
+    "--refs",
+    "refs_manifest",
+    default=None,
+    type=click.Path(exists=True, dir_okay=False),
+    help="manifest.yaml portretów Rady (1:1 likeness, max 7 ref)",
+)
 def finalize_cmd(
     session_id: str,
     iteration_id: str,
     preview: bool,
     no_confirm: bool,
     no_cache: bool,
+    prompt_file: str | None,
+    refs_manifest: str | None,
 ) -> None:
     session = _load_session_id(session_id)
     source = session.get_iteration(iteration_id)
     if not iteration_is_ready(source):
         raise click.ClickException("Iteracja musi mieć done/picked + URL.")
 
-    prompt = source.prompt
+    if prompt_file:
+        prompt = Path(prompt_file).read_text(encoding="utf-8").strip()
+    else:
+        prompt = source.prompt
     client = VideoClient()
+    ref_paths = load_reference_paths(Path(refs_manifest)) if refs_manifest else None
+    gen_duration = session.duration
+    if ref_paths:
+        gen_duration = min(gen_duration, 10)
+        console.print(f"[dim]R2V finalize: {len(ref_paths)} portretów, {gen_duration}s (limit API)[/dim]")
 
     if preview:
         preview_it = session.add_iteration(IterationKind.GENERATE, prompt, parent_id=iteration_id)
@@ -1077,8 +1152,9 @@ def finalize_cmd(
     it = session.add_iteration(IterationKind.GENERATE, prompt, parent_id=iteration_id)
     try:
         result = client.generate_text_to_video(
-            prompt, duration=session.duration, aspect_ratio=session.aspect_ratio,
+            prompt, duration=gen_duration, aspect_ratio=session.aspect_ratio,
             resolution="720p", on_progress=_progress,
+            reference_image_paths=ref_paths,
             use_cache=not no_cache,
         )
         it.status = "done"
@@ -1350,7 +1426,11 @@ def open_cmd(session_id: str, iteration_id: str) -> None:
 
     session = _load_session_id(session_id)
     it = session.get_iteration(iteration_id)
-    path = Path(it.muxed_path) if it.muxed_path and Path(it.muxed_path).is_file() else None
+    path = None
+    for candidate in (it.ready_path, it.muxed_path):
+        if candidate and Path(candidate).is_file():
+            path = Path(candidate)
+            break
     if path is None:
         path = Path(it.local_path) if it.local_path else OUTPUT_DIR / session_id / f"{iteration_id}.mp4"
     if not path.is_file():

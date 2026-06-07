@@ -310,9 +310,46 @@ async def demo_session(request: Request):
 
 
 @router.get("/me")
-async def current_user():
-    """Placeholder — faktyczny user bierze się z JWT w http_guard middleware."""
-    return {"hint": "Użyj JWT z /auth/login — sub i tenant_id w tokenie."}
+async def current_user(request: Request):
+    """Tożsamość bieżącego usera z aktywnego JWT (ustawiona przez http_guard).
+
+    L-1: zamiast placeholdera zwraca realne dane. `sub`/`tenant_id` pochodzą z
+    `request.state` (middleware zweryfikował JWT). `display_name` dociągamy z
+    tabeli `users` best-effort (poza JWT). Brak ważnej tożsamości → 401, spójnie
+    z resztą API (nie udajemy zalogowania).
+    """
+    sub = getattr(request.state, "architekt_subject", None)
+    tenant_id = getattr(request.state, "architekt_tenant_id", None)
+    auth_kind = getattr(request.state, "architekt_auth", None)
+
+    # Tożsamość per-user istnieje tylko przy JWT. Legacy bearer / service-header
+    # nie niosą `sub` z tokenu → /me nie ma czego zwrócić.
+    if auth_kind != "jwt" or not sub:
+        raise HTTPException(
+            401,
+            detail="Brak tożsamości użytkownika — zaloguj się przez POST /auth/login (JWT).",
+        )
+
+    display_name: Optional[str] = None
+    try:
+        from db import get_db
+
+        async for db in get_db():
+            cur = await db.execute(
+                "SELECT display_name FROM users WHERE username = ?", (str(sub),)
+            )
+            row = await cur.fetchone()
+            if row:
+                display_name = row[0]
+    except Exception as e:  # DB opcjonalna dla tej odpowiedzi — nie blokuj /me
+        logger.debug("/me: nie udało się pobrać display_name: %s", e)
+
+    return {
+        "sub": sub,
+        "tenant_id": tenant_id,
+        "display_name": display_name,
+        "auth": auth_kind,
+    }
 
 
 class RefreshRequest(BaseModel):
@@ -369,6 +406,22 @@ async def revoke_token(request: Request):
         return {"revoked": False, "detail": "Token nie zawiera JTI — wylogowanie tylko po stronie klienta."}
 
     ttl = max(1, int(exp) - int(time.time()))
-    await block_jti(str(jti), ttl)
+    # M-4: nie kłam o wyniku. block_jti zwraca True tylko gdy JTI realnie trafił
+    # do blocklist w Redis. Bez Redis revoke jest no-op po stronie serwera —
+    # zwracamy revoked:false, żeby klient wiedział, że musi przynajmniej wyczyścić
+    # token lokalnie (token pozostaje ważny do wygaśnięcia exp).
+    blocked = await block_jti(str(jti), ttl)
+    if not blocked:
+        logger.warning(
+            "Token JTI %s NIE unieważniony serwerowo (Redis niedostępny) — "
+            "revoke no-op, token ważny do exp.", jti
+        )
+        return {
+            "revoked": False,
+            "detail": (
+                "Revocation niedostępna (brak Redis) — token pozostaje ważny do "
+                "wygaśnięcia. Wyczyść token po stronie klienta."
+            ),
+        }
     logger.info("Token JTI %s unieważniony (TTL=%ds)", jti, ttl)
     return {"revoked": True}

@@ -28,7 +28,21 @@ from agents.tai import Tai
 from agents.obver import Obver
 from agents.kidi import Kidi
 
+import hashlib
+
 from core.completion_enforcer import SYEZ_AKSJOMAT2_PROSE_APPEND
+
+
+def _counter_index(brief: str, total: int) -> int:
+    """Deterministyczny wybór agenta-kontry wg hasha briefu (anty-echo-chamber).
+
+    Ten sam brief → ten sam agent (powtarzalne testy). Różne briefy → rotacja
+    różnych głosów. Wybór jest funkcją wyłącznie treści briefu, nie kolejności.
+    """
+    if total <= 0:
+        return 0
+    digest = hashlib.sha256(brief.encode("utf-8")).hexdigest()
+    return int(digest, 16) % total
 
 # 9 głosów Rady — Syez celowo poza listą
 COUNCIL = [
@@ -64,14 +78,20 @@ async def adeliberate(
     language: str = "pl",
     debate_mode: str = "pelna",
 ) -> list[tuple[str, str]]:
-    """Async + równolegle: 9 niezależnych wywołań LLM jednocześnie."""
+    """Async + równolegle: 9 niezależnych wywołań LLM jednocześnie.
+
+    Dokładnie jeden agent (rotacyjnie wg hasha briefu) dostaje rolę testu
+    wspólnej przesłanki (`counter_role=True`) — anty-echo-chamber.
+    """
     import asyncio
+    ci = _counter_index(context, len(COUNCIL))
     voices = await asyncio.gather(
         *(
             a.acontribute(
-                context, dream=dream, language=language, debate_mode=debate_mode
+                context, dream=dream, language=language, debate_mode=debate_mode,
+                counter_role=(i == ci),
             )
-            for a in COUNCIL
+            for i, a in enumerate(COUNCIL)
         )
     )
     return [(a.name, v) for a, v in zip(COUNCIL, voices)]
@@ -127,12 +147,14 @@ async def afull_synthesis(
     syntezuje wszystkie ich głosy. Syez nie jest jednym z 9.
     """
     import asyncio
+    ci = _counter_index(context, len(COUNCIL))
     voices = await asyncio.gather(
         *(
             a.acontribute(
-                context, dream=dream, language=language, debate_mode=debate_mode
+                context, dream=dream, language=language, debate_mode=debate_mode,
+                counter_role=(i == ci),
             )
-            for a in COUNCIL
+            for i, a in enumerate(COUNCIL)
         )
     )
     bundle = "\n\n".join(

@@ -7,10 +7,12 @@ import { SyezPanel } from "@/components/SyezPanel";
 import { PriorTurnView } from "@/components/PriorTurnView";
 import { BriefForm } from "@/components/BriefForm";
 import { CommitmentsTimeline } from "@/components/CommitmentsTimeline";
+import { DebateCommitments } from "@/components/DebateCommitments";
 import { FadeIn } from "@/components/ui/FadeIn";
 import { Icon } from "@/components/ui/Icon";
 import { SectionDivider } from "@/components/ui/SectionDivider";
 import { OnboardingPanel, DailyRitualPanel } from "@/components/PersonalRitualPanels";
+import { MojObrazPanel } from "@/components/MojObrazPanel";
 import { DreamsPanel } from "@/components/DreamsPanel";
 import { DebateHistory } from "@/components/DebateHistory";
 import { NotificationsPanel } from "@/components/NotificationsPanel";
@@ -24,6 +26,7 @@ import {
   getStoredJwt,
   setStoredJwt,
 } from "@/components/LoginScreen";
+import { DeviceLockScreen } from "@/components/DeviceLockScreen";
 import { useLang } from "@/lib/i18n";
 import {
   getCouncilMode,
@@ -77,7 +80,7 @@ export default function App() {
     readSetupDismissed(),
   );
   const [setupOpen, setSetupOpen] = useState(() => !readSetupDismissed());
-  const [sidePanel, setSidePanel] = useState<"dreams" | "history" | "notifications" | null>(null);
+  const [sidePanel, setSidePanel] = useState<"dreams" | "history" | "notifications" | "obraz" | null>(null);
   const [councilMode, setCouncilModeState] = useState(() => getCouncilMode());
   const [backendMode, setBackendMode] = useState<string | null>(null);
   const [dreamWizardOpen, setDreamWizardOpen] = useState(false);
@@ -90,6 +93,42 @@ export default function App() {
     useState<DemoPublicConfig | null>(null);
   const [demoStatus, setDemoStatus] = useState<DemoStatus | null>(null);
   const inDemo = isDemoSession();
+
+  // Device binding: sprawdź czy instalacja nie jest powiązana z innym
+  // komputerem (skopiowany folder). null = jeszcze nie sprawdzono.
+  const [deviceLock, setDeviceLock] = useState<{
+    locked: boolean;
+    fpCurrent?: string | null;
+    fpSealed?: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${getApiBase()}/device/status`);
+        if (!r.ok) {
+          // Backend bez device-routera (starsza wersja) → nie blokuj.
+          if (!cancelled) setDeviceLock({ locked: false });
+          return;
+        }
+        const j = await r.json();
+        if (!cancelled) {
+          setDeviceLock({
+            locked: j?.locked === true,
+            fpCurrent: j?.fingerprint_current ?? null,
+            fpSealed: j?.fingerprint_sealed ?? null,
+          });
+        }
+      } catch {
+        // Offline / brak backendu — nie blokuj UI z powodu device-checka.
+        if (!cancelled) setDeviceLock({ locked: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Register SW for offline-first
   useEffect(() => {
@@ -243,6 +282,17 @@ export default function App() {
     }
   }, [mode, state.status]);
 
+  // Warstwa 0: blokada urządzenia (przed logowaniem). Pieczęć z innej maszyny
+  // = skopiowana instalacja → nie wpuszczamy dalej.
+  if (deviceLock?.locked) {
+    return (
+      <DeviceLockScreen
+        fingerprintCurrent={deviceLock.fpCurrent}
+        fingerprintSealed={deviceLock.fpSealed}
+      />
+    );
+  }
+
   if (!authenticated) {
     return (
       <LoginScreen
@@ -379,6 +429,21 @@ export default function App() {
           >
             <Icon icon={Clock} size="sm" />
           </button>
+          {/* Mój obraz — tylko tryb osobisty */}
+          {councilMode === "personal" && (
+            <button
+              type="button"
+              title="Mój obraz"
+              onClick={() => setSidePanel((p) => p === "obraz" ? null : "obraz")}
+              className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
+                sidePanel === "obraz"
+                  ? "bg-gold/10 text-gold"
+                  : "text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary"
+              }`}
+            >
+              <Icon icon={Eye} size="sm" />
+            </button>
+          )}
         </nav>
 
         {/* Bottom — settings */}
@@ -403,6 +468,7 @@ export default function App() {
               {sidePanel === "dreams" && "Marzenia i projekty"}
               {sidePanel === "history" && "Historia debat"}
               {sidePanel === "notifications" && "Powiadomienia"}
+              {sidePanel === "obraz" && "Mój obraz"}
             </p>
             <button
               type="button"
@@ -430,6 +496,7 @@ export default function App() {
             {sidePanel === "notifications" && councilMode !== "personal" && (
               <p className="text-[12px] text-text-tertiary">Powiadomienia dostępne w trybie personal.</p>
             )}
+            {sidePanel === "obraz" && <MojObrazPanel />}
           </div>
         </aside>
       )}
@@ -617,6 +684,7 @@ export default function App() {
               <SyezPanel
                 synthesis={state.synthesis}
                 synthesisStructured={state.synthesisStructured}
+                tensionAxis={state.tensionAxis}
                 status={state.status}
                 debateId={state.debateId}
                 debateCost={state.debateCost}
@@ -636,6 +704,11 @@ export default function App() {
               {state.status === "done" && state.project?.id != null && (
                 <CommitmentsTimeline projectId={state.project.id} />
               )}
+              {state.status === "done" &&
+                state.project?.id == null &&
+                state.debateId != null && (
+                  <DebateCommitments debateId={state.debateId} />
+                )}
             </section>
             </FadeIn>
           )}

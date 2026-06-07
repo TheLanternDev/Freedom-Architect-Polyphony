@@ -36,6 +36,14 @@ def _patch_repo_without_insert():
     return patch.object(db, "repo", object())
 
 
+def _last_feedback_line(tmp_path) -> str:
+    """Ostatnia linia z pliku feedbacku. Po L-2 plik jest per-tenant
+    (`feedback_<tenant>.jsonl`), więc bierzemy jedyny pasujący glob."""
+    files = sorted(Path(tmp_path).glob("feedback_*.jsonl"))
+    assert files, f"Brak pliku feedback_*.jsonl w {tmp_path}"
+    return files[-1].read_text().strip().splitlines()[-1]
+
+
 def test_feedback_endpoint_accepts_minimum_payload(client):
     tc, tmp_path = client
     with _patch_repo_without_insert():
@@ -45,9 +53,8 @@ def test_feedback_endpoint_accepts_minimum_payload(client):
     assert body["status"] == "ok"
     assert "ts" in body
 
-    # Plik JSONL zapisany.
-    jsonl = (Path(tmp_path) / "feedback.jsonl").read_text()
-    line = json.loads(jsonl.strip().splitlines()[-1])
+    # Plik JSONL zapisany (per-tenant: feedback_<tenant>.jsonl — L-2).
+    line = json.loads(_last_feedback_line(tmp_path))
     assert line["rating"] == 4
     assert line["what_worked"] == ""
     assert line["what_broke"] == ""
@@ -73,9 +80,7 @@ def test_feedback_endpoint_persists_text_and_debate_id(client):
             "debate_id": 42,
         })
     assert r.status_code == 200
-    line = json.loads(
-        (Path(tmp_path) / "feedback.jsonl").read_text().strip().splitlines()[-1]
-    )
+    line = json.loads(_last_feedback_line(tmp_path))
     assert line["rating"] == 5
     assert "Synteza pokazała ruch" in line["what_worked"]
     assert "FragmentCompass" in line["what_broke"]
@@ -100,7 +105,5 @@ def test_feedback_endpoint_anonymous_when_no_jwt(client):
     with _patch_repo_without_insert():
         r = tc.post("/feedback", json={"rating": 2})
     assert r.status_code == 200
-    line = json.loads(
-        (Path(tmp_path) / "feedback.jsonl").read_text().strip().splitlines()[-1]
-    )
+    line = json.loads(_last_feedback_line(tmp_path))
     assert line["user_subject"] == "anonymous"

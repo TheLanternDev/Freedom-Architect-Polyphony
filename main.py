@@ -185,6 +185,11 @@ except ImportError:
     auth_router = None  # type: ignore[assignment]
 
 try:
+    from api.routers.device import router as device_router
+except ImportError:
+    device_router = None  # type: ignore[assignment]
+
+try:
     from api.routers.voice import router as voice_router
 except ImportError:
     voice_router = None  # type: ignore[assignment]
@@ -208,6 +213,11 @@ try:
     from api.routers.feedback import router as feedback_router
 except ImportError:
     feedback_router = None  # type: ignore[assignment]
+
+try:
+    from api.routers.admin import router as admin_router
+except ImportError:
+    admin_router = None  # type: ignore[assignment]
 
 
 def _redis_required_in_prod() -> bool:
@@ -419,6 +429,8 @@ if integrations_router:
     app.include_router(integrations_router)
 if auth_router:
     app.include_router(auth_router)
+if device_router:
+    app.include_router(device_router)
 if voice_router:
     app.include_router(voice_router)
 if attachment_router:
@@ -429,6 +441,8 @@ if demo_router:
     app.include_router(demo_router)
 if feedback_router:
     app.include_router(feedback_router)
+if admin_router:
+    app.include_router(admin_router)
 
 # ── Dwa Tryby (spec v1.0): osobisty (ten program) + biznesowy (business_fa2) ──
 # Mount sub-aplikacji `Freedom Architect 2.0` pod prefiksem /business. Lazy
@@ -459,6 +473,18 @@ async def _editions() -> dict[str, object]:
     return out
 
 
+# L-3: ŚWIADOMA DECYZJA — brak `allow_credentials=True`.
+# Auth idzie przez nagłówek `Authorization: Bearer <JWT>` (patrz api/http_guard.py
+# i src/src/lib/tokenStorage.ts), NIE przez cookie. Dlatego:
+#   • nie potrzebujemy `allow_credentials` (dotyczy cookies / HTTP auth),
+#   • dzięki temu w produkcji walidacja `AW_CORS_ORIGINS` może być restrykcyjna,
+#     a w dev dozwolony jest `*` (z `allow_credentials=True` przeglądarka ODRZUCA
+#     kombinację `*` + credentials — złamałoby to lokalny UI).
+# ⚠️  NIE dodawaj `allow_credentials=True` bez przejścia na auth cookie-based.
+#     Jeśli kiedyś wprowadzisz httpOnly cookie (np. przez BFF), MUSISZ jednocześnie:
+#       (a) ustawić jawną listę origins (żaden `*`),
+#       (b) dodać ochronę CSRF (SameSite + token), bo cookie auth jest podatne na CSRF,
+#     czego Bearer-w-nagłówku nie wymaga. Patrz docs/SECURITY_PRODUCTION.md.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allow_origins(),
@@ -945,33 +971,6 @@ async def commitments_due(within_hours: int = 24, db=Depends(get_db)):
     return {"commitments": items, "within_hours": wh}
 
 
-@app.post("/admin/trigger-followups")
-async def admin_trigger_followups(
-    authorization: Optional[str] = Header(None),
-):
-    """
-    Idempotentny „kopniak" Fazy 2: przeterminowane follow-upy + synchronizacja projektów.
-
-    Wymaga nagłówka `Authorization: Bearer <ARCHITEKT_ADMIN_TOKEN>`.
-    Bez ustawionego tokenu endpoint jest wyłączony (fail-closed).
-    """
-    # Stage 1 hardening: fail-closed — token zawsze wymagany.
-    admin_tok = (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip()
-    if not admin_tok:
-        raise HTTPException(
-            status_code=403,
-            detail="ARCHITEKT_ADMIN_TOKEN nie ustawiony — endpoint /admin wyłączony.",
-        )
-    auth = (authorization or "").strip()
-    if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or missing Authorization bearer for admin",
-        )
-    await _run_phase2_startup_tasks()
-    return {"ok": True}
-
-
 @app.post("/commitment/{commitment_id}/release")
 async def release_commitment_endpoint(
     commitment_id: int,
@@ -1022,9 +1021,9 @@ async def list_dreams(limit: int = 50, db=Depends(get_db)):
             p.status        AS _proj_status,
             p.started_at    AS _proj_started_at,
             p.last_progress_at AS _proj_last_progress_at,
-            COUNT(CASE WHEN c.completed_at IS NULL AND c.archived_at IS NULL THEN 1 END)
+            COUNT(CASE WHEN c.completed_at IS NULL AND p.archived_at IS NULL THEN 1 END)
                             AS _open_commitments_count,
-            MIN(CASE WHEN c.completed_at IS NULL AND c.archived_at IS NULL THEN c.follow_up_at END)
+            MIN(CASE WHEN c.completed_at IS NULL AND p.archived_at IS NULL THEN c.follow_up_at END)
                             AS _next_follow_up_at
         FROM dreams d
         LEFT JOIN projects p ON p.dream_id = d.id AND p.tenant_id = d.tenant_id
@@ -1172,42 +1171,6 @@ async def archive_project_endpoint(
 
 
 # ── Faza 3: personalizacja agentów — rebuild evolution ───────────────────────
-
-
-@app.post("/admin/rebuild-evolution")
-async def admin_rebuild_evolution(
-    authorization: Optional[str] = Header(None),
-    db=Depends(get_db),
-):
-    """Przebudowuje rolling notatki ewolucyjne dla wszystkich agentów.
-
-    Wymaga nagłówka `Authorization: Bearer <ARCHITEKT_ADMIN_TOKEN>`.
-    Bez ustawionego tokenu endpoint jest wyłączony (fail-closed).
-    """
-    # Stage 1 hardening: fail-closed — token zawsze wymagany.
-    admin_tok = (os.getenv("ARCHITEKT_ADMIN_TOKEN") or "").strip()
-    if not admin_tok:
-        raise HTTPException(
-            status_code=403,
-            detail="ARCHITEKT_ADMIN_TOKEN nie ustawiony — endpoint /admin wyłączony.",
-        )
-    auth = (authorization or "").strip()
-    if not hmac.compare_digest(auth, f"Bearer {admin_tok}"):
-        raise HTTPException(status_code=401, detail="Invalid admin token")
-
-    if not DB_AVAILABLE:
-        raise HTTPException(status_code=503, detail="DB niedostępna")
-
-    try:
-        from core.agent_learner import run_full_evolution_cycle
-
-        agent_names = [a.name for a in COUNCIL] if RADA_AVAILABLE else []
-        results = await run_full_evolution_cycle(db, repo, agent_names)
-        await db.commit()
-        return {"ok": True, "agents_updated": list(results.keys())}
-    except Exception as e:
-        logger.warning("rebuild-evolution failed: %s", e)
-        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Legacy endpoint — zachowany dla kompatybilności wstecznej z v3.1.

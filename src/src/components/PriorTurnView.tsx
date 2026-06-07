@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AgentCard } from "@/components/AgentCard";
 import { SyezPanel } from "@/components/SyezPanel";
+import { DebateCommitments } from "@/components/DebateCommitments";
 import { FadeIn } from "@/components/ui/FadeIn";
 import { SectionDivider } from "@/components/ui/SectionDivider";
 import { useLang } from "@/lib/i18n";
@@ -69,6 +70,7 @@ export function PriorTurnView({ turn, index }: Props) {
               <SyezPanel
                 synthesis={turn.synthesis}
                 synthesisStructured={turn.synthesisStructured}
+                tensionAxis={turn.tensionAxis}
                 status="done"
                 debateId={turn.debateId}
                 debateCost={turn.debateCost}
@@ -76,6 +78,9 @@ export function PriorTurnView({ turn, index }: Props) {
                 sticky={false}
                 readOnly
               />
+            )}
+            {turn.debateId != null && (
+              <DebateCommitments debateId={turn.debateId} />
             )}
           </div>
         )}

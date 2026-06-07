@@ -137,9 +137,27 @@ async def init_database(sqlite_init_cb: Any) -> None:
                     f"Inicjalizacja PostgreSQL nieudana w produkcji ({exc}). "
                     "RLS i izolacja tenantów wymagają działającego Postgresa — brak fallbacku SQLite."
                 ) from exc
+            # Stage 2 hardening (poza produkcją): DATABASE_URL wskazuje Postgres,
+            # ale połączenie padło. Domyślnie NIE wpadamy po cichu na SQLite —
+            # SQLite nie ma RLS, więc fallback maskowałby brak izolacji per-tenant
+            # i dawał fałszywe poczucie bezpieczeństwa podczas testów. Fail-closed.
+            #
+            # Świadoma furtka dev: AW_ALLOW_SQLITE_FALLBACK=1 przywraca stare
+            # zachowanie (np. szybka praca offline bez Dockera) — z głośnym ostrzeżeniem.
+            allow_fallback = os.getenv("AW_ALLOW_SQLITE_FALLBACK", "").strip().lower() in (
+                "1", "true", "yes",
+            )
+            if not allow_fallback:
+                raise RuntimeError(
+                    f"PostgreSQL niedostępny ({exc}), a DATABASE_URL wskazuje Postgres. "
+                    "Start przerwany: SQLite nie ma RLS, więc fallback złamałby izolację "
+                    "per-tenant. Uruchom bazę (`docker compose up postgres`) albo — jeśli "
+                    "naprawdę chcesz dev bez RLS — ustaw AW_ALLOW_SQLITE_FALLBACK=1 "
+                    "(lub usuń DATABASE_URL z .env)."
+                ) from exc
             logger.warning(
-                "⚠️ DEV ONLY: PostgreSQL niedostępny (%s) — fallback na SQLite (%s). "
-                "RLS nie działa na SQLite; ustaw działający Postgres lub usuń DATABASE_URL.",
+                "⚠️ AW_ALLOW_SQLITE_FALLBACK=1 — PostgreSQL niedostępny (%s), fallback na "
+                "SQLite (%s). RLS NIE DZIAŁA — izolacja per-tenant wyłączona. Tylko dev/offline.",
                 exc,
                 os.getenv("ARCHITEKT_DB_PATH", "data/architekt.db"),
             )

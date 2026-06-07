@@ -5,7 +5,8 @@ import type { LiveTensionPair } from "@/types/debate";
 function edgeStyle(intensity: number): { stroke: string; sw: number } {
   if (intensity >= 0.72) return { stroke: "rgba(248,113,113,0.85)", sw: 2.2 };
   if (intensity >= 0.45) return { stroke: "rgba(251,191,36,0.75)", sw: 1.6 };
-  return { stroke: "rgba(56,189,248,0.7)", sw: 1.2 };
+  // Niskie napięcie: teal z design-systemu (#3D8B8B) — usunięty UI-blue (regresja D).
+  return { stroke: "rgba(61,139,139,0.8)", sw: 1.2 };
 }
 
 export function TensionMeter({ pairs }: { pairs: LiveTensionPair[] }) {
@@ -136,7 +137,7 @@ export function TensionMeter({ pairs }: { pairs: LiveTensionPair[] }) {
           <span className="w-2 h-2 rounded-full bg-amber-400/80" /> {t("tensionmeter.legend.mid")}
         </span>
         <span className="inline-flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-sky-400/80" /> {t("tensionmeter.legend.low")}
+          <span className="w-2 h-2 rounded-full bg-teal/80" /> {t("tensionmeter.legend.low")}
         </span>
       </div>
     </section>

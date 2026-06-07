@@ -23,7 +23,7 @@ def test_jwt_bearer_without_shared_api_key(monkeypatch, client_no_redis):
 
     exp = datetime.now(UTC) + timedelta(hours=2)
     tok = jwt.encode(
-        {"sub": "user-42", "exp": int(exp.timestamp())},
+        {"sub": "user-42", "exp": int(exp.timestamp()), "jti": "j-mode-1"},
         secret,
         algorithm="HS256",
     )
@@ -45,6 +45,7 @@ def test_jwt_tenant_header_mismatch_forbidden(monkeypatch, client_no_redis):
             "sub": "user-42",
             "exp": int(exp.timestamp()),
             "tenant_id": "t-a",
+            "jti": "j-mode-2",
         },
         secret,
         algorithm="HS256",

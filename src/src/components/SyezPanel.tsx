@@ -2,8 +2,10 @@ import { useCallback, useState, type FormEvent } from "react";
 import type {
   DebateStatus,
   SynthesisStructuredPayload,
+  TensionAxisPayload,
 } from "@/types/debate";
 import { MermaidBlock } from "@/components/MermaidBlock";
+import { TensionAxis } from "@/components/TensionAxis";
 import { extractLikelyOpenQuestions } from "@/lib/openQuestions";
 import { splitSynthesisSegments } from "@/lib/synthesisSegments";
 import { useLang } from "@/lib/i18n";
@@ -13,6 +15,8 @@ import { getApiAuthHeaders } from "@/lib/apiAuth";
 interface Props {
   synthesis: string;
   synthesisStructured?: SynthesisStructuredPayload;
+  /** Hierarchiczna oś napięć — gdy obecna, zastępuje płaski Mermaid. */
+  tensionAxis?: TensionAxisPayload;
   status: DebateStatus;
   debateId?: number;
   debateCost?: number;
@@ -130,9 +134,25 @@ function TensionBars({
   );
 }
 
+/** Podświetla w prozie fragment wskazany przez oś napięć (hover/click węzła). */
+function renderProse(text: string, anchor: string | null) {
+  if (!anchor || !text.includes(anchor)) return text;
+  const i = text.indexOf(anchor);
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="bg-gold/20 text-[#E8D5A3] rounded px-0.5">
+        {anchor}
+      </mark>
+      {text.slice(i + anchor.length)}
+    </>
+  );
+}
+
 export function SyezPanel({
   synthesis,
   synthesisStructured,
+  tensionAxis,
   status,
   debateId,
   debateCost,
@@ -155,9 +175,18 @@ export function SyezPanel({
   const [continuing, setContinuing] = useState(false);
   const [ownCommit, setOwnCommit] = useState("");
   const [ownBusy, setOwnBusy] = useState(false);
+  const [focusAnchor, setFocusAnchor] = useState<string | null>(null);
 
   const inferredQuestions = extractLikelyOpenQuestions(synthesis);
   const segments = splitSynthesisSegments(synthesis);
+  const showAxis =
+    !!tensionAxis &&
+    Array.isArray(tensionAxis.tensions) &&
+    tensionAxis.tensions.length > 0;
+  // Gdy mamy hierarchiczną oś, pomijamy surowy Mermaid (nie dublujemy wizualizacji).
+  const renderSegments = showAxis
+    ? segments.filter((s) => s.kind !== "mermaid")
+    : segments;
 
   const downloadMd = useCallback(async () => {
     if (debateId != null) {
@@ -486,13 +515,16 @@ export function SyezPanel({
                 </ul>
               </div>
             )}
+            {showAxis && tensionAxis && (
+              <TensionAxis axis={tensionAxis} onFocusAnchor={setFocusAnchor} />
+            )}
             <div className="font-serif text-[15px] leading-[1.85] text-[#C9C8D4]">
-              {segments.map((seg, idx) =>
+              {renderSegments.map((seg, idx) =>
                 seg.kind === "mermaid" ? (
                   <MermaidBlock key={`m-${idx}`} chart={seg.value} />
                 ) : (
                   <div key={`t-${idx}`} className="whitespace-pre-wrap">
-                    {seg.value}
+                    {renderProse(seg.value, focusAnchor)}
                   </div>
                 ),
               )}
@@ -508,14 +540,22 @@ export function SyezPanel({
 
       {/* Prawa kolumna — domknięcie (AX2): commit + kontynuacja */}
       {!readOnly && !!(onCommitStep || onContinueThread) && (
-        <div className="w-[220px] shrink-0 border-l border-white/[0.06] p-4 flex flex-col gap-4 no-print">
+        <div className="w-[264px] shrink-0 border-l border-white/[0.06] p-4 flex flex-col gap-5 no-print">
+          {isDone && (onCommitStep || onContinueThread) && debateId != null && (
+            <div className="text-[10px] uppercase tracking-[0.2em] text-gold/55">
+              {t("syez.closing.title")}
+            </div>
+          )}
           {commitErr && (
             <p className="text-[12px] text-red-400">{commitErr}</p>
           )}
           {isDone && onCommitStep && debateId != null && (
-            <form onSubmit={(e) => void handleOwnCommit(e)} className="space-y-2">
+            <form
+              onSubmit={(e) => void handleOwnCommit(e)}
+              className="space-y-2 rounded-xl border border-gold/30 bg-gold/[0.06] p-3 shadow-[0_0_18px_rgba(197,164,110,0.10)]"
+            >
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <label className="block text-[11px] uppercase tracking-widest text-red-300/80">
+                <label className="block text-[12px] font-medium text-gold/90">
                   {t("syez.force_commit.title")}
                 </label>
                 {debateMode === "schematy" && (
@@ -524,28 +564,26 @@ export function SyezPanel({
                   </span>
                 )}
               </div>
-              <p className="text-[10px] text-white/40 leading-snug">{t("syez.force_commit.lead")}</p>
+              <p className="text-[10px] text-white/45 leading-snug">{t("syez.force_commit.lead")}</p>
               <textarea
                 value={ownCommit}
                 onChange={(e) => setOwnCommit(e.target.value)}
                 rows={3}
                 placeholder={t("syez.force_commit.placeholder")}
-                className="w-full rounded-lg bg-black/40 border border-red-500/20 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25 focus:outline-none focus:border-red-400/50 resize-y min-h-[72px]"
+                className="w-full rounded-lg bg-black/40 border border-gold/25 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25 focus:outline-none focus:border-gold/55 resize-y min-h-[72px]"
               />
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={ownBusy || status !== "done"}
-                  className="text-[12px] px-4 py-2 rounded-lg bg-red-900/35 border border-red-500/45 text-red-100 hover:bg-red-900/50 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
-                >
-                  {ownBusy ? t("syez.btn.committing") : t("syez.force_commit.btn")}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={ownBusy || status !== "done"}
+                className="w-full text-[13px] px-4 py-2.5 rounded-lg bg-gold/20 border border-gold/50 text-gold font-medium hover:bg-gold/30 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+              >
+                {ownBusy ? t("syez.btn.committing") : t("syez.force_commit.btn")}
+              </button>
             </form>
           )}
           {isDone && onContinueThread && debateId != null && (
             <form onSubmit={(e) => void handleContinueSubmit(e)} className="space-y-2">
-              <label className="block text-[11px] uppercase tracking-widest text-white/35">
+              <label className="block text-[11px] uppercase tracking-widest text-teal/70">
                 {t("syez.continue.label")}
               </label>
               <textarea
@@ -555,15 +593,13 @@ export function SyezPanel({
                 placeholder={t("syez.continue.placeholder")}
                 className="w-full rounded-lg bg-black/35 border border-white/15 px-3 py-2 text-[13px] text-white/90 placeholder:text-white/25 focus:outline-none focus:border-teal/50 resize-y min-h-[72px]"
               />
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={continuing || status !== "done"}
-                  className="text-[12px] px-4 py-2 rounded-lg bg-teal/20 border border-teal/45 text-teal hover:bg-teal/30 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
-                >
-                  {continuing ? t("syez.continue.btn_starting") : t("syez.continue.btn")}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={continuing || status !== "done"}
+                className="w-full text-[13px] px-4 py-2.5 rounded-lg bg-teal/20 border border-teal/45 text-teal font-medium hover:bg-teal/30 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+              >
+                {continuing ? t("syez.continue.btn_starting") : t("syez.continue.btn")}
+              </button>
             </form>
           )}
         </div>

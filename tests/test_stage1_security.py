@@ -243,7 +243,12 @@ def test_service_header_requires_tenant_when_jwt_configured(monkeypatch, client_
     assert "Tenant" in r.json()["detail"] or "tenant" in r.json()["detail"].lower()
 
 
-def test_service_header_with_tenant_allowed(monkeypatch, client_no_redis):
+def test_service_header_requires_user_when_jwt_configured(monkeypatch, client_no_redis):
+    """P1-A1b http_guard: BFF z X-Tenant-Id ale bez X-User-Id przy aktywnym JWT → 403.
+
+    Fallback user_id := tenant_id dawał wszystkim userom tenanta wspólny cache key
+    → cross-user wyciek odpowiedzi LLM. Fail-closed wymusza propagację X-User-Id.
+    """
     svc = "bff-service-key-value-32chars-min!"
     secret = "jwt-unit-secret-key-min-32chars!"
     monkeypatch.setenv("ARCHITEKT_API_KEY", svc)
@@ -253,6 +258,22 @@ def test_service_header_with_tenant_allowed(monkeypatch, client_no_redis):
     r = client_no_redis.get(
         "/history",
         headers={hdr: svc, th: "tenant-bff-smoke"},
+    )
+    assert r.status_code == 403
+    assert "User" in r.json()["detail"] or "user" in r.json()["detail"].lower()
+
+
+def test_service_header_with_tenant_and_user_allowed(monkeypatch, client_no_redis):
+    svc = "bff-service-key-value-32chars-min!"
+    secret = "jwt-unit-secret-key-min-32chars!"
+    monkeypatch.setenv("ARCHITEKT_API_KEY", svc)
+    monkeypatch.setenv("ARCHITEKT_JWT_SECRET", secret)
+    hdr = settings.service_api_header_name()
+    th = settings.tenant_header_name()
+    uh = "X-User-Id"
+    r = client_no_redis.get(
+        "/history",
+        headers={hdr: svc, th: "tenant-bff-smoke", uh: "user-bff-smoke"},
     )
     assert r.status_code == 200
 

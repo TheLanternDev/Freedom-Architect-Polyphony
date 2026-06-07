@@ -128,3 +128,15 @@ def get_default_concept() -> str:
     if not concepts:
         raise RuntimeError("Brak konceptów w brand/concepts.yaml")
     return next(iter(sorted(concepts)))
+
+
+def get_production_next_concept() -> str | None:
+    """Następny koncept do produkcji (pole production_next: true)."""
+    for cid, concept in load_concepts().items():
+        if concept.get("production_next"):
+            return cid
+    queue = (load_concepts_data().get("policy") or {}).get("reel_series", {}).get("reel3_queue")
+    if isinstance(queue, list) and queue:
+        first = str(queue[0]).strip()
+        return first or None
+    return None

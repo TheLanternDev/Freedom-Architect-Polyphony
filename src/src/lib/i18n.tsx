@@ -141,6 +141,22 @@ export const DICT: Record<string, Phrase> = {
     pl: "Zaloguj się lub zarejestruj, aby zarządzać danymi (POST /auth/login).",
     en: "Sign in or register to manage your data (POST /auth/login).",
   },
+  "account.auth_intro": {
+    pl: "Zaloguj się lub załóż konto (JWT per-user), aby eksportować lub usuwać swoje dane. To bezpieczna ścieżka z izolacją tenanta.",
+    en: "Sign in or create an account (per-user JWT) to export or delete your data. This is the safe, tenant-isolated path.",
+  },
+  "account.auth_tab_login": { pl: "Logowanie", en: "Login" },
+  "account.auth_tab_register": { pl: "Rejestracja", en: "Register" },
+  "account.auth_username": { pl: "Login", en: "Username" },
+  "account.auth_password": { pl: "Hasło", en: "Password" },
+  "account.auth_display_name": { pl: "Imię (opcjonalnie)", en: "Name (optional)" },
+  "account.auth_btn_login": { pl: "Zaloguj", en: "Log in" },
+  "account.auth_btn_register": { pl: "Zarejestruj", en: "Register" },
+  "account.auth_busy": { pl: "Łączę…", en: "Connecting…" },
+  "account.auth_pw_hint_register": {
+    pl: "Hasło: min. 6 znaków.",
+    en: "Password: min. 6 characters.",
+  },
 
   // Sieć / fetch (useDebate, szczególnie Safari „Load failed”)
   "debate.network.unreachable": {
@@ -375,6 +391,10 @@ export const DICT: Record<string, Phrase> = {
     pl: "Pełna synteza pojawi się tutaj w trakcie strumieniowania.",
     en: "The full synthesis text will appear here as it streams in.",
   },
+  "syez.closing.title": {
+    pl: "Domknięcie Rady",
+    en: "Closing the Council",
+  },
   "syez.continue.label": {
     pl: "Kontynuuj wątek po tej debacie",
     en: "Continue the thread after this debate",
@@ -397,12 +417,12 @@ export const DICT: Record<string, Phrase> = {
   "syez.commit.prefix": { pl: "Zobowiązuję się do", en: "I commit to" },
   "syez.commit.error_fallback": { pl: "Błąd zapisu", en: "Save error" },
   "syez.force_commit.title": {
-    pl: "Zobowiązanie (siła cienia)",
-    en: "Commitment (shadow weight)",
+    pl: "Twoje zobowiązanie",
+    en: "Your commitment",
   },
   "syez.force_commit.lead": {
-    pl: "Bez cichego znikania — zapis trafia do projektu i uruchamia follow-up w trybie schematów.",
-    en: "No silent vanishing — saved to your project; pattern mode schedules follow-up.",
+    pl: "Jeden konkretny krok, który bierzesz z tej debaty. Zapisuje się w historii — bez cichego znikania.",
+    en: "One concrete step you take from this debate. Saved to your history — no silent vanishing.",
   },
   "syez.force_commit.placeholder": {
     pl: "Konkret, który możesz dowieść za 72h…",
@@ -690,6 +710,29 @@ export const DICT: Record<string, Phrase> = {
     en: "Demo limit reached. Full version: local install / founders.",
   },
   "demo.new_session": { pl: "Nowa sesja demo", en: "New demo session" },
+
+  "device_lock.badge": {
+    pl: "Instalacja zablokowana",
+    en: "Installation locked",
+  },
+  "device_lock.title": {
+    pl: "Architekt powiązany z innym komputerem",
+    en: "Architect bound to another computer",
+  },
+  "device_lock.body": {
+    pl: "Ta kopia Architekta została po raz pierwszy uruchomiona na innej maszynie i jest do niej przypisana. Uruchomienie skopiowanej wersji (pendrive, chmura, przeniesiony folder) na tym komputerze jest niemożliwe.",
+    en: "This copy of the Architect was first launched on another machine and is bound to it. Running a copied version (USB stick, cloud, moved folder) on this computer is not possible.",
+  },
+  "device_lock.fp_current": { pl: "ta maszyna", en: "this machine" },
+  "device_lock.fp_sealed": { pl: "pieczęć", en: "seal" },
+  "device_lock.recovery_title": {
+    pl: "Zmieniasz sprzęt lub reinstalujesz system? Uruchom reset:",
+    en: "Changing hardware or reinstalling the OS? Run the reset:",
+  },
+  "device_lock.footer": {
+    pl: "Reset zwalnia powiązanie i pozwala przypisać tę maszynę przy następnym uruchomieniu.",
+    en: "Reset releases the binding and lets this machine be assigned on next launch.",
+  },
 };
 
 export function t(lang: Lang, key: string): string {

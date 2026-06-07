@@ -287,6 +287,89 @@ def _build_tension_structured_bundle(
     return "\n\n".join(parts)
 
 
+# ── Zadanie 1: hierarchiczna oś napięć (TensionAxis) ────────────────────────
+#
+# Filozofia: structured payload Syeza prawie zawsze jest pusty (Syez ma ZAKAZ
+# JSON — tylko proza + mermaid). Wiarygodnym, deterministycznym źródłem napięć
+# jest monitor napięć (`live_pairs` z intensity) + mapowanie agentów na oś
+# structural↔somatic↔shadow (z instrukcji syez.py) + zdania z prozy (mandat
+# polifonii). Składamy to TUTAJ, obok Syeza — bez dodatkowego wywołania LLM
+# (token-minimal) i bez dotykania kruchego parsera JSON. Operuje wyłącznie na
+# danych bieżącego żądania (in-memory) — izolacja tenantów nietknięta.
+
+_AGENT_AXIS_POLE: dict[str, str] = {
+    "Kogit": "structural", "Tai": "structural", "Obver": "structural",
+    "Relacjan": "structural",
+    "Emojy": "somatic", "Smaty": "somatic", "Kidi": "somatic",
+    "Szow": "shadow", "Deega": "shadow",
+}
+_POLE_PRIORITY: dict[str, int] = {"shadow": 3, "somatic": 2, "structural": 1}
+
+
+def _axis_depth(intensity: float) -> int:
+    """Głębia hierarchii z intensywności: silniejsze napięcie = głębszy korzeń."""
+    if intensity >= 0.72:
+        return 3
+    if intensity >= 0.45:
+        return 2
+    return 1
+
+
+def _pair_pole(a: str, b: str) -> str:
+    """Pas kolizji pary = biegun o wyższym priorytecie (shadow > somatic > structural)."""
+    pa = _AGENT_AXIS_POLE.get(a, "structural")
+    pb = _AGENT_AXIS_POLE.get(b, "structural")
+    return pa if _POLE_PRIORITY[pa] >= _POLE_PRIORITY[pb] else pb
+
+
+def _find_pair_sentence(prose: str, a: str, b: str) -> str:
+    """Zdanie z prozy wymieniające oba imiona agentów (mandat polifonii Stage 2)."""
+    if not prose:
+        return ""
+    for s in re.split(r"(?<=[.!?])\s+", prose):
+        if a in s and b in s:
+            return s.strip()[:240]
+    return ""
+
+
+def build_tension_axis(
+    full_voices: dict[str, str],
+    live_pairs: list[dict[str, Any]],
+    synthesis: str,
+) -> Optional[dict[str, Any]]:
+    """Buduje hierarchiczny payload osi napięć. None → frontend wraca do Mermaida."""
+    if not live_pairs:
+        return None
+    present = set(full_voices.keys())
+    pairs = [p for p in live_pairs if p.get("a") in present and p.get("b") in present]
+    if not pairs:
+        return None
+    pairs = sorted(pairs, key=lambda p: float(p.get("intensity", 0)), reverse=True)[:8]
+
+    tensions: list[dict[str, Any]] = []
+    for p in pairs:
+        a, b = p["a"], p["b"]
+        inten = round(float(p.get("intensity", 0)), 3)
+        sent = _find_pair_sentence(synthesis, a, b)
+        tensions.append({
+            "between": [a, b],
+            "why": sent,
+            "intensity": inten,
+            "axis_pole": _pair_pole(a, b),
+            "depth": _axis_depth(inten),
+            "prose_anchor": sent or None,
+        })
+
+    ta, tb = pairs[0]["a"], pairs[0]["b"]
+    core_sent = _find_pair_sentence(synthesis, ta, tb)
+    central_axis = {
+        "core": core_sent or f"{ta} ↔ {tb}",
+        "poles": [ta, tb],
+        "dominant_pole": _pair_pole(ta, tb),
+    }
+    return {"central_axis": central_axis, "tensions": tensions}
+
+
 def build_syez_payload(
     raw_brief: str,
     voices_bundle: str,
@@ -636,6 +719,15 @@ async def _phase_synthesis(
         await asyncio.sleep(0.025)
     yield _sse("synthesis_done", {"full_text": synthesis})
 
+    # ── Zadanie 1: hierarchiczna oś napięć (fallback do Mermaida gdy None) ─
+    _axis: Optional[dict[str, Any]] = None
+    try:
+        _axis = build_tension_axis(full_voices, pairs, synthesis)
+        if _axis is not None:
+            yield _sse("tension_axis", _axis)
+    except Exception as e:  # noqa: BLE001 — wizualizacja nie może wywrócić syntezy
+        _log_orchestrator_issue("tension_axis_build", e, debate_id=debate_id)
+
     # ── Completion audit (AKSJOMAT 2) ────────────────────────────────────
     parsed = _try_parse_synthesis_json(synthesis)
     synthesis_final, parsed_final, violation, audit_events = await _attempt_completion_audit(
@@ -647,7 +739,11 @@ async def _phase_synthesis(
         yield _sse("completion_audit_violation", violation)
 
     # Signal results back
-    yield PhaseSynthesisResult(synthesis_final=synthesis_final, parsed_final=parsed_final)  # type: ignore[misc]
+    yield PhaseSynthesisResult(  # type: ignore[misc]
+        synthesis_final=synthesis_final,
+        parsed_final=parsed_final,
+        tension_axis=_axis,
+    )
 
 
 async def _phase_commit_and_finalize(
@@ -663,6 +759,7 @@ async def _phase_commit_and_finalize(
     cost_start: float,
     continuation_parent_id: Optional[int],
     council_mode: str,
+    tension_axis: Optional[dict[str, Any]] = None,
 ) -> AsyncIterator[str]:
     """Phase 3: persist voices/synthesis, auto-commitment, final event."""
     # ── Zapis głosów + syntezy ───────────────────────────────────────────
@@ -688,9 +785,22 @@ async def _phase_commit_and_finalize(
                     )
                     if snippet:
                         await repo.merge_agent_evolution_snippet(db, name, snippet, council_mode=council_mode)
-            await repo.save_synthesis(db, debate_id, synthesis_final, parsed_final)
+            # Persystencja osi napięć (Zadanie 1): scalamy ją do full_synthesis_json,
+            # żeby /debate/{id} i /thread zwracały ją jako synthesis_structured.tension_axis
+            # bez zmian w main.py. Gdy parsed_final puste, zapisujemy sam axis.
+            save_json = parsed_final
+            if tension_axis is not None:
+                save_json = dict(parsed_final or {})
+                save_json["tension_axis"] = tension_axis
+            await repo.save_synthesis(db, debate_id, synthesis_final, save_json)
             await db.commit()
         except Exception as e:
+            # Audyt izolacji (ADR-001): świadomy fail-soft. Błąd zapisu (w tym
+            # odrzucenie przez RLS — pg_wrap re-raisuje fail-closed PRZED commitem,
+            # więc nic cross-tenant się nie zapisze) NIE crashuje streamu — user
+            # dostaje wynik, ale synteza nie jest utrwalona. Sygnalizowane tylko
+            # w logach (level=error), nie w odpowiedzi SSE. To akceptowalny tradeoff,
+            # nie luka izolacji.
             _log_orchestrator_issue(
                 "persistence_synthesis",
                 e,
@@ -936,12 +1046,14 @@ async def _stream_debate_inner(
         # ── Phase 2: Synthesis (Syez + audit) ────────────────────────────────
         synthesis_final = ""
         parsed_final: Optional[dict[str, Any]] = None
+        tension_axis: Optional[dict[str, Any]] = None
         async for evt in _phase_synthesis(
             raw_brief, full_voices, dream, brief, pairs, db, project_id, debate_id, council_mode
         ):
             if isinstance(evt, PhaseSynthesisResult):
                 synthesis_final = evt.synthesis_final
                 parsed_final = evt.parsed_final
+                tension_axis = evt.tension_axis
             else:
                 yield evt
 
@@ -949,5 +1061,6 @@ async def _stream_debate_inner(
         async for evt in _phase_commit_and_finalize(
             db, debate_id, brief, full_voices, synthesis_final, parsed_final,
             project_id, dream, council, _cost_start, continuation_parent_id, council_mode,
+            tension_axis,
         ):
             yield evt

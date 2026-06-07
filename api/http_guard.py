@@ -49,6 +49,20 @@ def _admin_self_auth_paths(path: str) -> bool:
     return path == "/metrics" or path.startswith("/admin/")
 
 
+def _device_gate_allowlist(path: str) -> bool:
+    """Ścieżki dostępne nawet przy zablokowanym urządzeniu.
+
+    SPA musi móc się załadować i pokazać ekran blokady: statyczne assety,
+    /edition (bootstrap UI), /health (liveness) oraz /device/status (samo
+    sprawdzenie blokady). Reszta jest twardo zablokowana 423-ką.
+    """
+    return (
+        path == "/device/status"
+        or path in _public_paths()
+        or path.startswith("/assets/")
+    )
+
+
 async def architekt_http_guard(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
@@ -57,7 +71,38 @@ async def architekt_http_guard(
         return await call_next(request)
 
     path = request.url.path
-    if path in _public_paths() or path.startswith("/assets/") or path.startswith("/auth/"):
+
+    # ── Warstwa 0: device binding (przed auth) ──────────────────────────────
+    # Miękka bariera przeciw skopiowaniu folderu aplikacji na inny komputer.
+    # NIE jest izolacją danych (tę zapewnia auth + RLS) — to osobna, wcześniejsza
+    # warstwa. Gdy pieczęć pochodzi z innej maszyny → 423 Locked na wszystkim
+    # poza allowlistą potrzebną do wyświetlenia ekranu blokady w SPA.
+    from core.device_seal import ensure_and_verify
+
+    seal = ensure_and_verify()
+    if seal.status == "locked" and not _device_gate_allowlist(path):
+        return JSONResponse(
+            {
+                "detail": (
+                    "Ta instalacja Architekta jest powiązana z innym komputerem. "
+                    "Uruchomienie skopiowanej wersji na nowej maszynie jest "
+                    "niemożliwe. Jeśli zmieniasz sprzęt — uruchom reset: "
+                    "python -m tools.device_reset"
+                ),
+                "code": "device_locked",
+            },
+            status_code=423,
+        )
+
+    # /device/status jest publiczny: SPA sprawdza blokadę urządzenia ZANIM
+    # pokaże ekran logowania, więc nie może wymagać auth (inaczej 401 zamiast
+    # statusu blokady).
+    if (
+        path == "/device/status"
+        or path in _public_paths()
+        or path.startswith("/assets/")
+        or path.startswith("/auth/")
+    ):
         return await call_next(request)
 
     if _admin_self_auth_paths(path):
@@ -119,13 +164,27 @@ async def architekt_http_guard(
                     {
                         "detail": (
                             f"Service-header w trybie multi-user wymaga nagłówka tenanta "
-                            f"({th}) — BFF musi propagować tożsamość usera (opcjonalnie {uh})."
+                            f"({th}) — BFF musi propagować tożsamość usera ({uh})."
+                        )
+                    },
+                    status_code=403,
+                )
+            # Faza 4 hardening: w multi-user X-User-Id jest WYMAGANY. Fallback
+            # `user_id := tenant_id` dawał wszystkim userom tenanta wspólny
+            # `_cache_key` → cross-user wyciek odpowiedzi LLM w obrębie tenanta
+            # (mina pod team-plan). Fail-closed: bez user_id nie ma izolacji cache.
+            if not fwd_uid:
+                return JSONResponse(
+                    {
+                        "detail": (
+                            f"Service-header w trybie multi-user wymaga nagłówka usera "
+                            f"({uh}) — BFF musi propagować tożsamość usera dla izolacji cache."
                         )
                     },
                     status_code=403,
                 )
             set_current_tenant_id(fwd_tid)
-            set_current_user_id(fwd_uid or fwd_tid)
+            set_current_user_id(fwd_uid)
         elif fwd_tid:
             # Single-tenant deployment: nagłówki opcjonalne, ale honorujemy je gdy są.
             set_current_tenant_id(fwd_tid)

@@ -1,0 +1,9 @@
+# Mini-manifest R2V — TYLKO Szow (reel #3B „Głos, którego nie chcesz").
+# Wymusza jeden ref portretu zamiast pełnej siódemki z manifest.yaml.
+# Źródło prawdy wyglądu: brand/concepts.yaml → agents_canon.Szow (NIE zmieniać).
+order:
+  - id: Szow
+    file: Szow.png
+    role: "Cień"
+    tagline: "To, czego najmniej chcesz usłyszeć"
+    visual: "Split-face: left black shadow with golden sparks, right fair skin with golden neural-web kintsugi lines, silver-streak hair swept back, intense amber-gold eyes, dark layered coat with golden thread"

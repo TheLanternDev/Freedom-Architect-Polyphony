@@ -11,7 +11,12 @@ function ensureMermaidTheme() {
     startOnLoad: false,
     theme: "dark",
     securityLevel: "strict",
-    fontFamily: "ui-sans-serif, system-ui, sans-serif",
+    fontFamily: "'DM Sans', ui-sans-serif, system-ui, sans-serif",
+    themeVariables: {
+      fontFamily: "'DM Sans', ui-sans-serif, system-ui, sans-serif",
+      fontSize: "16px",
+    },
+    flowchart: { useMaxWidth: true, htmlLabels: true },
   });
   mermaidConfig.initialized = true;
 }
@@ -47,7 +52,7 @@ export function MermaidBlock({ chart }: Props) {
   return (
     <div
       ref={holder}
-      className="my-4 rounded-lg border border-teal/25 bg-black/30 px-3 py-3 overflow-x-auto text-[12px]"
+      className="my-4 rounded-lg border border-teal/25 bg-black/30 px-3 py-3 overflow-x-auto text-[15px] [&_svg]:max-w-none [&_text]:font-sans"
     />
   );
 }

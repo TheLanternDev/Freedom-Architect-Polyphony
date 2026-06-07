@@ -21,6 +21,17 @@ policy:
   change_policy: >-
     Nie zmieniaj wyglądu agentów, kolejności montażu ani struktury domyślnego
     reela bez wyraźnego polecenia użytkownika.
+  portrait_fidelity: >-
+    Wygląd każdego agenta i Syeza MUSI być wierny 1:1 portretom PNG w
+    assets/council/ (kanon z załączników użytkownika). Generacja wideo, prompty,
+    edycje i FCP — bez redesignu twarzy, wieku, fryzury, szat ani motywów
+    (Metatron, split-face Szowa, klucze Deegi itd.). Referencja: agents_canon.
+  reel_series:
+    reel2: rada_polyphony_moj_swiat
+    reel3_queue:
+      - reel3_brief_w_rade
+      - reel3_szow_glos
+      - reel3_zobowiazanie_72h
 
 # Kanoniczne portrety — źródło prawdy dla generatora i FCP bundle.
 # Pliki PNG: assets/council/{id}.png (kolejność = montaż Polyphony).
@@ -283,6 +294,177 @@ concepts:
       in not moving. One unbroken shot, minimal, reverent.
     audio: "Near-silence, one low sustained drone, a single soft chime at the moment of the pause."
     duration: 12
+
+  # ── Reel #3 — kontynuacja reela #2 (rada_polyphony_moj_swiat) ───────────────
+  # Reel #2 = KTO (9 agentów + Syez). Reel #3 = CO DALEJ (jeden motyw na wariant).
+  # Kolejność produkcji: policy.reel_series.reel3_queue
+
+  reel3_brief_w_rade:
+    title: "Reel #3A — Brief wchodzi do Rady"
+    identity: rada
+    tier: hero
+    published: true          # #3A domknięty + opublikowany 2026-06-07
+    continues: rada_polyphony_moj_swiat
+    series: reel3
+    hook: "Rada nie odpowiada. Spiera się — żebyś ty przestał."
+    caption_pl: |
+      Reel #2 pokazał, kto siedzi przy stole.
+      Ten pokazuje, co się dzieje, gdy składasz temat.
+
+      Nie jeden głos AI.
+      Debata 9 perspektyw → synteza Syeza → twoje zobowiązanie.
+
+      Co byś postawił przed Radą dziś wieczorem?
+      ↓ link w bio
+    scene: |
+      Vertical 9:16 Instagram Reel. EXACTLY 15 seconds. Continuation of reel #2
+      (rada_polyphony_moj_swiat) — MATCH CUT from last frame: nine-face golden mandala.
+      Photorealistic dark mystical cinematic — deep blacks, warm gold #E8D5A3, teal shadows.
+      LOCKED CANON: agent portraits per agents_canon; do not redesign faces.
+
+      ═══ STRATEGY ═══
+      Reel #2 introduced WHO. This reel shows WHAT HAPPENS — one brief enters the council,
+      four perspectives flash, Syez synthesizes. NOT a repeat of the 9×1.53s portrait montage.
+
+      ═══ TIMELINE ═══
+      0.0–2.0s: Match cut — golden mandala from reel #2 end frame, ring pulses once.
+      Golden serif center text: „Rada nie odpowiada. / Spiera się — żebyś ty przestał.”
+
+      2.0–4.0s: At mandala center a luminous brief-block appears — abstract glowing text form,
+      illegible glyphs, only shape (no readable user data). Slow push-in.
+      Text: „Jeden brief. Dziewięć perspektyw.”
+
+      4.0–10.0s: From mandala nodes — FOUR quick portrait flashes (~1.5s each), NOT nine:
+      1 Kogit (Metatron cube, cold clarity) per agents_canon
+      2 Emojy (golden eyes, pre-verbal intensity) per agents_canon
+      3 Szow (split-face shadow, dignified) per agents_canon
+      4 Smaty (golden energy veins, somatic power) per agents_canon
+      Ken Burns to eyes; thin golden energy threads between flashes; soft overlapping ambient
+      tones (debate tension, not dialogue lip-sync).
+
+      10.0–13.0s: Mandala softens to bokeh; Syez portrait enters per agents_canon.Syez —
+      Merkaba chest glow, alchemical halo. Mirror consolidates four lights into one honest map.
+      Polish calm male voiceover (Syez, off-screen): „Nie wybieram za ciebie. Składam mapę napięć.”
+      Syez is NOT a tenth mandala node.
+
+      13.0–15.0s: Golden serif text:
+      „Twój brief. Ich debata. Twoja decyzja.”
+      Lower: Founders Cohort • link w bio
+
+      ═══ SYEZ VOICEOVER (10.3–12.8s, Polish, calm, off-screen) ═══
+      Nie wybieram za ciebie. Składam mapę napięć.
+
+      ═══ FORBIDDEN ═══
+      ✗ Full nine-portrait montage repeat from reel #2 ✗ Name labels on faces
+      ✗ Syez as tenth circle member ✗ Redesigning locked agent likeness
+    narration_timeline: brand/reel3_brief_narration.yaml
+    agent_voices: brand/agent_voices.yaml
+    final_prompt: prompts/reel3-brief-final-prompt.txt
+    audio: >-
+      Dynamic cinematic ambient: low drones building through four flashes, subtle percussive
+      pulses on each perspective cut, warm pad under Syez voiceover, dignified fade at CTA.
+    duration: 15
+
+  reel3_szow_glos:
+    title: "Reel #3B — Głos, którego nie chcesz"
+    identity: szow
+    tier: hero
+    production_next: true
+    continues: rada_polyphony_moj_swiat
+    series: reel3
+    hook: "Jeden głos w Radzie nie głosuje. Nazywa."
+    narration_timeline: brand/reel3_szow_narration.yaml
+    agent_voices: brand/agent_voices.yaml
+    final_prompt: prompts/reel3-szow-final-prompt.txt
+    caption_pl: |
+      ChatGPT gładzi.
+      Szow — nie.
+
+      W Radzie jest głos, który mówi to, czego najmniej chcesz usłyszeć.
+      Nie dlatego, żeby zranić.
+      Dlatego, żebyś przestał udawać.
+
+      Reel #2: kto siedzi przy stole.
+      Ten: dlaczego jeden z nich jest najważniejszy.
+    scene: |
+      Vertical 9:16. EXACTLY 15 seconds. Continuation of reel #2 — contrarian beat after
+      harmonious polyphony. One identity only: Szow the Shadow. Dark mystical cinematic,
+      gold #E8D5A3, deep navy, teal shadows.
+
+      ═══ TIMELINE ═══
+      0.0–1.5s: Match cut — nine-face mandala from reel #2; ONLY Szow's node pulses bright,
+      other eight nodes dim to near-dark. Golden serif: "Jeden głos w Radzie nie głosuje. / Nazwaje."
+
+      1.5–8.0s: Full-screen portrait of Szow per agents_canon — split-face, silver-streak hair,
+      amber-gold eyes, left shadow / right golden neural-web lines. Slow Ken Burns zoom to eyes.
+      No name label on face. Dignified Jungian shadow — never horror.
+
+      8.0–11.0s: Split-face intensifies: left half shadow thickens; right half gold lines brighten.
+      Golden serif text overlay (readable): "Wracasz do ChatGPT, bo tam nikt nie powie, że się boisz."
+      Tension strings, long silence beat.
+
+      11.0–13.0s: Shadow and light meet at the seam — single golden spark, prismatic fracture.
+      One deep bass hit. Half-second held silence.
+
+      13.0–15.0s: Slow pull-back — Szow as one node in mandala, eight others return faintly.
+      Golden serif: "Szow nie jest twoim wrogiem. / Jest twoją uczciwością."
+      Lower: Founders Cohort • link w bio
+
+      ═══ FORBIDDEN ═══
+      ✗ Softening Szow into comfort ✗ Horror / jump-scare aesthetics ✗ Multiple agent portraits
+      ✗ Redesigning locked Szow likeness
+    audio: >-
+      Tension strings, long silences between notes, one deep bass hit at shadow-light seam,
+      minimal room tone, confrontational but dignified — never aggressive EDM.
+    duration: 15
+
+  reel3_zobowiazanie_72h:
+    title: "Reel #3C — 72 godziny"
+    identity: aksjomat_2
+    tier: hero
+    continues: rada_polyphony_moj_swiat
+    series: reel3
+    hook: "Rada się obudziła. Teraz jeden ruch w 72h."
+    caption_pl: |
+      9 głosów to nie koniec.
+      To początek domknięcia.
+
+      Architekt Wolności nie kończy na „ciekawa odpowiedź AI”.
+      Kończy na jednym ruchu w 72h — albo świadomej decyzji o archiwizacji.
+
+      Bez cichego zniknięcia.
+      ↓
+    scene: |
+      Vertical 9:16. EXACTLY 15 seconds. Continuation of reel #2 — outcome / conversion beat.
+      One identity only: Axiom 2 Completion. NO full agent portraits (reel #2 already showed faces);
+      only mandala echo in reflections. Dark navy, warm gold #E8D5A3, architectural metaphor.
+
+      ═══ TIMELINE ═══
+      0.0–2.0s: Match cut — mandala from reel #2 morphs into a half-built golden luminous arch
+      in vast darkness. Golden serif: "Rada się obudziła. / Teraz jeden ruch w 72h."
+
+      2.0–6.0s: Camera tracks along the arch. The FIRST missing segment closest to viewer
+      ignites in gold — smallest next move, emphasis on first ignition not grand finish.
+      Golden serif: "Niedokończone marzenie to cień."
+
+      6.0–10.0s: Each completed segment triggers the next — chain of completions; arch metal
+      reflects faint nine-node mandala pattern from reel #2. Single hammer strike, then
+      building warm momentum.
+
+      10.0–12.0s: Arch closes — flood of warm gold light. Center: commitment-card shape —
+      luminous empty line suggesting "Dziś zrobię: _______" (blank for viewer to fill mentally).
+
+      12.0–15.0s: Golden serif:
+      "AKSJOMAT 2: nie ma «porzucam»."
+      "Jest domknięcie albo świadoma archiwizacja."
+      Lower: Freedom Portfolio OS • link w bio
+
+      ═══ FORBIDDEN ═══
+      ✗ Full council portrait montage ✗ Promising "objective truth" ✗ Generic motivational stock
+    audio: >-
+      Single hammer strike at first segment ignition, echoing momentum building into warm
+      triumphant chord, then contemplative silence on commitment card, soft ambient tail.
+    duration: 15
 
   logo_sygnatura:
     title: "Sygnatura — pierścień Rady"

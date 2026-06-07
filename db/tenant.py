@@ -9,6 +9,7 @@ Repo (`db.connection._Repo`) czyta ContextVar w każdym INSERT/SELECT —
 nie trzeba przekazywać tenant_id przez wszystkie sygnatury.
 
 ═══ ŚWIADOMA DECYZJA: tenant_id ↔ user_id ═══
+Kanon: docs/SECURITY_PRODUCTION.md → ADR-001 (kiedy/jak wprowadzić team-plan).
 W obecnym modelu KAŻDY user jest swoim własnym tenantem. Middleware
 ustawia tenant_id = JWT claim `tenant_id` LUB fallback do `sub`. Schemat DB
 ma tylko kolumnę `tenant_id` (nie `user_id` per row), bo nie wspieramy

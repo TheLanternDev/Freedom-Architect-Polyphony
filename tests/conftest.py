@@ -69,6 +69,19 @@ def _disable_anthropic_singleton(monkeypatch):
         pass
 
 
+@pytest.fixture(autouse=True)
+def _isolate_device_seal(tmp_path_factory, monkeypatch):
+    """Izoluje pieczęć urządzenia per sesja testowa.
+
+    Bez tego device-gate (api.http_guard → core.device_seal) tworzyłby/odczytywał
+    pieczęć w realnym ~/.architekt-wolnosci użytkownika i mógłby zwrócić 423 dla
+    testów uruchamianych po zmianie maszyny. Kierujemy pieczęć do tmp — first-run
+    zawsze "ok", testy nie dotykają katalogu domowego.
+    """
+    seal_dir = tmp_path_factory.mktemp("device_seal")
+    monkeypatch.setenv("AW_DEVICE_SEAL_DIR", str(seal_dir))
+
+
 @pytest.fixture
 def fresh_db_path(tmp_path, monkeypatch):
     """

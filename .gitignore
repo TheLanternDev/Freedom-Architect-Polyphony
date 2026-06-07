@@ -66,3 +66,5 @@ ab_out/
 eval-reviewer.skill
 fa-lead-finder.skill
 .coverage.*
+coverage_baseline.txt
+/final_extended.mp4

@@ -51,8 +51,8 @@ def burn_subtitles(
     dest: Path,
     *,
     duration: float | None = None,
-    tail_seconds: float = 3.0,
-    fontsize: int = 56,
+    tail_seconds: float = 4.0,
+    fontsize: int = 62,
 ) -> Path:
     """Wypal linie tekstu na wideo. Tekst widoczny w ostatnich `tail_seconds`.
 

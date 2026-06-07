@@ -461,7 +461,27 @@ def validate_syez_prose_completion_audit(text: str) -> None:
     # NIEZBYWALNY rdzeń audytu domknięcia. Sam pytajnik + dwa słowa-klucze nie
     # mogą udawać audytu. Wymagamy obu rdzeniowych klastrów + łącznie ≥3 z 4.
     core_present = hits_rem and hits_nxt
-    if not core_present or hits_ok < 3:
+    passes = core_present and hits_ok >= 3
+
+    # M-3: telemetria heurystyki (NIE zmienia progu — AKSJOMAT 2 zostaje surowy).
+    # Heurystyka regex po polskiej prozie ma realne ryzyko false-pos/neg. Zamiast
+    # luzować próg, logujemy przypadki GRANICZNE, żeby zebrać dane do ewentualnego
+    # strojenia: (a) ledwo-przeszło (dokładnie 3/4, rdzeń na styk) oraz
+    # (b) ledwo-odrzucono (jeden rdzeniowy klaster obecny — blisko spełnienia).
+    # Log to czysta telemetria (INFO), bez PII — tylko flagi klastrów i długość.
+    borderline_pass = passes and hits_ok == 3
+    borderline_fail = (not passes) and (hits_rem or hits_nxt)
+    if borderline_pass or borderline_fail:
+        logger.info(
+            "completion_audit_heuristic_borderline outcome=%s clusters=%s ok_total=%d core=%s len=%d",
+            "pass" if passes else "fail",
+            {"rem": hits_rem, "blk": hits_blk, "nxt": hits_nxt, "open": hits_open},
+            hits_ok,
+            {"rem": hits_rem, "nxt": hits_nxt},
+            len(t),
+        )
+
+    if not passes:
         raise CompletionViolation(
             kind="prose_audit_signals_weak",
             message=(

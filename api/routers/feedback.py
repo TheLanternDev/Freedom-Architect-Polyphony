@@ -90,16 +90,34 @@ async def submit_feedback(request: Request, payload: FeedbackPayload):
                 ),
             )
         # Dev-only fallback: JSONL gdy migracja/tabela jeszcze niedostępna.
+        # L-2: belt-and-suspenders — JSONL omija RLS (plik na dysku), więc:
+        #   • twardo blokujemy go w produkcji (powyżej już 503; tu druga bariera),
+        #   • izolujemy plik PER TENANT (feedback_<tenant>.jsonl) — żeby nawet przy
+        #     błędnym AW_FEEDBACK_DIR na współdzielonym wolumenie dane dwóch
+        #     tenantów nie lądowały w jednym pliku,
+        #   • logujemy ostrzeżenie z pełną ścieżką, by misconfig był widoczny.
         import json
         import os
+        import re
         from pathlib import Path
 
+        if is_production():  # nieosiągalne (return wyżej), ale fail-closed na refaktor
+            raise HTTPException(503, detail="Feedback DB niedostępna w produkcji.")
+
+        tid = current_tenant_id()
+        safe_tid = re.sub(r"[^A-Za-z0-9_.-]", "_", tid)[:64] or "default"
         out_dir = Path(os.getenv("AW_FEEDBACK_DIR") or "data")
         out_dir.mkdir(parents=True, exist_ok=True)
-        with (out_dir / "feedback.jsonl").open("a", encoding="utf-8") as f:
+        out_file = out_dir / f"feedback_{safe_tid}.jsonl"
+        logger.warning(
+            "Feedback DEV-fallback do pliku (poza RLS): %s — tylko dev; "
+            "upewnij się, że AW_FEEDBACK_DIR NIE jest na współdzielonym wolumenie.",
+            out_file,
+        )
+        with out_file.open("a", encoding="utf-8") as f:
             f.write(json.dumps({
                 "ts": ts,
-                "tenant_id": current_tenant_id(),
+                "tenant_id": tid,
                 "user_subject": sub,
                 "rating": payload.rating,
                 "what_worked": payload.what_worked.strip(),

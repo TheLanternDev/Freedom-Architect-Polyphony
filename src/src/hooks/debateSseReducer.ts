@@ -13,6 +13,7 @@ import type {
   SynthesisChunkPayload,
   SynthesisDonePayload,
   SynthesisStructuredPayload,
+  TensionAxisPayload,
   AgentChunkPayload,
   AgentDonePayload,
   BudgetWarningPayload,
@@ -151,6 +152,13 @@ export function reduceDebateEvent(
     case "synthesis_structured": {
       const p = payload as SynthesisStructuredPayload;
       return { ...state, synthesisStructured: p };
+    }
+    case "tension_axis": {
+      const p = payload as TensionAxisPayload;
+      if (!p || !Array.isArray(p.tensions) || p.tensions.length === 0) {
+        return state; // brak danych → zostaje fallback do Mermaida
+      }
+      return { ...state, tensionAxis: p };
     }
     case "debate_done": {
       const p = payload as DebateDonePayload;

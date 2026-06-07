@@ -34,6 +34,9 @@ services:
       AW_ENV: production
       DATABASE_URL: postgresql://architekt:${POSTGRES_PASSWORD}@postgres:5432/architekt
       REDIS_URL: redis://redis:6379
+      # M-2: liczba workerów uvicorn. Domyślnie 1; podnieś (np. 2–4) gdy chcesz
+      # wykorzystać wiele rdzeni. Bezpieczne, bo rate-limit/JTI/refresh są w Redis.
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-1}
     depends_on:
       postgres:
         condition: service_healthy

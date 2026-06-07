@@ -41,7 +41,13 @@ def test_secret_returns_value_when_set(monkeypatch):
 
 def _make_token(secret: str, **claims) -> str:
     now = int(time.time())
-    payload = {"exp": now + 3600, "sub": "user-1", "tenant_id": "t-1", **claims}
+    payload = {
+        "exp": now + 3600,
+        "sub": "user-1",
+        "tenant_id": "t-1",
+        "jti": "jti-test-1",
+        **claims,
+    }
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
@@ -79,7 +85,20 @@ def test_decode_rejects_expired(monkeypatch):
 def test_decode_requires_sub_claim(monkeypatch):
     monkeypatch.setenv("ARCHITEKT_JWT_SECRET", "k")
     tok = jwt.encode(
-        {"exp": int(time.time()) + 100, "tenant_id": "t"},
+        {"exp": int(time.time()) + 100, "tenant_id": "t", "jti": "j-1"},
+        "k", algorithm="HS256",
+    )
+    assert ai.decode_user_jwt(tok) is None
+
+
+def test_decode_requires_jti_claim(monkeypatch):
+    """Fail-closed: token bez `jti` jest nierevokable (logout/blocklist nie
+    może go unieważnić) → odrzucamy, mimo poprawnego exp/sub/tenant."""
+    monkeypatch.setenv("ARCHITEKT_JWT_SECRET", "k")
+    monkeypatch.delenv("ARCHITEKT_JWT_AUDIENCE", raising=False)
+    monkeypatch.delenv("ARCHITEKT_JWT_ISSUER", raising=False)
+    tok = jwt.encode(
+        {"exp": int(time.time()) + 100, "sub": "u", "tenant_id": "t"},
         "k", algorithm="HS256",
     )
     assert ai.decode_user_jwt(tok) is None
@@ -141,15 +160,16 @@ def test_is_jti_blocked_false_on_redis_error():
 
 def test_block_jti_noop_when_no_redis():
     with patch("api.runtime.get_redis", return_value=None):
-        # Nie rzuca.
-        asyncio.run(ai.block_jti("x", 60))
+        # Nie rzuca; M-4: zwraca False (revoke no-op bez Redis).
+        assert asyncio.run(ai.block_jti("x", 60)) is False
 
 
 def test_block_jti_writes_with_ttl():
     r = MagicMock()
     r.setex = AsyncMock(return_value=True)
     with patch("api.runtime.get_redis", return_value=r):
-        asyncio.run(ai.block_jti("the-jti", 1800))
+        # M-4: realny zapis → True.
+        assert asyncio.run(ai.block_jti("the-jti", 1800)) is True
         r.setex.assert_awaited_once_with("jti:blocked:the-jti", 1800, "1")
 
 
@@ -158,7 +178,8 @@ def test_block_jti_swallows_error():
     r.setex = AsyncMock(side_effect=RuntimeError("oops"))
     with patch("api.runtime.get_redis", return_value=r):
         # NIE rzuca — niedostępność Redisa nie może wywalić logout/refresh.
-        asyncio.run(ai.block_jti("x", 60))
+        # M-4: ale zwraca False — zapis się nie udał, revoke nie jest uczciwy.
+        assert asyncio.run(ai.block_jti("x", 60)) is False
 
 
 # ── decode_user_jwt_checked ─────────────────────────────────────────────────
@@ -187,9 +208,14 @@ def test_checked_accepts_when_jti_not_blocked(monkeypatch):
         assert payload["jti"] == "J2"
 
 
-def test_checked_accepts_token_without_jti(monkeypatch):
-    """Brak `jti` claim → blocklist nie ma czego sprawdzić, token przechodzi."""
+def test_checked_rejects_token_without_jti(monkeypatch):
+    """Fail-closed: brak `jti` → token jest nierevokable, więc `decode_user_jwt`
+    odrzuca go już na poziomie `require`, a `decode_user_jwt_checked` zwraca None
+    (zmiana semantyki: wcześniej token bez jti przechodził)."""
     monkeypatch.setenv("ARCHITEKT_JWT_SECRET", "k")
-    tok = _make_token("k")  # bez jti
+    tok = jwt.encode(
+        {"exp": int(time.time()) + 100, "sub": "u", "tenant_id": "t"},
+        "k", algorithm="HS256",
+    )  # bez jti
     payload = asyncio.run(ai.decode_user_jwt_checked(tok))
-    assert payload is not None
+    assert payload is None

@@ -85,6 +85,38 @@ export interface SynthesisStructuredPayload {
   completion_audit?: CompletionAuditPayload;
 }
 
+// ── Zadanie 1: hierarchiczna oś napięć (TensionAxis) ───────────────────────
+
+/** Biegun osi filozoficznej Syeza (z syez.py: structural ↔ somatic ↔ shadow). */
+export type AxisPole = "structural" | "somatic" | "shadow";
+
+/** Pojedyncze napięcie jako węzeł osi — rozszerza dawne {between, why}. */
+export interface TensionNode {
+  between: string[];
+  why: string;
+  /** 0..1 — siła napięcia (rozmiar węzła + nasycenie koloru). */
+  intensity: number;
+  /** Pas X: structural=lewo, somatic=centrum, shadow=prawo. */
+  axis_pole: AxisPole;
+  /** Hierarchia/głębia: 1 = powierzchnia (przy rdzeniu), wyżej = korzeń (niżej). */
+  depth?: number;
+  /** Krótki cytat z prozy do podświetlenia po hover/click. */
+  prose_anchor?: string | null;
+}
+
+/** Rdzeń — centralna oś wyciągnięta z prozy/monitoru napięć. */
+export interface CentralAxis {
+  core: string;
+  poles?: [string, string];
+  dominant_pole?: AxisPole;
+}
+
+/** Payload SSE `tension_axis` — wierne hierarchiczne kodowanie napięć. */
+export interface TensionAxisPayload {
+  central_axis: CentralAxis;
+  tensions: TensionNode[];
+}
+
 export interface CompletionAuditViolationPayload {
   kind: string;
   message: string;
@@ -108,6 +140,8 @@ export interface PriorTurn {
   agents: Record<string, AgentState>;
   synthesis: string;
   synthesisStructured?: SynthesisStructuredPayload;
+  /** Hierarchiczna oś napięć tej tury (fallback do Mermaida, gdy brak). */
+  tensionAxis?: TensionAxisPayload;
   debateCost?: number;
   debateMode?: string;
 }
@@ -129,6 +163,8 @@ export interface DebateState {
   dreamError?: string;
   project?: ProjectStatePayload;
   synthesisStructured?: SynthesisStructuredPayload;
+  /** Hierarchiczna oś napięć bieżącej tury (SSE `tension_axis`). */
+  tensionAxis?: TensionAxisPayload;
   auditViolation?: CompletionAuditViolationPayload;
   /** Tryb debaty z SSE `debate_start` — np. `schematy` wymusza follow-up 72h przy zobowiązaniu. */
   debateMode?: string;

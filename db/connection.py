@@ -1177,6 +1177,18 @@ class _Repo:
             (_tid(), user_subject, question_idx, answer, updated_at, updated_at),
         )
 
+    async def list_onboarding_answers(
+        self, db: Any, *, user_subject: str
+    ) -> list[dict[str, Any]]:
+        """Odpowiedzi onboardingowe użytkownika (do „Mojego obrazu"). Izolacja:
+        filtr po tenant_id = _tid() ORAZ user_subject — bez wycieku cross-user."""
+        return await self._rows_to_dicts(
+            db,
+            "SELECT question_idx, answer, updated_at FROM onboarding_answers "
+            "WHERE tenant_id = ? AND user_subject = ? ORDER BY question_idx",
+            (_tid(), user_subject),
+        )
+
     async def export_tenant_data(self, db: Any, *, tenant_id: str) -> dict[str, Any]:
         """Eksport wszystkich danych tenanta (RODO — prawo dostępu)."""
         tid = tenant_id

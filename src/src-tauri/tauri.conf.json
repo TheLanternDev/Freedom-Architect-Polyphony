@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 ws://localhost:8000 ws://127.0.0.1:8000 tauri: ipc: https://fonts.googleapis.com https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: tauri:; object-src 'none'; base-uri 'self'"
+      "csp": "default-src 'self'; connect-src 'self' tauri: ipc: https://fonts.googleapis.com https://fonts.gstatic.com http://127.0.0.1:8000 http://localhost:8000 ws://localhost:8000 ws://127.0.0.1:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: tauri:; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {

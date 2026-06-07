@@ -39,3 +39,6 @@ class PhaseSynthesisResult:
     parsed_final: Optional[dict[str, Any]] = None
     violation_payload: Optional[dict[str, Any]] = None
     events: list[str] = field(default_factory=list)
+    # Zadanie 1 (persystencja): hierarchiczna oś napięć — utrwalana wewnątrz
+    # full_synthesis_json, żeby wracała z historii bez zmian w main.py.
+    tension_axis: Optional[dict[str, Any]] = None

@@ -144,11 +144,11 @@ export function CouncilCircle({ agents, tensions }: Props) {
                 />
                 {/* Initials */}
                 <text
-                  x={pos.x} y={pos.y + 3}
+                  x={pos.x} y={pos.y + 3.5}
                   textAnchor="middle"
-                  fontSize={7}
-                  fontFamily="Inter,sans-serif"
-                  fontWeight="500"
+                  fontSize={8.5}
+                  fontFamily="'DM Sans',sans-serif"
+                  fontWeight="600"
                   fill={speaking ? "#C9A05A" : done ? "#3A8484" : meta.text}
                 >
                   {meta.abbr}
@@ -158,8 +158,8 @@ export function CouncilCircle({ agents, tensions }: Props) {
                   x={pos.x}
                   y={pos.y + (pos.y < CY ? -19 : 22)}
                   textAnchor="middle"
-                  fontSize={5.5}
-                  fontFamily="Inter,sans-serif"
+                  fontSize={7}
+                  fontFamily="'DM Sans',sans-serif"
                   fill={speaking ? "rgba(201,160,90,0.85)" : done ? "rgba(58,132,132,0.85)" : "rgba(152,162,184,0.55)"}
                 >
                   {name.slice(0, 4)}
@@ -170,10 +170,10 @@ export function CouncilCircle({ agents, tensions }: Props) {
 
           {/* Syez center hub */}
           <circle cx={CX} cy={CY} r={20} fill="#09090E" stroke="#1C2231" strokeWidth={1} />
-          <text x={CX} y={CY - 3} textAnchor="middle" fontSize={6.5} fontFamily="Inter,sans-serif" fill="#58627A">
+          <text x={CX} y={CY - 3} textAnchor="middle" fontSize={8} fontFamily="'DM Sans',sans-serif" fontWeight="600" fill="#58627A">
             SYEZ
           </text>
-          <text x={CX} y={CY + 7} textAnchor="middle" fontSize={5} fontFamily="Inter,sans-serif" fill="#3A8484">
+          <text x={CX} y={CY + 8} textAnchor="middle" fontSize={6.5} fontFamily="'DM Sans',sans-serif" fill="#3A8484">
             słucha
           </text>
         </svg>

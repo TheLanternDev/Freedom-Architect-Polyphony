@@ -4,6 +4,28 @@ import subprocess
 from pathlib import Path
 
 
+def _probe_duration(path: Path) -> float | None:
+    try:
+        proc = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        return float(proc.stdout.strip())
+    except ValueError:
+        return None
+
+
 def normalize_audio(input_path: Path, dest: Path | None = None) -> Path:
     """Loudnorm narracji/audio do bezpiecznych poziomów IG (peak ~ -1 dBTP).
 
@@ -53,10 +75,23 @@ def mux_narration(
         raise FileNotFoundError(f"Brak narracji: {narration_path}")
     dest.parent.mkdir(parents=True, exist_ok=True)
 
+    video_dur = _probe_duration(video_path)
+    duration_flag: list[str] = []
+    if video_dur and video_dur > 0:
+        duration_flag = ["-t", f"{video_dur:.3f}"]
+
     if mix_ambient:
+        # Pad ambient; sidechain ducking pod narrację; narracja do pełnej długości klipu.
+        pad_dur = video_dur or 15.0
         filter_complex = (
-            f"[0:a]volume={ambient_volume}[va];[1:a]volume=1[na];"
-            "[va][na]amix=inputs=2:duration=first:dropout_transition=0[aout]"
+            f"[0:a]apad=whole_dur={pad_dur:.3f}[va0];"
+            f"[1:a]apad=whole_dur={pad_dur:.3f}[na0];"
+            "[na0]asplit=2[sc][na];"
+            "[va0][sc]sidechaincompress=threshold=0.015:ratio=10:attack=60:release=350"
+            f":level_sc=1.0[vad];"
+            f"[vad]volume={ambient_volume}[va];"
+            "[va][na]amix=inputs=2:duration=longest:dropout_transition=0,"
+            "alimiter=limit=0.98:attack=5:release=50[aout]"
         )
         cmd = [
             "ffmpeg", "-y",
@@ -68,7 +103,7 @@ def mux_narration(
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-shortest",
+            *duration_flag,
             str(dest),
         ]
     else:
@@ -81,7 +116,7 @@ def mux_narration(
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-shortest",
+            *duration_flag,
             str(dest),
         ]
 

@@ -38,6 +38,29 @@ jobs:
           fi
           echo "✅ No unguarded db.execute() in route handlers."
 
+      # H-1 guard: raw `_pg_pool.acquire()` / `_require_pg_pool().acquire()` omija
+      # PgConnection.execute → GUC `architekt.tenant_id` NIE jest ustawiany →
+      # przy pustym GUC RLS policy `tenant_isolation` przepuszcza WSZYSTKIE wiersze
+      # (cross-tenant leak). Jedyne dozwolone miejsce to db/backend.py (init_database,
+      # health-probe, oraz fabryki acquire_http_db / debate_stream_db, które owijają
+      # surowe połączenie w PgConnection). Każdy inny callsite musi albo użyć
+      # acquire_http_db/debate_stream_db, albo — jeśli świadomie raw — dodać
+      # komentarz `# allow-raw-acquire` w tej samej linii (do audytu).
+      - name: Check no raw pg_pool.acquire() outside db/backend.py
+        run: |
+          if grep -rn "_pg_pool\.acquire(\|_require_pg_pool()\.acquire(" \
+               main.py api/ agents/ core/ db/ business_fa2/ config/ \
+               --include="*.py" \
+               --exclude-dir="__pycache__" \
+               | grep -v "db/backend.py:" \
+               | grep -v "# allow-raw-acquire"; then
+            echo "❌ Raw _pg_pool.acquire() poza db/backend.py — omija GUC tenant_id i RLS."
+            echo "   Użyj acquire_http_db()/debate_stream_db() (zwracają PgConnection),"
+            echo "   albo dodaj '# allow-raw-acquire' jeśli to świadomy, zaaudytowany callsite."
+            exit 1
+          fi
+          echo "✅ No unguarded _pg_pool.acquire() outside db/backend.py."
+
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -119,7 +142,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install asyncpg
+      - run: pip install asyncpg pytest pytest-asyncio
       - name: Apply schema + migrations
         run: |
           sudo apt-get install -y postgresql-client
@@ -176,6 +199,16 @@ jobs:
             exit 1
           fi
           echo "✅ feedback RLS OK."
+      - name: Pytest RLS isolation (Python-level, na żywym Postgresie)
+        # Te testy domyślnie SKIP-ują bez Postgresa (pytest job ich nie odpala).
+        # Tu mają DATABASE_URL, więc faktycznie egzekwują RLS przez warstwę
+        # asyncpg/PgConnection — uzupełnienie psql-owego smoke o ścieżkę aplikacji.
+        run: |
+          pytest tests/test_rls_postgres_isolation.py -v
+          # Twardy bezpiecznik: gdyby fixture znów cicho SKIP-ował (np. regresja
+          # w detekcji Postgresa), nie chcemy zielonego CI bez realnej weryfikacji.
+          pytest tests/test_rls_postgres_isolation.py -q 2>&1 | grep -qE "2 passed" \
+            || { echo "❌ RLS pytest nie wykonał się (SKIP zamiast PASS?) — sprawdź pg_pool/DATABASE_URL."; exit 1; }
 
   frontend-test:
     runs-on: ubuntu-latest

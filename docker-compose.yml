@@ -1,19 +1,46 @@
-# DEV ONLY — lokalny stack SQLite + Redis (bez RLS).
+# DEV — lokalny stack: Postgres (RLS) + Redis + API.
 # Produkcja multi-user: `docker compose -f docker-compose.prod.yml up` (+ `.env` z sekretami).
+#
+# Najczęstszy workflow lokalny: API odpalasz na hoście (`uvicorn main:app --reload`),
+# a bazę i cache w Dockerze. Wtedy uruchom TYLKO infrastrukturę:
+#     docker compose up postgres redis
+# Twój .env wskazuje DATABASE_URL=...@localhost:5432 → trafia do tego kontenera
+# (port 5432 wystawiony na host). Dzięki temu RLS faktycznie działa (Postgres),
+# zamiast cichego fallbacku na SQLite bez RLS.
 services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"          # wystawione na host → uvicorn z .env (localhost:5432)
+    environment:
+      POSTGRES_USER: architekt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ustaw POSTGRES_PASSWORD w .env (musi == hasło w DATABASE_URL)}
+      POSTGRES_DB: architekt
+    volumes:
+      - aw_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U architekt -d architekt"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       AW_ENV: development
+      # RLS wymaga Postgresa. W kontenerze API łączymy się po nazwie usługi.
+      DATABASE_URL: postgresql://architekt:${POSTGRES_PASSWORD}@postgres:5432/architekt
       REDIS_URL: redis://redis:6379
-      ARCHITEKT_DB_PATH: /data/architekt.db
       AW_CORS_ORIGINS: "http://localhost:1420,http://127.0.0.1:1420,tauri://localhost"
-      AW_INSECURE_NO_AUTH: "1"
-    volumes:
-      - aw_sqlite:/data
+      # UWAGA: bez AW_INSECURE_NO_AUTH — testujemy realny auth + izolację per-tenant.
+      # Dev-only bypass świadomie: ustaw AW_INSECURE_NO_AUTH=1 w .env jeśli naprawdę chcesz.
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_started
 
@@ -28,4 +55,4 @@ services:
       retries: 5
 
 volumes:
-  aw_sqlite:
+  aw_pg_data:

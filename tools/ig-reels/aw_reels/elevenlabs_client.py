@@ -37,12 +37,21 @@ def _voice_settings(*, speed: float | None = None) -> dict:
     return settings
 
 
-def _tts_payload(text: str, *, model_id: str | None = None, speed: float | None = None) -> dict:
+def _tts_payload(
+    text: str,
+    *,
+    model_id: str | None = None,
+    speed: float | None = None,
+    voice_settings: dict | None = None,
+) -> dict:
+    settings = dict(voice_settings) if voice_settings else _voice_settings(speed=speed)
+    if speed is not None and "speed" not in settings:
+        settings["speed"] = speed
     return {
         "text": text.strip(),
         "model_id": model_id or get_elevenlabs_model_id(),
         "language_code": "pl",
-        "voice_settings": _voice_settings(speed=speed),
+        "voice_settings": settings,
     }
 
 
@@ -103,10 +112,11 @@ def synthesize_speech(
     voice_id: str | None = None,
     model_id: str | None = None,
     speed: float | None = None,
+    voice_settings: dict | None = None,
 ) -> bytes:
     """Text-to-speech — zwraca bajty MP3."""
     vid = voice_id or get_elevenlabs_voice_id()
-    payload = _tts_payload(text, model_id=model_id, speed=speed)
+    payload = _tts_payload(text, model_id=model_id, speed=speed, voice_settings=voice_settings)
     url = f"{API_BASE}/text-to-speech/{vid}"
     try:
         with _client() as client:

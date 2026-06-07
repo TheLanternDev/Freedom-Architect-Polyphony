@@ -42,16 +42,23 @@ async def is_jti_blocked(jti: str) -> bool:
         return False
 
 
-async def block_jti(jti: str, ttl_seconds: int) -> None:
-    """Dodaje JTI do blocklist z TTL równym pozostałemu czasowi życia tokenu."""
+async def block_jti(jti: str, ttl_seconds: int) -> bool:
+    """Dodaje JTI do blocklist z TTL równym pozostałemu czasowi życia tokenu.
+
+    Zwraca True tylko gdy JTI realnie trafił do blocklist. False gdy Redis jest
+    niedostępny lub zapis padł — wtedy revoke jest no-op i caller (`/auth/revoke`)
+    NIE może uczciwie zwrócić `revoked: true` (M-4).
+    """
     from api.runtime import get_redis
     r = get_redis()
     if r is None:
-        return
+        return False
     try:
         await r.setex(f"{_JTI_BLOCKLIST_PREFIX}{jti}", ttl_seconds, "1")
+        return True
     except Exception as e:
         logger.warning("Nie udało się zablokować JTI %s: %s", jti, e)
+        return False
 
 
 def _secret() -> Optional[str]:
@@ -79,7 +86,12 @@ def decode_user_jwt(token: str) -> Optional[dict[str, Any]]:
     iss = (os.getenv("ARCHITEKT_JWT_ISSUER") or "").strip()
     decode_kw: dict[str, Any] = {
         "algorithms": ["HS256"],
-        "options": {"require": ["exp", "sub"]},
+        # `jti` wymagany (fail-closed): bez niego token jest nierevokable —
+        # logout/blocklist (`decode_user_jwt_checked` → `is_jti_blocked`) nie
+        # może go unieważnić. Wszyscy wystawcy (`api/routers/auth.py`:
+        # login/refresh/demo-guest) już dodają `jti`. Odrzucamy więc wyłącznie
+        # tokeny, których i tak nie dałoby się odwołać.
+        "options": {"require": ["exp", "sub", "jti"]},
     }
     if aud:
         decode_kw["audience"] = aud

@@ -17,10 +17,36 @@ def _reset_pg_pool():
 
 
 @pytest.mark.asyncio
-async def test_init_database_dev_fallback_to_sqlite_on_pg_failure(
-    monkeypatch, tmp_path: Path
-):
+async def test_init_database_dev_fail_closed_on_pg_failure(monkeypatch):
+    """Stage 2: domyślnie (bez furtki) dev NIE wpada po cichu na SQLite.
+
+    DATABASE_URL wskazuje Postgres + połączenie pada → RuntimeError. SQLite nie
+    ma RLS, więc cichy fallback maskowałby brak izolacji per-tenant."""
     monkeypatch.setenv("AW_ENV", "development")
+    monkeypatch.delenv("AW_ALLOW_SQLITE_FALLBACK", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql://architekt:x@localhost:5432/architekt")
+
+    async def _fake_create_pool(*_a, **_k):
+        raise OSError('role "architekt" does not exist')
+
+    monkeypatch.setattr("asyncpg.create_pool", _fake_create_pool)
+
+    sqlite_ran: list[bool] = []
+
+    async def _sqlite_cb() -> None:
+        sqlite_ran.append(True)
+
+    with pytest.raises(RuntimeError, match="SQLite nie ma RLS|AW_ALLOW_SQLITE_FALLBACK"):
+        await bk.init_database(_sqlite_cb)
+    assert sqlite_ran == []  # callback SQLite NIE został uruchomiony
+    assert bk.runtime_use_postgres() is False
+
+
+@pytest.mark.asyncio
+async def test_init_database_dev_fallback_with_explicit_optin(monkeypatch):
+    """Świadoma furtka AW_ALLOW_SQLITE_FALLBACK=1 przywraca fallback na SQLite."""
+    monkeypatch.setenv("AW_ENV", "development")
+    monkeypatch.setenv("AW_ALLOW_SQLITE_FALLBACK", "1")
     monkeypatch.setenv("DATABASE_URL", "postgresql://architekt:x@localhost:5432/architekt")
 
     async def _fake_create_pool(*_a, **_k):

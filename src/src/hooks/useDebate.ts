@@ -11,6 +11,7 @@ import type {
   DebateContinueBody,
   PriorTurn,
   SynthesisStructuredPayload,
+  TensionAxisPayload,
 } from "@/types/debate";
 import {
   reduceDebateEvent,
@@ -39,6 +40,7 @@ function debateBootstrap(
     dreamError: undefined,
     project: undefined,
     synthesisStructured: undefined,
+    tensionAxis: undefined,
     auditViolation: undefined,
     liveTensions: undefined,
     continuationParentId: undefined,
@@ -67,6 +69,7 @@ function snapshotCurrentTurn(s: DebateState): PriorTurn | null {
     agents: s.agents,
     synthesis: s.synthesis,
     synthesisStructured: s.synthesisStructured,
+    tensionAxis: s.tensionAxis,
     debateCost: s.debateCost,
     debateMode: s.debateMode,
   };
@@ -350,6 +353,11 @@ export function useDebate() {
       }
 
       // Ostatnia tura ląduje na top-level state (bieżąca tura); poprzednie w state.turns.
+      // Oś napięć jest utrwalona wewnątrz full_synthesis_json (→ synthesis_structured).
+      const axisOf = (ss: ThreadTurn["synthesis_structured"]) =>
+        (ss as { tension_axis?: TensionAxisPayload } | null | undefined)
+          ?.tension_axis ?? undefined;
+
       const last = turns[turns.length - 1];
       const priorTurns: PriorTurn[] = turns.slice(0, -1).map((tt) => ({
         debateId: tt.debate.id,
@@ -357,6 +365,7 @@ export function useDebate() {
         agents: toAgents(tt.voices),
         synthesis: tt.debate.synthesis_text ?? "",
         synthesisStructured: tt.synthesis_structured ?? undefined,
+        tensionAxis: axisOf(tt.synthesis_structured),
         debateCost: tt.debate.cost_usd ?? undefined,
         debateMode: tt.debate.mode,
       }));
@@ -368,6 +377,7 @@ export function useDebate() {
         agents: toAgents(last.voices),
         synthesis: last.debate.synthesis_text ?? "",
         synthesisStructured: last.synthesis_structured ?? undefined,
+        tensionAxis: axisOf(last.synthesis_structured),
         debateId: last.debate.id,
         debateMode: last.debate.mode,
         debateCost: last.debate.cost_usd ?? undefined,

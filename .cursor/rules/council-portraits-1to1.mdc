@@ -1,0 +1,28 @@
+---
+description: Kanon portretów Rady — wierność 1:1 do PNG w assets/council
+globs: tools/ig-reels/**/*
+alwaysApply: false
+---
+
+# Portrety agentów i Syeza — wierność 1:1
+
+Wygląd dziewięciu agentów Rady oraz Syeza **musi być wierny 1:1** portretom PNG, które użytkownik dostarczył jako kanon (pliki w `tools/ig-reels/assets/council/`).
+
+## Źródło prawdy (kolejność)
+
+1. `assets/council/{Agent}.png` i `Syez.png`
+2. `brand/concepts.yaml` → `agents_canon`
+3. `assets/council/manifest.yaml` + `syez.yaml`
+4. Zablokowany reel referencyjny: `rada_polyphony_moj_swiat` / `Rada-Polyphony-24.5s-IG.mp4`
+
+## Zasady
+
+- **Nie redesignuj** twarzy, wieku, etniczności, fryzury, brody, szat, symboli na piersi (Metatron, Merkaba, klucze, split-face Szowa itd.).
+- Przy generacji xAI/Grok: używaj **R2V z PNG** (`load_reference_paths`) tam gdzie możliwe; przy braku slotu — opis z `agents_canon`, nie wymyślaj.
+- Syez **nigdy** nie jest dziesiątą twarzą w mandali dziewięciu agentów.
+- Zmiana wyglądu portretów **tylko** po wyraźnym poleceniu użytkownika.
+
+## Prompty i reels
+
+- Nowe koncepty odwołują się do `agents_canon`, nie do ogólnych opisów typu „mystical council man”.
+- Kontynuacje reela #2 (np. `reel3_*`) mogą pokazywać **podzbiór** agentów, ale każdy widoczny agent = ten sam likeness co w PNG.

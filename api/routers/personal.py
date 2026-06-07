@@ -13,14 +13,22 @@ from pydantic import BaseModel, Field
 from api.settings import is_production
 from db.tenant import current_tenant_id
 
-from personal_v1.rituals.onboarding import PYTANIA as ONBOARDING_PYTANIA
+from personal_v1.rituals.onboarding import (
+    PYTANIA as ONBOARDING_PYTANIA,
+    SEKCJE as ONBOARDING_SEKCJE,
+)
 from personal_v1.rituals.daily import PYTANIA_PORANNE, PYTANIA_WIECZORNE
 
 router = APIRouter(prefix="/personal", tags=["personal"])
 
 @router.get("/onboarding/questions")
 def onboarding_questions():
-    return {"items": ONBOARDING_PYTANIA, "ton": "lagodny", "tempo": "ile_chcesz"}
+    return {
+        "items": ONBOARDING_PYTANIA,
+        "sekcje": ONBOARDING_SEKCJE,
+        "ton": "lagodny",
+        "tempo": "ile_chcesz",
+    }
 
 
 class OnboardingAnswer(BaseModel):
@@ -93,6 +101,68 @@ async def onboarding_save(request: Request, payload: OnboardingSavePayload):
                 }, ensure_ascii=False) + "\n")
 
     return {"status": "ok", "saved": len(payload.answers), "ts": ts}
+
+
+@router.get("/onboarding/answers")
+async def onboarding_answers(request: Request):
+    """Zapisane odpowiedzi onboardingowe bieżącego użytkownika („Mój obraz").
+    DB-first; dev fallback z JSONL. Izolacja: filtr po user_subject (+ tenant)."""
+    sub = getattr(request.state, "architekt_subject", None) or "anonymous"
+
+    try:
+        from db import repo
+        from db.backend import acquire_http_db
+        from db.connection import DB_PATH
+    except ImportError:
+        repo = None  # type: ignore[assignment]
+        acquire_http_db = None  # type: ignore[assignment]
+        DB_PATH = None  # type: ignore[assignment]
+
+    base = {"sekcje": ONBOARDING_SEKCJE, "items": ONBOARDING_PYTANIA}
+
+    if (repo is not None and acquire_http_db is not None
+            and hasattr(repo, "list_onboarding_answers")):
+        try:
+            async with acquire_http_db(DB_PATH) as db:
+                rows = await repo.list_onboarding_answers(db, user_subject=sub)
+            return {
+                **base,
+                "answers": [
+                    {
+                        "question_idx": int(r["question_idx"]),
+                        "answer": r["answer"],
+                        "updated_at": r.get("updated_at"),
+                    }
+                    for r in rows
+                ],
+            }
+        except Exception:
+            pass  # fallback poniżej
+
+    # Dev-only fallback JSONL — ostatni wpis per question_idx.
+    out_dir = Path(os.getenv("AW_FEEDBACK_DIR") or "data")
+    path = out_dir / "onboarding_answers.jsonl"
+    latest: dict[int, dict] = {}
+    if path.exists():
+        tid = current_tenant_id()
+        with path.open(encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if rec.get("user_subject") != sub:
+                    continue
+                if tid and rec.get("tenant_id") not in (None, tid):
+                    continue
+                qi = int(rec.get("question_idx", -1))
+                if qi >= 0:
+                    latest[qi] = {
+                        "question_idx": qi,
+                        "answer": rec.get("answer", ""),
+                        "updated_at": rec.get("ts"),
+                    }
+    return {**base, "answers": [latest[k] for k in sorted(latest)]}
 
 
 @router.get("/ritual/daily")

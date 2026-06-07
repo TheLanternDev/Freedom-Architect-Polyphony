@@ -3,7 +3,7 @@ import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { SidebarSection } from "@/components/ui/SidebarSection";
 
-const LS_ONBOARDING_DONE = "aw_onboarding_v1_done";
+export const LS_ONBOARDING_DONE = "aw_onboarding_v1_done";
 
 type Answers = Record<number, string>;
 
@@ -14,6 +14,7 @@ export function OnboardingPanel() {
     catch { return false; }
   });
   const [items, setItems] = useState<string[]>([]);
+  const [sekcje, setSekcje] = useState<string[]>([]);
   const [idx, setIdx] = useState(0);
   const [ans, setAns] = useState<Answers>({});
 
@@ -27,6 +28,7 @@ export function OnboardingPanel() {
         if (!r.ok) return;
         const j = await r.json();
         if (Array.isArray(j.items)) setItems(j.items);
+        if (Array.isArray(j.sekcje)) setSekcje(j.sekcje);
       } catch { /* ignore */ }
     })();
   }, [open, items.length]);
@@ -34,6 +36,11 @@ export function OnboardingPanel() {
   if (!open || !items.length) return null;
   const total = items.length;
   const q = items[idx];
+  const sekcja = sekcje[idx];
+  // Pozycja pytania w obrębie sekcji (batch) — „inteligentne sekwencjonowanie".
+  const sectionStart = sekcje.findIndex((s) => s === sekcja);
+  const sectionLen = sekcje.filter((s) => s === sekcja).length;
+  const inSection = sectionStart >= 0 ? idx - sectionStart + 1 : 0;
   const close = (done: boolean) => {
     if (done) {
       // Tydzień 4 / #14 tech-debt: na koniec onboardingu wysyłamy odpowiedzi
@@ -56,15 +63,20 @@ export function OnboardingPanel() {
 
   return (
     <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="w-full max-w-xl mx-4 rounded-2xl border border-white/10 bg-navy/95 p-6 shadow-2xl">
+      <div className="w-full max-w-xl mx-4 rounded-2xl border border-gold/20 bg-surface/97 p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] uppercase tracking-widest text-white/40">
+          <span className="text-[11px] uppercase tracking-widest text-gold/55">
             Pierwsze uruchomienie · {idx + 1}/{total}
           </span>
           <button onClick={() => close(false)} className="text-white/35 hover:text-white/80 text-sm">
             Później
           </button>
         </div>
+        {sekcja && (
+          <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-teal/70">
+            {sekcja}{sectionLen > 0 && <span className="text-white/30"> · {inSection}/{sectionLen}</span>}
+          </div>
+        )}
         <p className="text-[18px] leading-relaxed text-white mb-4">{q}</p>
         <textarea
           rows={3}
