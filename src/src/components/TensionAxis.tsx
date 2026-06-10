@@ -19,7 +19,10 @@ import type { AxisPole, TensionAxisPayload, TensionNode } from "@/types/debate";
 
 const POLE_X: Record<AxisPole, number> = {
   structural: 24,
-  somatic: 50,
+  // Soma „przytula" kręgosłup — minimalny offset od osi (x=50). Strukturalne
+  // wyraźnie na lewo, cień na prawo; soma to ucieleśniony, integrujący środek
+  // dosłownie stykający się z osią.
+  somatic: 54,
   shadow: 76,
 };
 const POLE_LABEL: Record<AxisPole, string> = {
@@ -111,7 +114,12 @@ export function TensionAxis({ axis, onFocusAnchor }: Props) {
 
       {/* RDZEŃ — centralna oś wyciągnięta z prozy */}
       <div className="relative mx-auto max-w-xl text-center mb-1">
-        <div className="text-[13px] leading-none text-gold/70 mb-1 select-none">☼</div>
+        <div
+          className="text-[13px] leading-none mb-1 select-none"
+          style={{ color: "#E8D5A3", textShadow: "0 0 10px rgba(232,213,163,0.45)" }}
+        >
+          ☼
+        </div>
         <div className="inline-block rounded-lg border border-gold/40 bg-gold/[0.08] px-4 py-2 shadow-[0_0_24px_rgba(197,164,110,0.18)]">
           <div className="text-[9px] uppercase tracking-widest text-gold/50 mb-0.5">
             Rdzeń

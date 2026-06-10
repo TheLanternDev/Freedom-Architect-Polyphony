@@ -86,6 +86,18 @@ def test_save_skips_empty_payload(client):
     assert r.json()["saved"] == 0
 
 
+def test_onboarding_has_kreatywnosc_i_duchowosc_before_cisza():
+    """Checkpoint 1: 24 pytania; Kreatywność + Duchowość obecne i PRZED Ciszą
+    (Cisza zostaje miękkim, zamykającym oddechem)."""
+    from personal_v1.rituals.onboarding import PYTANIA, SEKCJE
+
+    assert len(PYTANIA) == len(SEKCJE) == 24
+    kolejnosc = [s for i, s in enumerate(SEKCJE) if i == 0 or SEKCJE[i - 1] != s]
+    assert kolejnosc[-3:] == ["Kreatywność", "Duchowość", "Cisza"]
+    assert "Co tworzysz, kiedy nikt tego nie zobaczy?" in PYTANIA
+    assert "Co Cię przerasta w dobrym sensie — przed czym czujesz pokorę?" in PYTANIA
+
+
 def test_get_ritual_daily_returns_questions(client):
     tc, _ = client
     r = tc.get("/personal/ritual/daily")

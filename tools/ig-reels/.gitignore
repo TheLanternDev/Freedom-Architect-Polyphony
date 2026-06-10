@@ -1,7 +1,0 @@
-.env
-output/
-*.mp4
-memory.jsonl
-__pycache__/
-*.egg-info/
-.venv/

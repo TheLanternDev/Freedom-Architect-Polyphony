@@ -3,9 +3,9 @@
 # Reel #2 = KTO (9 agentów). Reel #3+ = CO DALEJ (jeden motyw / odcinek).
 
 published_order: [reel3_brief_w_rade]  # session_id lub concept_id gotowych do IG (w kolejności wrzucania)
-next_concept_id: reel3_szow_glos      # następny do produkcji (#3B — Głos cienia)
-pending_concept_id: null     # #3A domknięty 2026-06-07 (potwierdzone przez użytkownika)
-episode_number: 3            # ostatni POTWIERDZONY = reel #3 (reel3_brief_w_rade)
+next_concept_id: reel3_zobowiazanie_72h  # następny do produkcji po #3B (#3C — 72 godziny)
+pending_concept_id: reel3_szow_glos  # #3B przygotowany 2026-06-09, czeka na render+potwierdzenie
+episode_number: 3            # ostatni POTWIERDZONY = reel #3 (reel3_brief_w_rade); #3B podbije do 4 po potwierdzeniu
 last_session_id: null        # session_id ostatniego ukończonego pipeline'u
 
 # Kolejka (źródło prawdy: concepts.yaml → policy.reel_series.reel3_queue):

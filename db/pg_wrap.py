@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Optional, Sequence
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -13,15 +14,101 @@ INSERT_RETURNING_TABLES = frozenset(
 )
 
 
+_DOLLAR_TAG_RE = re.compile(r"\$[A-Za-z0-9_]*\$")
+
+
 def qmarks_to_pg(sql: str) -> str:
+    """Zamienia placeholdery `?` (styl aiosqlite) na `$1, $2, ...` (asyncpg).
+
+    NIE dotyka `?` które nie są placeholderami — wcześniejsze ślepe `re.sub(r"\\?")`
+    psuło: literały tekstowe (`'why?'`), identyfikatory w cudzysłowie i bloki
+    dollar-quoted (`$$...$$`). Skaner pomija ich zawartość.
+
+    Kontrakt: SQL wchodzący tu pochodzi ze stylu SQLite, gdzie samotny `?` jest
+    ZAWSZE placeholderem (SQLite nie ma jsonb `?`). Wieloznakowe operatory jsonb
+    `?|` i `?&` są rozpoznawane i zachowywane. Gołego operatora jsonb `?`
+    (istnienia klucza) w tej warstwie celowo nie wspieramy — nie występuje w
+    zapytaniach SQLite-origin; PG-specyficzne zapytania jsonb używaj na raw
+    połączeniu (poza tym translatorem).
+    """
+    out: list[str] = []
     n = 0
+    i = 0
+    length = len(sql)
+    in_squote = False  # '...'
+    in_dquote = False  # "..."
+    dollar_tag: Optional[str] = None  # aktywny tag $tag$
 
-    def repl(_m: re.Match[str]) -> str:
-        nonlocal n
-        n += 1
-        return f"${n}"
+    while i < length:
+        ch = sql[i]
 
-    return re.sub(r"\?", repl, sql)
+        if dollar_tag is not None:
+            if sql.startswith(dollar_tag, i):
+                out.append(dollar_tag)
+                i += len(dollar_tag)
+                dollar_tag = None
+            else:
+                out.append(ch)
+                i += 1
+            continue
+
+        if in_squote:
+            out.append(ch)
+            if ch == "'":
+                if i + 1 < length and sql[i + 1] == "'":  # '' = escaped
+                    out.append("'")
+                    i += 2
+                    continue
+                in_squote = False
+            i += 1
+            continue
+
+        if in_dquote:
+            out.append(ch)
+            if ch == '"':
+                if i + 1 < length and sql[i + 1] == '"':  # "" = escaped
+                    out.append('"')
+                    i += 2
+                    continue
+                in_dquote = False
+            i += 1
+            continue
+
+        # poza literałami
+        if ch == "'":
+            in_squote = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_dquote = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "$":
+            m = _DOLLAR_TAG_RE.match(sql, i)
+            if m:
+                dollar_tag = m.group(0)
+                out.append(dollar_tag)
+                i += len(dollar_tag)
+                continue
+        if ch == "?":
+            nxt = sql[i + 1] if i + 1 < length else ""
+            prv = sql[i - 1] if i > 0 else ""
+            # operatory jsonb: ?| ?& ?? — nie placeholder
+            if nxt in ("|", "&", "?") or prv == "?":
+                out.append(ch)
+                i += 1
+                continue
+            n += 1
+            out.append(f"${n}")
+            i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out)
 
 
 def fix_insert_or_ignore(sql: str) -> str:
@@ -81,6 +168,9 @@ class PgConnection:
 
     def __init__(self, raw: Any):
         self._c = raw
+        # True wewnątrz `async with conn.transaction()` — wtedy execute() NIE
+        # otwiera własnej transakcji per-statement (atomowość wielu zapisów).
+        self._in_tx = False
 
     @staticmethod
     def _parse_rowcount(status: str) -> int:
@@ -131,6 +221,13 @@ class PgConnection:
             rc = self._parse_rowcount(status)
             return _ExecCursor(rowcount=rc)
 
+        # Wewnątrz jawnej `transaction()` GUC jest już ustawiony i transakcja
+        # otwarta — nie otwieramy kolejnej (inaczej każdy statement byłby
+        # osobnym savepointem i `commit()` na wyjściu CM nie dawałby atomowości
+        # wielu zapisów). Po prostu dispatch w bieżącej transakcji.
+        if self._in_tx:
+            return await _dispatch()
+
         try:
             from db.tenant import current_tenant_id
         except ImportError:
@@ -144,20 +241,56 @@ class PgConnection:
             )
 
         async with self._c.transaction():
-            try:
-                await self._c.execute(
-                    "SELECT set_config('architekt.tenant_id', $1, true)",
-                    tid,
-                )
-            except Exception as e:  # pragma: no cover
-                logger.error(
-                    "RLS: set_config('architekt.tenant_id') failed: %s — przerywam query", e
-                )
-                raise RuntimeError(
-                    f"Nie można ustawić kontekstu tenanta RLS — query przerwane: {e}"
-                ) from e
+            await self._set_tenant_guc(tid)
             return await _dispatch()
 
+    async def _set_tenant_guc(self, tid: str) -> None:
+        """Ustawia transaction-local GUC `architekt.tenant_id` dla RLS.
+        Fail-closed: błąd przerywa query (RuntimeError → 500)."""
+        try:
+            await self._c.execute(
+                "SELECT set_config('architekt.tenant_id', $1, true)", tid
+            )
+        except Exception as e:  # pragma: no cover
+            logger.error(
+                "RLS: set_config('architekt.tenant_id') failed: %s — przerywam query", e
+            )
+            raise RuntimeError(
+                f"Nie można ustawić kontekstu tenanta RLS — query przerwane: {e}"
+            ) from e
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator["PgConnection"]:
+        """Atomowy zakres wielu zapisów: commit na czystym wyjściu, rollback przy
+        wyjątku. GUC tenanta ustawiany RAZ; wewnętrzne execute() reużywają tej
+        transakcji (nie otwierają własnych). Interfejs zgodny z SQLite `_Lite`.
+
+        Świadomie NIE zmieniamy domyślnego execute() na odroczony commit —
+        chroni to długie strumienie SSE przed jedną wielominutową transakcją
+        trzymającą locki. Atomowości używaj jawnie tam, gdzie jest potrzebna.
+        """
+        set_guc = True
+        tid = ""
+        try:
+            from db.tenant import current_tenant_id
+            tid = (current_tenant_id() or "").strip()
+        except ImportError:
+            set_guc = False  # testy bez db.tenant — RLS nieaktywne
+        if set_guc and not tid:
+            raise RuntimeError(
+                "RLS: pusty tenant_id — transakcja przerwana (fail-closed)."
+            )
+        async with self._c.transaction():
+            if set_guc:
+                await self._set_tenant_guc(tid)
+            prev = self._in_tx
+            self._in_tx = True
+            try:
+                yield self
+            finally:
+                self._in_tx = prev
+
     async def commit(self) -> None:
-        """asyncpg w puli — komendy DDL/DML są zatwierdzane automatycznie."""
+        """No-op poza `transaction()`: execute() auto-commit'uje per-statement.
+        Atomowość wielu zapisów uzyskasz przez `async with conn.transaction():`."""
         return None

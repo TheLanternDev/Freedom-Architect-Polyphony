@@ -1,0 +1,72 @@
+{
+  "361cb6338bab87217b50e308a5e3af7c30a92505f4ddf97c739c4b28fe9fe156": {
+    "video_url": "http://example.com/v.mp4",
+    "local_path": "/tmp/x.mp4",
+    "session_id": null,
+    "iteration_id": null,
+    "ts": "2026-06-04T04:59:10.464115+00:00"
+  },
+  "723072d4f3ec5453e0854a2e876b3b57b1dac1119264cd2b0bcd4fd76140c672": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-e51050bf-de61-43e9-b733-8bb6c9448ead.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260604-085332-07ea/8679eb28.mp4",
+    "session_id": "reel-20260604-085332-07ea",
+    "iteration_id": "8679eb28",
+    "ts": "2026-06-04T06:54:48.063314+00:00"
+  },
+  "266d735e4ca35913053dbed34300ef8f8d786e64fc8bacc405e8dbf4f14d4f5b": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-02690850-7924-4f80-bc62-7297d2349410.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260604-085332-07ea/39e70255.mp4",
+    "session_id": "reel-20260604-085332-07ea",
+    "iteration_id": "39e70255",
+    "ts": "2026-06-04T07:02:02.932381+00:00"
+  },
+  "5954e41b7e157e52b3d2346e6a0657e6c1b6691ac541c5d198185b03b8ae20d0": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-8325278c-521e-43e0-91e6-41c483ad3775.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260606-130858-6840/d47eb059.mp4",
+    "session_id": "reel-20260606-130858-6840",
+    "iteration_id": "d47eb059",
+    "ts": "2026-06-06T11:11:51.923212+00:00"
+  },
+  "b094825320cb440a5e25caba73d72c1f3a172c7d9761d8655b13ee48d36e8035": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-d6b73efc-6528-4d8c-b6da-ceefd6a0ee00.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260606-130858-6840/d51a479e.mp4",
+    "session_id": "reel-20260606-130858-6840",
+    "iteration_id": "d51a479e",
+    "ts": "2026-06-06T11:11:56.946630+00:00"
+  },
+  "2b0e1c5c86267d94217a9eacf266ad62e36f560435b8c59cf0e7286f1c11be3e": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-60aee3c0-cb61-41ee-9a84-fabd4f77f2c2.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260607-142306-07eb/bce0717e.mp4",
+    "session_id": "reel-20260609-005912-99d4",
+    "iteration_id": "40bb3cec",
+    "ts": "2026-06-06T13:43:16.272008+00:00"
+  },
+  "c7b3375ea091a1e86de17070f18df1c853a0853717356fb2f9ee49c089606173": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-39e84c68-5371-45fc-a6b1-43b4af260be8.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260607-142306-07eb/02c52d11.mp4",
+    "session_id": "reel-20260609-005912-99d4",
+    "iteration_id": "bd9440a3",
+    "ts": "2026-06-06T13:43:26.701267+00:00"
+  },
+  "78e0b5fa474fc6b11594b8de7494a61068cc778324962d1918efbf10affac107": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-62dead2c-71f7-4005-ac9c-bde3187f9743.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260607-162204-bfb3/105b52c2.mp4",
+    "session_id": "reel-20260607-162204-bfb3",
+    "iteration_id": "105b52c2",
+    "ts": "2026-06-07T12:41:43.920557+00:00"
+  },
+  "6f8bcc5fff2704db418ff20ef62ad45ba2c74648370d831cad3ed4867823db06": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-ae145f42-f60c-4264-a4f6-45d09f272931.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260607-162204-bfb3/29bafefd.mp4",
+    "session_id": "reel-20260607-162204-bfb3",
+    "iteration_id": "29bafefd",
+    "ts": "2026-06-07T12:41:44.028109+00:00"
+  },
+  "b56c457323f1f0e0337c6f1e487a6dded696082f956200ea1712f8e22ec26a6d": {
+    "video_url": "https://vidgen.x.ai/xai-vidgen-bucket/xai-video-21f9609a-649c-4ef8-a375-8fa12f17a3b3.mp4",
+    "local_path": "/Users/tpltd145/Projects/architekt-wolnosci/tools/ig-reels/output/reel-20260607-162204-bfb3/99673e3e.mp4",
+    "session_id": "reel-20260607-162204-bfb3",
+    "iteration_id": "99673e3e",
+    "ts": "2026-06-07T14:35:59.612809+00:00"
+  }
+}

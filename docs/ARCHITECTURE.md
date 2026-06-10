@@ -12,7 +12,7 @@
 - Te same 9 agentów co edycja osobista — przeramowane promptami biznesowymi (`business_fa2/config/roles.py`), bez nowych ról
 - Konteksty branżowe (rozszerzają Smaty + Obver): `produkt fizyczny`, `usługa B2B`, `SaaS`, `marketplace`
 - Te same tryby co osobista (`pelna/marzen/schematy/codzienny`); proxy wymusza `council_mode="fa2"`
-- Mount `/business`; wspólna baza z edycją osobistą. Izolacja kontekstów na poziomie ewolucji agentów (sufiks tenanta `:fa2`). `FA2_DATABASE_PATH` zadeklarowane, ale nieużywane.
+- Mount `/business`; **wspólna baza** z edycją osobistą — brak osobnej bazy FA2. Izolacja danych przez `tenant_id` (ContextVar + RLS/`pg_wrap`), izolacja kontekstów ewolucji agentów przez sufiks `:fa2`. (`FA2_DATABASE_PATH`/`get_fa2_settings` usunięte jako martwy klucz sugerujący separację — Faza 2.)
 
 ## Wspólne (shared)
 - LLM wrapper (Anthropic SDK + fallback)

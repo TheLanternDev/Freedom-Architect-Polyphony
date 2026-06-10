@@ -60,14 +60,64 @@ def test_guard_legacy_bearer_rejected_when_jwt_configured(monkeypatch, client_no
 
 
 def test_guard_legacy_bearer_works_without_jwt(monkeypatch, client_no_redis):
-    """Gdy brak ARCHITEKT_JWT_SECRET, legacy bearer nadal działa."""
+    """Gdy brak ARCHITEKT_JWT_SECRET, legacy bearer działa — ale tylko z jawnym
+    X-Tenant-Id (P0-2: shared key bez tenanta = cross-user leak)."""
+    key = "shared-api-key-value"
+    monkeypatch.setenv("ARCHITEKT_API_KEY", key)
+    monkeypatch.delenv("ARCHITEKT_JWT_SECRET", raising=False)
+
+    r = client_no_redis.get(
+        "/history",
+        headers={"Authorization": f"Bearer {key}", "X-Tenant-Id": "t-legacy"},
+    )
+    assert r.status_code == 200
+    assert r.headers.get("Deprecation") == "true"
+
+
+def test_guard_legacy_bearer_requires_tenant_header(monkeypatch, client_no_redis):
+    """P0-2: legacy bearer BEZ X-Tenant-Id → 403 (nie cichy DEFAULT_TENANT)."""
     key = "shared-api-key-value"
     monkeypatch.setenv("ARCHITEKT_API_KEY", key)
     monkeypatch.delenv("ARCHITEKT_JWT_SECRET", raising=False)
 
     r = client_no_redis.get("/history", headers={"Authorization": f"Bearer {key}"})
-    assert r.status_code == 200
-    assert r.headers.get("Deprecation") == "true"
+    assert r.status_code == 403
+    assert "tenant" in r.json()["detail"].lower()
+
+
+def test_guard_legacy_bearer_sets_tenant_contextvar(monkeypatch, client_no_redis):
+    """P0-2: X-Tenant-Id/X-User-Id z legacy bearer trafiają do ContextVar."""
+    from db.tenant import current_tenant_id, current_user_id
+
+    key = "shared-api-key-value"
+    monkeypatch.setenv("ARCHITEKT_API_KEY", key)
+    monkeypatch.delenv("ARCHITEKT_JWT_SECRET", raising=False)
+
+    seen: dict[str, str] = {}
+
+    from main import app
+
+    @app.get("/_test/tenant-echo")
+    async def _tenant_echo():  # pragma: no cover - test-only route
+        seen["tenant"] = current_tenant_id()
+        seen["user"] = current_user_id()
+        return {"ok": True}
+
+    try:
+        r = client_no_redis.get(
+            "/_test/tenant-echo",
+            headers={
+                "Authorization": f"Bearer {key}",
+                "X-Tenant-Id": "t-abc",
+                "X-User-Id": "u-xyz",
+            },
+        )
+        assert r.status_code == 200
+        assert seen == {"tenant": "t-abc", "user": "u-xyz"}
+    finally:
+        app.router.routes[:] = [
+            rt for rt in app.router.routes if getattr(rt, "path", "") != "/_test/tenant-echo"
+        ]
 
 
 # ── 3. Admin endpoints fail-closed ────────────────────────────────────────

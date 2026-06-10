@@ -377,8 +377,13 @@ class BaseAgent(ABC):
                     else "═══ TRYB FREEDOM ARCHITECT (FA2) — ANALITYK BIZNESOWY ═══\n"
                 )
                 parts.append(_fa2_header + fa2_role)
-            # FA2 Syez ma własną instrukcję
-            fa2_instr = getattr(self, "instruction_fa2_pl", None)
+            # FA2 Syez ma własną instrukcję — wybór wg języka odpowiedzi.
+            if language == "en":
+                fa2_instr = getattr(self, "instruction_fa2_en", None) or getattr(
+                    self, "instruction_fa2_pl", None
+                )
+            else:
+                fa2_instr = getattr(self, "instruction_fa2_pl", None)
             if fa2_instr:
                 parts.append(fa2_instr)
                 # pomiń dalsze bloki — FA2 instruction jest kompletna
@@ -405,6 +410,19 @@ class BaseAgent(ABC):
                     parts.append(dream.as_agent_context())
                 except Exception as e:  # pragma: no cover
                     logger.warning("Dream context skipped for %s: %s", self.name, e)
+
+            # AKSJOMAT 1 — Obraz Użytkownika (destylat onboardingu). Wstrzykiwany
+            # PO marzeniu, PRZED tożsamością agenta. Task-scoped ContextVar (agenci
+            # to współdzielone singletony → dane usera NIE mogą wisieć na instancji).
+            # Obraz KARMI marzenie, nie zastępuje go. Tylko tryb personal (nie fa2).
+            try:
+                from core.obraz_uzytkownika import get_obraz_context
+
+                _obraz_ctx = get_obraz_context()
+                if _obraz_ctx:
+                    parts.append(_obraz_ctx)
+            except Exception as e:  # pragma: no cover
+                logger.warning("Obraz context skipped for %s: %s", self.name, e)
 
         if language == "en":
             instr = getattr(self, "instruction_en", None) or self.instruction
@@ -848,52 +866,23 @@ class BaseAgent(ABC):
         Reszta: 3 zdania, konkret, bez autoprezentacji.
         """
         if self.name == "Syez" and council_mode == "fa2":
+            # #A/#B: protokół FA2 ma JEDNO źródło prawdy — instrukcja systemowa
+            # (FA2_SYEZ_INSTRUCTION_PL / _EN). Tu tylko podajemy materiał i
+            # wywołujemy protokół; bez drugiego, rozjeżdżającego się zestawu kroków.
             if language == "en":
                 return (
                     f"Business briefing and Council Analysts' reports:\n"
                     f"---\n{context}\n---\n\n"
-                    f"SYNTHESIS RULES (FA2):\n"
-                    f"1. Choose ONE best idea/niche from the analysts' proposals "
-                    f"and justify with concrete data (market size, margins, CAC/LTV, time to profitability).\n"
-                    f"2. For the chosen idea write a READY BUSINESS ARCHITECTURE:\n"
-                    f"   - Tech stack + platforms (concrete names: Shopify/WooCommerce/custom, "
-                    f"     Stripe/PayU, AWS/Vercel, ops tools)\n"
-                    f"   - Operational model step by step (day 0 to day 90)\n"
-                    f"   - Cost and revenue structure (in prose, table-style)\n"
-                    f"3. Three scenarios:\n"
-                    f"   - BASE SCENARIO: realistic, 12 months\n"
-                    f"   - BULL SCENARIO: everything goes well, 12 months\n"
-                    f"   - BEAR SCENARIO: main risk materialises — how to survive\n"
-                    f"4. Mermaid diagram — flowchart of system architecture or sales process.\n"
-                    f"5. Step-by-step implementation guide: Week 1 / Month 1 / Month 3 / Month 6.\n"
-                    f"6. At the end: 3 open questions for the founder that must be answered "
-                    f"before the first dollar is spent.\n\n"
-                    f"Format: pure English prose + numbered lists where helpful + one Mermaid diagram. "
-                    f"No JSON. Length: 800–1600 words.\n\n"
-                    f"Write the synthesis now."
+                    f"Write the synthesis now, strictly following the FA2 protocol "
+                    f"from your system instruction (Steps 1–8, including the «One "
+                    f"step now:» paragraph and the explicit weakest-link call)."
                 )
             return (
                 f"Briefing biznesowy i analizy Rady Analityków:\n"
                 f"---\n{context}\n---\n\n"
-                f"ZASADY SYNTEZY FA2:\n"
-                f"1. Wybierz JEDEN najlepszy pomysł/niszę spośród zaproponowanych przez analityków "
-                f"i uzasadnij wybór konkretnymi danymi (rynek, marże, CAC/LTV, czas do rentowności).\n"
-                f"2. Dla wybranego pomysłu napisz GOTOWĄ ARCHITEKTURĘ BIZNESOWĄ:\n"
-                f"   - Stack technologiczny + platformy (konkretne nazwy: Shopify/WooCommerce/custom, "
-                f"     Stripe/PayU, AWS/Vercel, narzędzia ops)\n"
-                f"   - Model operacyjny krok po kroku (od dnia 0 do dnia 90)\n"
-                f"   - Struktura kosztów i przychodów (tabelarycznie w prozie)\n"
-                f"3. Trzy scenariusze:\n"
-                f"   - SCENARIUSZ BASE: realistyczny, 12 miesięcy\n"
-                f"   - SCENARIUSZ BULL: wszystko idzie dobrze, 12 miesięcy\n"
-                f"   - SCENARIUSZ BEAR: główne ryzyko materializuje się — jak przeżyć\n"
-                f"4. Diagram Mermaid — flowchart architektury systemu lub procesu sprzedaży.\n"
-                f"5. Instrukcja wdrożenia krok po kroku: Tydzień 1 / Miesiąc 1 / Miesiąc 3 / Miesiąc 6.\n"
-                f"6. Na końcu: 3 pytania otwarte do założyciela, które muszą mieć odpowiedź zanim "
-                f"zostanie wydana pierwsza złotówka.\n\n"
-                f"Format: czysta polska proza + listy numerowane gdzie pomagają + jeden diagram mermaid. "
-                f"Zakaz JSON. Długość: 800–1600 słów.\n\n"
-                f"Napisz syntezę teraz."
+                f"Napisz syntezę teraz, ściśle według protokołu FA2 z Twojej "
+                f"instrukcji systemowej (Kroki 1–8, w tym akapit «Jeden krok "
+                f"teraz:» oraz jawne wskazanie najsłabszego ogniwa)."
             )
 
         if self.name == "Syez":

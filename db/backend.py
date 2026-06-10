@@ -114,12 +114,19 @@ async def init_database(sqlite_init_cb: Any) -> None:
             # ⚠️  JEDYNE dozwolone użycie rawowego `_pg_pool.acquire()` bez PgConnection wrappera.
             # PgConnection.execute() ustawia GUC `architekt.tenant_id` przed każdym query —
             # co jest wymagane przez RLS policy tenant_isolation. Tutaj celowo pomijamy ten
-            # mechanizm, bo:
-            #   a) Migracje DDL muszą widzieć WSZYSTKIE wiersze (brak tenant_id w kontekście).
-            #   b) RLS policy przepuszcza query gdy GUC == '' (patrz migration 0002).
-            # Poza init_database NIE używaj _pg_pool.acquire() bezpośrednio — każdy request-time
-            # query musi przechodzić przez PgConnection (acquire_http_db / debate_stream_db).
+            # mechanizm, bo migracje DDL/seed muszą widzieć WSZYSTKIE wiersze (brak tenant_id
+            # w kontekście — backfille w 0005 itd.). Bypass jest JAWNY: ustawiamy GUC
+            # `architekt.migration_bypass='on'` (od migracji 0009 to JEDYNY sposób ominięcia
+            # policy — pusty `architekt.tenant_id` już NIE otwiera RLS, fail-closed).
+            # Poza init_database NIE używaj _pg_pool.acquire() bezpośrednio ani nie ustawiaj
+            # migration_bypass — każdy request-time query musi przechodzić przez PgConnection
+            # (acquire_http_db / debate_stream_db), które ustawia wyłącznie tenant_id.
             async with _pg_pool.acquire() as conn:
+                # Session-scoped (is_local=false) — ważny dla całego acquire, zwolniony przy
+                # zwrocie połączenia do puli. Kolejne (runtime) acquire dostaje czysty GUC.
+                await conn.execute(
+                    "SELECT set_config('architekt.migration_bypass', 'on', false)"
+                )
                 for stmt in _split_pg_schema(schema_sql):
                     await conn.execute(stmt)
                 await _run_pg_migrations(conn)
@@ -221,6 +228,17 @@ async def acquire_http_db(sqlite_db_path: Path) -> AsyncIterator[Any]:
             async def commit(self) -> None:
                 await self._c.commit()
 
+            @asynccontextmanager
+            async def transaction(self) -> AsyncIterator[Any]:
+                """Atomowy zakres: commit na czystym wyjściu, rollback przy wyjątku.
+                Interfejs zgodny z PgConnection.transaction()."""
+                try:
+                    yield self
+                    await self._c.commit()
+                except Exception:
+                    await self._c.rollback()
+                    raise
+
         yield _Lite(raw)
 
 
@@ -251,6 +269,17 @@ async def debate_stream_db(sqlite_db_path: Path) -> AsyncIterator[Any]:
 
         async def commit(self) -> None:
             await self._c.commit()
+
+        @asynccontextmanager
+        async def transaction(self) -> AsyncIterator[Any]:
+            """Atomowy zakres: commit na czystym wyjściu, rollback przy wyjątku.
+            Interfejs zgodny z PgConnection.transaction()."""
+            try:
+                yield self
+                await self._c.commit()
+            except Exception:
+                await self._c.rollback()
+                raise
 
     try:
         yield _Lite(conn)

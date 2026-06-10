@@ -663,6 +663,11 @@ async def debate_stream(request: Request, brief: Brief):
             )
         return StreamingResponse(fallback(), media_type="text/event-stream")
 
+    # P1-B1: duplikat Idempotency-Key (retry SSE po stronie klienta) → 409,
+    # zanim cokolwiek dotknie budżetu/DB.
+    from api.idempotency import claim_debate_idempotency_key
+    await claim_debate_idempotency_key(request)
+
     await _ensure_hard_budget_or_raise()
 
     if DB_AVAILABLE:
@@ -713,6 +718,10 @@ async def debate_continue_stream(request: Request, payload: DebateContinueReques
 
     if not DB_AVAILABLE:
         raise HTTPException(status_code=503, detail="baza niedostępna — brak kontekstu kontynuacji")
+
+    # P1-B1: identyczna ochrona jak /debate/stream.
+    from api.idempotency import claim_debate_idempotency_key
+    await claim_debate_idempotency_key(request)
 
     await _ensure_hard_budget_or_raise()
 

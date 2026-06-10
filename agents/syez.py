@@ -212,6 +212,12 @@ class Syez(BaseAgent):
             "  • You may open with «⚪ Syez:» — you don't have to.\n"
         )
 
+        try:
+            from business_fa2.prompts.synthesis import FA2_SYEZ_INSTRUCTION_EN
+            self.instruction_fa2_en = FA2_SYEZ_INSTRUCTION_EN
+        except ImportError:
+            self.instruction_fa2_en = self.instruction_en
+
     def contribute(self, context: str) -> str:
         return (
             f"{self.emoji} {self.name}: Bez działającego LLM nie ma pełnej syntezy. "

@@ -46,11 +46,11 @@ BEGIN
             CREATE POLICY tenant_isolation ON feedback
                 USING (
                     tenant_id = current_setting('architekt.tenant_id', true)
-                    OR current_setting('architekt.tenant_id', true) = ''
+                    OR current_setting('architekt.migration_bypass', true) = 'on'
                 )
                 WITH CHECK (
                     tenant_id = current_setting('architekt.tenant_id', true)
-                    OR current_setting('architekt.tenant_id', true) = ''
+                    OR current_setting('architekt.migration_bypass', true) = 'on'
                 )
         $p$;
     END IF;

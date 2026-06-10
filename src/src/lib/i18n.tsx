@@ -273,12 +273,19 @@ export const DICT: Record<string, Phrase> = {
   },
 
   // DebateHistory
-  "history.title": { pl: "Historia", en: "History" },
+  "history.title": { pl: "Moje Rady Nadzorcze", en: "My Supervisory Councils" },
   "history.search_placeholder": {
     pl: "Szukaj w briefie, syntezie, głosach…",
     en: "Search brief, synthesis, voices…",
   },
-  "history.empty": { pl: "Brak zapisanych debat.", en: "No saved debates yet." },
+  "history.empty": {
+    pl: "Twoja historia jest jeszcze pusta.",
+    en: "Your history is still empty.",
+  },
+  "history.empty_hint": {
+    pl: "Zadaj pierwsze pytanie Radzie w panelu obok — zakończona debata pojawi się tutaj.",
+    en: "Ask the Council your first question in the panel — a finished debate will appear here.",
+  },
   "history.no_history": { pl: "Brak historii", en: "No history" },
 
   // AgentCard

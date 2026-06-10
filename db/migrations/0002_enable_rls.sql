@@ -9,8 +9,12 @@
 --   • aplikacja przed każdym query ustawia GUC `architekt.tenant_id`
 --     (`db.pg_wrap.PgConnection.execute` woła `set_config(...)`).
 --   • policy USING/CHECK porównuje wiersz z tym GUC.
---   • gdy GUC pusty (init_db, migracje) — policy przepuszcza wszystko,
---     żeby DDL/seed nie wymagał roli BYPASSRLS.
+--   • bypass dla DDL/seed/migracji jest JAWNY: tylko gdy GUC
+--     `architekt.migration_bypass` == 'on' (ustawia go runner migracji,
+--     `db.backend.init_database`). Pusty/nieustawiony `architekt.tenant_id`
+--     NIE otwiera już policy — fail-closed (poprzednio `... = ''` dawało
+--     cross-tenant read na każdym połączeniu omijającym pg_wrap). CHECK
+--     `tenant_id <> ''` gwarantuje, że pusty GUC nie dopasuje żadnego wiersza.
 --   • `FORCE ROW LEVEL SECURITY` enforce'uje policy NAWET dla ownera tabeli
 --     (czyli roli aplikacji), inaczej RLS jest dla niego no-op.
 --
@@ -52,11 +56,11 @@ BEGIN
             CREATE POLICY tenant_isolation ON %I
                 USING (
                     tenant_id = current_setting('architekt.tenant_id', true)
-                    OR current_setting('architekt.tenant_id', true) = ''
+                    OR current_setting('architekt.migration_bypass', true) = 'on'
                 )
                 WITH CHECK (
                     tenant_id = current_setting('architekt.tenant_id', true)
-                    OR current_setting('architekt.tenant_id', true) = ''
+                    OR current_setting('architekt.migration_bypass', true) = 'on'
                 )
         $p$, t);
     END LOOP;

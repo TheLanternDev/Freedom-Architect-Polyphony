@@ -89,8 +89,11 @@ async def admin_rebuild_evolution(
         from core.agent_learner import run_full_evolution_cycle
 
         agent_names = [a.name for a in m.COUNCIL] if m.RADA_AVAILABLE else []
-        results = await run_full_evolution_cycle(db, m.repo, agent_names)
-        await db.commit()
+        # Atomowo: wszystkie notatki ewolucyjne zapisują się razem albo wcale.
+        # Wcześniej każdy merge auto-commit'ował się osobno (pg_wrap), a `commit()`
+        # był no-op → częściowa awaria zostawiała niespójny stan.
+        async with db.transaction():
+            results = await run_full_evolution_cycle(db, m.repo, agent_names)
         return {"ok": True, "agents_updated": list(results.keys())}
     except HTTPException:
         raise

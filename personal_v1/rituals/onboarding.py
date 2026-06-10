@@ -27,6 +27,12 @@ PYTANIA = [
     # Domknięcie
     "Jakiego projektu nie ukończyłeś — i dlaczego?",
     "Co zaczynasz, kiedy się boisz skończyć?",
+    # Kreatywność
+    "Co tworzysz, kiedy nikt tego nie zobaczy?",
+    "Kiedy ostatnio zrobiłeś coś tylko dla samej formy — bez celu i bez widowni?",
+    # Duchowość
+    "Co Cię przerasta w dobrym sensie — przed czym czujesz pokorę?",
+    "Kiedy ostatnio czułeś, że jesteś częścią czegoś większego niż Ty?",
     # Cisza
     "Czego najbardziej potrzebujesz w tym tygodniu?",
     "Jakie jedno zdanie chciałbyś usłyszeć od siebie sprzed roku?",
@@ -43,6 +49,8 @@ _GRUPY = [
     ("Historia", 2),
     ("Wartości", 2),
     ("Domknięcie", 2),
+    ("Kreatywność", 2),
+    ("Duchowość", 2),
     ("Cisza", 2),
 ]
 SEKCJE: list[str] = []

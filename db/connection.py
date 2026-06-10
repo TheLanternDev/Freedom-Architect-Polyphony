@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 from db.tenant import current_tenant_id as _tid  # Faza 4 — multi-user
+from db.tenant import current_user_id as _uid  # Faza A — izolacja historii per user
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def init_db(db_path: Optional[Path] = None) -> None:
             await db.execute("PRAGMA busy_timeout=5000")
             await db.executescript(schema)
             await _migrate_debates_parent_column(db)
+            await _migrate_debates_user_subject(db)
             await _migrate_commitments_phase2(db)
             await _migrate_agent_evolution_table(db)
             await _migrate_users_table(db)
@@ -71,6 +73,21 @@ async def _migrate_debates_parent_column(db: Any) -> None:
     col_names = {r[1] for r in rows}
     if "parent_debate_id" not in col_names:
         await db.execute("ALTER TABLE debates ADD COLUMN parent_debate_id INTEGER NULL")
+
+
+async def _migrate_debates_user_subject(db: Any) -> None:
+    """Faza A — izolacja historii per user: idempotentny ALTER dodający
+    `user_subject` do `debates`. Stare wiersze = NULL (widoczne dla całego
+    tenanta, wstecznie zgodne); nowe debaty stemplowane current_user_id()."""
+    cur = await db.execute("PRAGMA table_info(debates)")
+    rows = await cur.fetchall()
+    col_names = {r[1] for r in rows}
+    if "user_subject" not in col_names:
+        await db.execute("ALTER TABLE debates ADD COLUMN user_subject TEXT NULL")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_debates_tenant_user "
+        "ON debates(tenant_id, user_subject)"
+    )
 
 
 async def _migrate_commitments_phase2(db: Any) -> None:
@@ -192,6 +209,28 @@ async def _migrate_feedback_onboarding_tables(db: Any) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_onboarding_answers_tenant_user
             ON onboarding_answers(tenant_id, user_subject)
+        """
+    )
+    # user_obraz — trwały destylat onboardingu (AKSJOMAT 1). Postgres: migracja 0007.
+    await db.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_obraz (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id     TEXT NOT NULL DEFAULT 'default',
+            user_subject  TEXT,
+            obraz_json    TEXT NOT NULL,
+            wersja        INTEGER NOT NULL DEFAULT 1,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            CHECK (tenant_id <> ''),
+            UNIQUE (tenant_id, user_subject)
+        )
+        """
+    )
+    await db.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_user_obraz_tenant_user
+            ON user_obraz(tenant_id, user_subject)
         """
     )
 
@@ -509,13 +548,14 @@ class _Repo:
         cur = await db.execute(
             """
             INSERT INTO debates (
-              tenant_id, category, mode, brief_description, intention, extra_context,
-              dream_id, parent_debate_id
+              tenant_id, user_subject, category, mode, brief_description, intention,
+              extra_context, dream_id, parent_debate_id
             )
-            VALUES (?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?)
             """,
             (
                 _tid(),
+                _uid(),
                 category,
                 mode,
                 brief_description,
@@ -692,10 +732,11 @@ class _Repo:
                        substr(brief_description, 1, 140) AS preview
                   FROM debates
                  WHERE tenant_id = ?
+                   AND (user_subject = ? OR user_subject IS NULL)
                  {order}
                  LIMIT ?
                 """,
-                (tid, lim),
+                (tid, _uid(), lim),
             )
         else:
             needle = q.lower()[:500]
@@ -707,6 +748,7 @@ class _Repo:
                     OR POSITION($4 IN lower(coalesce(d.extra_context,''))) > 0
                     OR POSITION($5 IN lower(coalesce(d.synthesis_text,''))) > 0
                     OR POSITION($6 IN lower(coalesce(v.voice_text,''))) > 0)
+                   AND (d.user_subject = $7 OR d.user_subject IS NULL)
                 """
                 sql = f"""
                 SELECT DISTINCT d.id, d.created_at, d.category, d.mode, d.brief_description, d.dream_id,
@@ -716,11 +758,11 @@ class _Repo:
                   LEFT JOIN agent_voices v ON v.debate_id = d.id
                  {where}
                  {order_d}
-                 LIMIT $7
+                 LIMIT $8
                 """
                 cur = await db.execute(
                     sql,
-                    (tid, needle, needle, needle, needle, needle, lim),
+                    (tid, needle, needle, needle, needle, needle, _uid(), lim),
                 )
             else:
                 # FTS5 path — sub-millisecond at any scale; fallback to instr() if table absent
@@ -739,10 +781,11 @@ class _Repo:
                           JOIN debates d ON d.id = f.rowid
                          WHERE f.debates_fts MATCH ?
                            AND d.tenant_id = ?
+                           AND (d.user_subject = ? OR d.user_subject IS NULL)
                          {order_d}
                          LIMIT ?
                         """,
-                        (needle, tid, lim),
+                        (needle, tid, _uid(), lim),
                     )
                 else:
                     # Legacy fallback (pre-migration)
@@ -755,6 +798,7 @@ class _Repo:
                           FROM debates d
                           LEFT JOIN agent_voices v ON v.debate_id = d.id
                          WHERE d.tenant_id = ?
+                           AND (d.user_subject = ? OR d.user_subject IS NULL)
                            AND (instr(lower(coalesce(d.brief_description,'')), ?) > 0
                             OR instr(lower(coalesce(d.intention,'')), ?) > 0
                             OR instr(lower(coalesce(d.extra_context,'')), ?) > 0
@@ -763,15 +807,16 @@ class _Repo:
                          {order_d}
                          LIMIT ?
                         """,
-                        (tid, needle, needle, needle, needle, needle, lim),
+                        (tid, _uid(), needle, needle, needle, needle, needle, lim),
                     )
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
 
     async def get_debate_row(self, db: Any, debate_id: int) -> Optional[dict[str, Any]]:
         cur = await db.execute(
-            "SELECT * FROM debates WHERE id = ? AND tenant_id = ?",
-            (debate_id, _tid()),
+            "SELECT * FROM debates WHERE id = ? AND tenant_id = ? "
+            "AND (user_subject = ? OR user_subject IS NULL)",
+            (debate_id, _tid(), _uid()),
         )
         row = await cur.fetchone()
         return dict(row) if row else None
@@ -808,8 +853,9 @@ class _Repo:
             if d_id in parent_cache:
                 return parent_cache[d_id]
             cur = await db.execute(
-                "SELECT parent_debate_id FROM debates WHERE id = ? AND tenant_id = ?",
-                (d_id, tid),
+                "SELECT parent_debate_id FROM debates WHERE id = ? AND tenant_id = ? "
+                "AND (user_subject = ? OR user_subject IS NULL)",
+                (d_id, tid, _uid()),
             )
             row = await cur.fetchone()
             parent = None if row is None else row["parent_debate_id"]
@@ -853,8 +899,9 @@ class _Repo:
                 SELECT id, brief_description, synthesis_text, parent_debate_id
                   FROM debates
                  WHERE id = ? AND tenant_id = ?
+                   AND (user_subject = ? OR user_subject IS NULL)
                 """,
-                (current_id, _tid()),
+                (current_id, _tid(), _uid()),
             )
             row = await cur.fetchone()
             if not row:
@@ -902,8 +949,9 @@ class _Repo:
         self, db: Any, debate_id: int
     ) -> Optional[dict[str, Any]]:
         cur = await db.execute(
-            "SELECT id, mode, dream_id FROM debates WHERE id = ? AND tenant_id = ?",
-            (debate_id, _tid()),
+            "SELECT id, mode, dream_id FROM debates WHERE id = ? AND tenant_id = ? "
+            "AND (user_subject = ? OR user_subject IS NULL)",
+            (debate_id, _tid(), _uid()),
         )
         row = await cur.fetchone()
         return dict(row) if row else None
@@ -1188,6 +1236,43 @@ class _Repo:
             "WHERE tenant_id = ? AND user_subject = ? ORDER BY question_idx",
             (_tid(), user_subject),
         )
+
+    async def upsert_user_obraz(
+        self,
+        db: Any,
+        *,
+        user_subject: str,
+        obraz_json: str,
+        wersja: int,
+        updated_at: str,
+    ) -> None:
+        """Zapisuje destylat Obrazu Użytkownika. Stempel tenant_id z ContextVar.
+        UNIQUE(tenant_id, user_subject) → 1 bieżący wiersz/użytkownik."""
+        await db.execute(
+            """
+            INSERT INTO user_obraz (
+                tenant_id, user_subject, obraz_json, wersja, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(tenant_id, user_subject) DO UPDATE SET
+                obraz_json = excluded.obraz_json,
+                wersja = excluded.wersja,
+                updated_at = excluded.updated_at
+            """,
+            (_tid(), user_subject, obraz_json, wersja, updated_at, updated_at),
+        )
+
+    async def get_user_obraz(
+        self, db: Any, *, user_subject: str
+    ) -> Optional[dict[str, Any]]:
+        """Bieżący Obraz użytkownika. Izolacja: tenant_id = _tid() ORAZ user_subject
+        — bez wycieku cross-user ani cross-tenant."""
+        cur = await db.execute(
+            "SELECT obraz_json, wersja, updated_at FROM user_obraz "
+            "WHERE tenant_id = ? AND user_subject = ?",
+            (_tid(), user_subject),
+        )
+        row = await cur.fetchone()
+        return dict(row) if row else None
 
     async def export_tenant_data(self, db: Any, *, tenant_id: str) -> dict[str, Any]:
         """Eksport wszystkich danych tenanta (RODO — prawo dostępu)."""

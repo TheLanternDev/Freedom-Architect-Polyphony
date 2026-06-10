@@ -114,7 +114,12 @@ export function useDebate() {
 
   // _runDebateStreamOnce: wewnętrzna warstwa SSE — jeden attempt połączenia.
   // Retry (max 1x) obsługiwany przez runDebateStream przez _retried flag.
-  async function _runDebateStreamOnce(url: string, body: unknown, _retried: boolean) {
+  async function _runDebateStreamOnce(
+    url: string,
+    body: unknown,
+    _retried: boolean,
+    idempotencyKey: string,
+  ) {
     // Deklaracja poza try/catch — dostępna w bloku catch dla guard retry.
     let receivedFirstEvent = false;
     try {
@@ -122,6 +127,9 @@ export function useDebate() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // P1-B1: ten sam klucz na pierwszy strzał i retry — backend przyjmuje
+          // tylko jeden (duplikat → 409 duplicate_debate_request).
+          "Idempotency-Key": idempotencyKey,
           ...getApiAuthHeaders(),
         },
         body: JSON.stringify(body),
@@ -132,11 +140,13 @@ export function useDebate() {
         try {
           const data = await res.json();
           if (res.status === 409) {
+            const isDuplicate = data?.detail?.code === "duplicate_debate_request";
             setState((s) => ({
               ...s,
               status: "error",
               error: data?.detail?.message ?? "Active project limit reached",
-              auditViolation: data?.detail,
+              // duplicate to nie naruszenie audytu — nie pokazuj panelu violation
+              auditViolation: isDuplicate ? undefined : data?.detail,
             }));
             return;
           }
@@ -205,7 +215,7 @@ export function useDebate() {
           pendingMsg: tRef.current("debate.reconnecting") || "Ponawiam połączenie…",
         }));
         await new Promise<void>((r) => setTimeout(r, 2_500));
-        await _runDebateStreamOnce(url, body, true);
+        await _runDebateStreamOnce(url, body, true, idempotencyKey);
         return;
       }
       const msg = humanizeFetchFailure(err, (k) => tRef.current(k));
@@ -231,7 +241,13 @@ export function useDebate() {
           currentPromptText: opts.currentPromptText,
         }),
       );
-      await _runDebateStreamOnce(url, body, false);
+      // P1-B1: jeden klucz per logiczna debata (świeży przy każdym nowym
+      // wywołaniu startDebate/continueDebateThread, wspólny dla retry).
+      const idempotencyKey =
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await _runDebateStreamOnce(url, body, false, idempotencyKey);
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   []);

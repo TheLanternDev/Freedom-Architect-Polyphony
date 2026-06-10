@@ -165,6 +165,79 @@ async def onboarding_answers(request: Request):
     return {**base, "answers": [latest[k] for k in sorted(latest)]}
 
 
+async def _acquire_repo_db():
+    """(repo, acquire_http_db, DB_PATH) lub (None, None, None) gdy warstwa DB
+    niedostępna. Wspólne dla syntezy i odczytu Obrazu."""
+    try:
+        from db import repo
+        from db.backend import acquire_http_db
+        from db.connection import DB_PATH
+        return repo, acquire_http_db, DB_PATH
+    except ImportError:
+        return None, None, None
+
+
+@router.post("/onboarding/synthesize")
+async def onboarding_synthesize(request: Request):
+    """Destyluje zapisane odpowiedzi onboardingowe w trwały `ObrazUzytkownika`
+    (AKSJOMAT 1). DB-required: Obraz musi trafić do bazy, żeby Rada go widziała.
+    Izolacja: odpowiedzi i Obraz filtrowane po tenant_id (RLS) ORAZ user_subject."""
+    sub = getattr(request.state, "architekt_subject", None) or "anonymous"
+    ts = datetime.now(timezone.utc).isoformat()
+
+    repo, acquire_http_db, DB_PATH = await _acquire_repo_db()
+    if not (repo is not None and acquire_http_db is not None
+            and hasattr(repo, "upsert_user_obraz")
+            and hasattr(repo, "list_onboarding_answers")):
+        raise HTTPException(
+            503,
+            detail="Synteza Obrazu wymaga bazy — sprawdź migrację user_obraz (0007).",
+        )
+
+    from core.obraz_uzytkownika import adistill_obraz
+
+    async with acquire_http_db(DB_PATH) as db:
+        rows = await repo.list_onboarding_answers(db, user_subject=sub)
+        answers = [
+            {"question_idx": int(r["question_idx"]), "answer": r["answer"]} for r in rows
+        ]
+        prev = await repo.get_user_obraz(db, user_subject=sub)
+        wersja = int(prev["wersja"]) + 1 if prev else 1
+        obraz = await adistill_obraz(answers, wersja=wersja)
+        await repo.upsert_user_obraz(
+            db,
+            user_subject=sub,
+            obraz_json=obraz.model_dump_json(),
+            wersja=wersja,
+            updated_at=ts,
+        )
+        await db.commit()
+
+    return {"status": "ok", "wersja": wersja, "obraz": obraz.model_dump(), "ts": ts}
+
+
+@router.get("/onboarding/obraz")
+async def onboarding_obraz(request: Request):
+    """Bieżący Obraz użytkownika („Mój obraz" — wersja zdestylowana).
+    Izolacja: tenant_id (RLS) ORAZ user_subject."""
+    sub = getattr(request.state, "architekt_subject", None) or "anonymous"
+
+    repo, acquire_http_db, DB_PATH = await _acquire_repo_db()
+    if not (repo is not None and acquire_http_db is not None
+            and hasattr(repo, "get_user_obraz")):
+        return {"obraz": None, "wersja": None, "updated_at": None}
+
+    async with acquire_http_db(DB_PATH) as db:
+        row = await repo.get_user_obraz(db, user_subject=sub)
+    if not row:
+        return {"obraz": None, "wersja": None, "updated_at": None}
+    try:
+        obraz = json.loads(row["obraz_json"])
+    except Exception:
+        obraz = None
+    return {"obraz": obraz, "wersja": row.get("wersja"), "updated_at": row.get("updated_at")}
+
+
 @router.get("/ritual/daily")
 def ritual_daily():
     return {"poranek": PYTANIA_PORANNE, "wieczor": PYTANIA_WIECZORNE}

@@ -116,16 +116,21 @@ from api.services.mode_helpers import (
 from api.services._sse import sse as _sse
 
 
-_LIGHT_MODE_AGENTS: tuple[str, ...] = ("Kogit", "Emojy", "Smaty", "Obver")
-
-
 def select_council_for_mode(mode: str) -> list[Any]:
-    """Zwraca listę agentów odpowiednią dla trybu debaty."""
+    """Zwraca listę agentów dla trybu debaty.
+
+    Jedno źródło prawdy: `modes.MODE_AGENTS` (re-export z
+    `business_fa2.config.modes`). Lista nazw → podzbiór Rady w kolejności
+    COUNCIL; `None` lub nieznany tryb → pełna Rada (9).
+    """
     if not RADA_AVAILABLE:
         return []
-    if mode == "codzienny":
-        return [a for a in COUNCIL if a.name in _LIGHT_MODE_AGENTS]
-    return list(COUNCIL)
+    from modes import MODE_AGENTS
+
+    allowed = MODE_AGENTS.get(mode)
+    if allowed is None:
+        return list(COUNCIL)
+    return [a for a in COUNCIL if a.name in allowed]
 
 
 def build_council_context(brief: BriefLike) -> str:
@@ -998,6 +1003,31 @@ async def _stream_debate_inner(
                 "continuation_parent_id": continuation_parent_id,
             },
         )
+
+        # ── AKSJOMAT 1: Obraz Użytkownika → ContextVar wstrzykiwania ─────────
+        # Tylko personal. Zawsze ustawiamy (None gdy brak/fa2), by nie odziedziczyć
+        # wartości z poprzedniej debaty w ewentualnie współdzielonym Tasku.
+        try:
+            from core.obraz_uzytkownika import set_obraz_context
+
+            _obraz_ctx_val: Optional[str] = None
+            if db is not None and council_mode != "fa2" and CORE_AVAILABLE:
+                from db.tenant import current_user_id as _cuid
+
+                _obraz_row = await repo.get_user_obraz(db, user_subject=_cuid())
+                if _obraz_row:
+                    from core.obraz_uzytkownika import ObrazUzytkownika
+
+                    _obraz = ObrazUzytkownika.model_validate_json(_obraz_row["obraz_json"])
+                    _obraz_ctx_val = _obraz.as_agent_context() or None
+            set_obraz_context(_obraz_ctx_val)
+        except Exception as e:  # noqa: BLE001
+            _log_orchestrator_issue("obraz_context_load", e, debate_id=debate_id)
+            try:
+                from core.obraz_uzytkownika import set_obraz_context as _soc
+                _soc(None)
+            except Exception:
+                pass
 
         if not council:
             yield _sse("synthesis_done", {"full_text": "Rada niedostępna — brak pakietu agents/"})

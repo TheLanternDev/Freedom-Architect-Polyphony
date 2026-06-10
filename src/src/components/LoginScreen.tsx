@@ -223,13 +223,17 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
           </button>
         </form>
 
-        <button
-          type="button"
-          onClick={skipLogin}
-          className="aw-btn-ghost w-full mt-5"
-        >
-          {t("login.skip")}
-        </button>
+        {/* P2-E1: „Pomiń logowanie" tylko w dev — build produkcyjny dla
+            klientów nie może oferować wejścia bez tożsamości. */}
+        {import.meta.env.DEV && (
+          <button
+            type="button"
+            onClick={skipLogin}
+            className="aw-btn-ghost w-full mt-5"
+          >
+            {t("login.skip")}
+          </button>
+        )}
       </div>
     </div>
   );

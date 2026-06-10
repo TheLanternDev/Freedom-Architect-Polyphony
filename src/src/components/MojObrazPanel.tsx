@@ -23,12 +23,33 @@ interface Payload {
   answers: AnswerRow[];
 }
 
+interface ObrazModel {
+  wartosci: string[];
+  napiecia: string[];
+  relacje: string[];
+  wzorce: string[];
+  cialo: string;
+  kreatywnosc: string;
+  duchowosc: string;
+  potrzeba_teraz: string;
+  zdanie_dla_siebie: string;
+  wersja: number;
+  zrodlo: string;
+}
+interface ObrazResp {
+  obraz: ObrazModel | null;
+  wersja: number | null;
+  updated_at: string | null;
+}
+
 export function MojObrazPanel() {
   const [data, setData] = useState<Payload | null>(null);
   const [edited, setEdited] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [obraz, setObraz] = useState<ObrazResp | null>(null);
+  const [obrazBusy, setObrazBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,6 +113,44 @@ export function MojObrazPanel() {
     }
   };
 
+  // Zdestylowany Obraz („Obraz, który Rada widzi") — GET na starcie.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${getApiBase()}/personal/onboarding/obraz`, {
+          headers: getApiAuthHeaders(),
+        });
+        if (!r.ok) return;
+        const j = (await r.json()) as ObrazResp;
+        if (!cancelled) setObraz(j);
+      } catch {
+        /* miękko — sekcja Obrazu jest opcjonalna */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const synthesize = async () => {
+    setObrazBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch(`${getApiBase()}/personal/onboarding/synthesize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getApiAuthHeaders() },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = (await r.json()) as { obraz: ObrazModel; wersja: number };
+      setObraz({ obraz: j.obraz, wersja: j.wersja, updated_at: new Date().toISOString() });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Błąd syntezy");
+    } finally {
+      setObrazBusy(false);
+    }
+  };
+
   const redoOnboarding = () => {
     try {
       localStorage.removeItem(LS_ONBOARDING_DONE);
@@ -111,6 +170,68 @@ export function MojObrazPanel() {
         {err && <p className="shrink-0 text-[11px] text-amber-400/80 mb-2">{err}</p>}
 
         <div className="min-h-0 flex-1 overflow-y-auto aw-scroll -mx-0.5 px-0.5 space-y-4">
+          {(() => {
+            const o = obraz?.obraz ?? null;
+            const list = (xs: string[]) => (xs ?? []).filter((x) => x && x.trim()).join("; ");
+            const rows: Array<[string, string]> = o
+              ? ([
+                  ["Wartości", list(o.wartosci)],
+                  ["Napięcia / cień", list(o.napiecia)],
+                  ["Relacje", list(o.relacje)],
+                  ["Wzorce", list(o.wzorce)],
+                  ["Ciało", o.cialo],
+                  ["Kreatywność", o.kreatywnosc],
+                  ["Duchowość", o.duchowosc],
+                  ["Potrzeba teraz", o.potrzeba_teraz],
+                ].filter(([, v]) => v && v.trim()) as Array<[string, string]>)
+              : [];
+            const empty = !o || (rows.length === 0 && !o.zdanie_dla_siebie?.trim());
+            return (
+              <div className="rounded-control border border-gold/25 bg-gold/[0.05] px-3 py-2.5">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-gold/70">
+                    Obraz, który Rada widzi
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void synthesize()}
+                    disabled={obrazBusy}
+                    className="text-[10px] px-2 py-0.5 rounded-control border border-gold/40 text-gold/90 hover:bg-gold/15 disabled:opacity-40 transition-colors"
+                  >
+                    {obrazBusy ? "Destyluję…" : o ? "Odśwież" : "Zsyntetyzuj"}
+                  </button>
+                </div>
+                {empty ? (
+                  <p className="text-[11px] text-text-tertiary leading-snug">
+                    Rada jeszcze nie złożyła Twojego obrazu z odpowiedzi. Kliknij
+                    „Zsyntetyzuj”, żeby zdestylować wysokosygnałowy ekstrakt.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {o?.zdanie_dla_siebie?.trim() && (
+                      <p className="font-serif italic text-[13px] leading-snug text-[#E8D5A3]">
+                        „{o.zdanie_dla_siebie}”
+                      </p>
+                    )}
+                    {rows.map(([label, value]) => (
+                      <div key={label} className="leading-snug">
+                        <span className="text-[9px] uppercase tracking-wider text-teal/70">
+                          {label}:{" "}
+                        </span>
+                        <span className="text-[11px] text-text-secondary">{value}</span>
+                      </div>
+                    ))}
+                    {obraz?.wersja != null && (
+                      <p className="text-[9px] text-text-tertiary pt-0.5">
+                        wersja {obraz.wersja}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {groups.map((g) => (
             <div key={g.name}>
               <div className="text-[10px] uppercase tracking-[0.2em] text-teal/70 mb-1.5">

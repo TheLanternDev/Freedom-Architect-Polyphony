@@ -174,21 +174,60 @@ async def sync_stale_projects(db: Any) -> dict[str, int]:
     return {"projects_updated": updates, "stale_commitments_created": created}
 
 
+async def _list_maintenance_tenants(db: Any) -> list[str]:
+    """Tenanty do objęcia maintenance: 'default' + wszystkie z tabeli `users`.
+
+    `users` celowo NIE ma RLS (migracja 0006 — login działa bez GUC), więc
+    enumeracja jest możliwa z kontekstu maintenance. Fail-soft: przy błędzie
+    (np. brak tabeli w starym schemacie dev) wracamy do samego 'default'.
+    """
+    tenants: list[str] = ["default"]
+    try:
+        cur = await db.execute("SELECT DISTINCT tenant_id FROM users")
+        rows = await cur.fetchall()
+        for row in rows:
+            tid = str(row[0] or "").strip()
+            if tid and tid not in tenants:
+                tenants.append(tid)
+    except Exception as e:
+        logger.debug("Maintenance: enumeracja tenantów z `users` nieudana: %s", e)
+    return tenants
+
+
 async def run_phase2_maintenance() -> None:
-    """Lifespan/admin: follow-upy + synchronizacja zastojów projektów."""
+    """Lifespan/admin: follow-upy + synchronizacja zastojów projektów.
+
+    Multi-user fix (review 2026-06-10): lifespan/admin omija http_guard, więc
+    ContextVar tenanta stoi na 'default' — wcześniej follow-upy dostawał TYLKO
+    tenant 'default' (cicha awaria AKSJOMATU 2 dla pozostałych). Teraz iterujemy
+    po wszystkich tenantach z jawnym set/reset ContextVar per tenant; repo i RLS
+    widzą wtedy właściwe wiersze. Awaria jednego tenanta nie blokuje kolejnych.
+    """
     if not DB_AVAILABLE:
         return
     try:
         from db.backend import acquire_http_db
         from db.connection import DB_PATH as _DB
+        from db.tenant import reset_current_tenant_id, set_current_tenant_id
 
         async with acquire_http_db(_DB) as db:
-            nudged = await apply_followup_nudges(db)
-            sync = await sync_stale_projects(db)
-            await db.commit()
-            logger.info(
-                "Faza 2 maintenance: followup_nudges=%s stale_sync=%s", nudged, sync
-            )
+            tenants = await _list_maintenance_tenants(db)
+            for tid in tenants:
+                token = set_current_tenant_id(tid)
+                try:
+                    nudged = await apply_followup_nudges(db)
+                    sync = await sync_stale_projects(db)
+                    await db.commit()
+                    logger.info(
+                        "Faza 2 maintenance [tenant=%s]: followup_nudges=%s stale_sync=%s",
+                        tid, nudged, sync,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Faza 2 maintenance [tenant=%s] failed: %s", tid, e
+                    )
+                finally:
+                    reset_current_tenant_id(token)
     except Exception as e:
         logger.warning("Faza 2 startup maintenance failed: %s", e)
 

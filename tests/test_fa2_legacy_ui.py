@@ -12,12 +12,10 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def client_fa2(tmp_path, monkeypatch):
     monkeypatch.setenv("AW_COUNCIL_MODE", "fa2")
-    monkeypatch.setenv("FA2_DATABASE_PATH", str(tmp_path / "fa2_pytest.db"))
+    # FA2 współdzieli DB z trybem personal — jedyna realna baza to ARCHITEKT_DB_PATH
+    # (+ patch db.connection.DB_PATH niżej). Brak osobnej bazy FA2.
     monkeypatch.setenv("ARCHITEKT_DB_PATH", str(tmp_path / "fa2_main.db"))
     monkeypatch.delenv("FA2_ANTHROPIC_API_KEY", raising=False)
-    from business_fa2.config.settings import get_fa2_settings
-
-    get_fa2_settings.cache_clear()
     os.environ.pop("ANTHROPIC_API_KEY", None)
     os.environ.pop("XAI_API_KEY", None)
     monkeypatch.setenv("AW_DISABLE_DOTENV", "1")

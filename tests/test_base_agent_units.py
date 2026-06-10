@@ -58,20 +58,26 @@ def test_build_user_message_syez_personal_en():
 
 
 def test_build_user_message_syez_fa2_demands_scenarios_and_diagram():
+    # Faza 1 (#A/#B): scenariusze + diagram są wymagane przez instrukcję
+    # SYSTEMOWĄ (jedno źródło prawdy), nie przez user-message. User-message
+    # tylko wywołuje protokół.
     s = Syez()
-    msg = s._build_user_message("context", language="pl", council_mode="fa2")
-    assert "SCENARIUSZ BASE" in msg
-    assert "SCENARIUSZ BULL" in msg
-    assert "SCENARIUSZ BEAR" in msg
-    assert "diagram Mermaid" in msg.lower() or "Mermaid" in msg
+    sys_msg = s.get_full_instruction(council_mode="fa2", language="pl")
+    assert "BASE" in sys_msg and "BULL" in sys_msg and "BEAR" in sys_msg
+    assert "Mermaid" in sys_msg
+    user_msg = s._build_user_message("context", language="pl", council_mode="fa2")
+    assert "protokołu FA2" in user_msg
+    assert "SCENARIUSZ BASE" not in user_msg  # brak duplikatu kroków
 
 
 def test_build_user_message_syez_fa2_en():
     s = Syez()
-    msg = s._build_user_message("context", language="en", council_mode="fa2")
-    assert "BASE SCENARIO" in msg
-    assert "BULL SCENARIO" in msg
-    assert "BEAR SCENARIO" in msg
+    sys_msg = s.get_full_instruction(council_mode="fa2", language="en")
+    assert "BASE" in sys_msg and "BULL" in sys_msg and "BEAR" in sys_msg
+    assert "One step now:" in sys_msg
+    user_msg = s._build_user_message("context", language="en", council_mode="fa2")
+    assert "FA2 protocol" in user_msg
+    assert "BASE SCENARIO" not in user_msg
 
 
 # ── _sanitize_syez_output ────────────────────────────────────────────────────

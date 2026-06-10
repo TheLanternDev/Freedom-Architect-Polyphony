@@ -391,6 +391,22 @@ _CLUSTER_OPEN = (
     r"|jakiego\s+odpowiedzi"
 )
 
+# Imperatiwy + bezokoliczniki — Syez pisze prozą i może użyć dowolnej formy.
+# Moduł-level (review 2026-06-10): wcześniej kompilowany przy KAŻDYM wywołaniu
+# validate_syez_prose_completion_audit — zbędny koszt na hot-path syntezy.
+_ACTION_VERB = re.compile(
+    r"(?:zrób|zrobić|napisz|napisać|zadzwoń|zadzwonić|"
+    r"wyślij|wysłać|otwórz|otworzyć|ustaw|ustawić|umów|umówić|"
+    r"odeślij|odesłać|przejdź|przejść|sprawdź|sprawdzić|"
+    r"zaplanuj|zaplanować|zacznij|zacząć|uruchom|uruchomić|"
+    r"wdroż|wdrożyć|dodaj|dodać|stwórz|stworzyć|"
+    r"przygotuj|przygotować|poświęć|poświęcić|"
+    r"spędź|spędzić|wygospodaruj|wygospodarować|"
+    r"zarezerwuj|zarezerwować|wróć|wrócić|odezwij|odezwać|"
+    r"make|write|send|open|set|schedule|start|launch|build|create|prepare|spend)",
+    re.IGNORECASE,
+)
+
 
 def validate_syez_prose_completion_audit(text: str) -> None:
     """
@@ -417,19 +433,7 @@ def validate_syez_prose_completion_audit(text: str) -> None:
     # jedno zdanie zawierające zarówno referencję czasową/akcyjną jak i
     # konkretny czasownik działania (imperativus lub bezokolicznik w formie
     # "zrób/napisz/zadzwoń/ustaw/otwórz" etc.).
-    # Imperatiwy + bezokoliczniki — Syez pisze prozą i może użyć dowolnej formy.
-    _ACTION_VERB = re.compile(
-        r"(?:zrób|zrobić|napisz|napisać|zadzwoń|zadzwonić|"
-        r"wyślij|wysłać|otwórz|otworzyć|ustaw|ustawić|umów|umówić|"
-        r"odeślij|odesłać|przejdź|przejść|sprawdź|sprawdzić|"
-        r"zaplanuj|zaplanować|zacznij|zacząć|uruchom|uruchomić|"
-        r"wdroż|wdrożyć|dodaj|dodać|stwórz|stworzyć|"
-        r"przygotuj|przygotować|poświęć|poświęcić|"
-        r"spędź|spędzić|wygospodaruj|wygospodarować|"
-        r"zarezerwuj|zarezerwować|wróć|wrócić|odezwij|odezwać|"
-        r"make|write|send|open|set|schedule|start|launch|build|create|prepare|spend)",
-        re.IGNORECASE,
-    )
+    # _ACTION_VERB: moduł-level (obok klastrów) — patrz definicja wyżej.
     _nxt_match = bool(re.search(_CLUSTER_NEXT, low))
     if _nxt_match:
         # Sprawdź czy match jest w zdaniu z czasownikiem działania.

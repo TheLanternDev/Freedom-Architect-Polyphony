@@ -43,6 +43,31 @@ class RegisterRequest(BaseModel):
 
 _REFRESH_TOKEN_TTL = 30 * 24 * 3600  # 30 dni
 _REFRESH_PREFIX = "rt:"
+# Review 2026-06-10: RT w Redis przechowywany jako sha256(rt) — zrzut/podgląd
+# Redis nie wystarcza już do przejęcia sesji. Dodatkowo:
+#   rt:used:<hash>   — marker skonsumowanego RT (detekcja reuse po rotacji),
+#   rt:idx:<tenant>  — odwrotny indeks hash-y per tenant (O(sesje tenanta)
+#                      zamiast SCAN po wszystkich kluczach przy invalidacji).
+_REFRESH_USED_PREFIX = "rt:used:"
+_REFRESH_IDX_PREFIX = "rt:idx:"
+
+
+def _rt_hash(rt: str) -> str:
+    return hashlib.sha256(rt.encode()).hexdigest()
+
+
+def _decode_rt_value(val: object) -> Optional[tuple[str, str]]:
+    """Wartość `sub:tenant_id` → (sub, tenant_id).
+
+    UWAGA: rsplit, nie split — `sub` może zawierać dwukropek (demo: `demo:<id>`),
+    a `tenant_id` nigdy (hex / `demo_<id>`). split(":", 1) cicho psuł refresh
+    sesji demo (sub='demo', tenant='<id>:demo_<id>').
+    """
+    text = val.decode() if isinstance(val, bytes) else str(val)
+    parts = text.rsplit(":", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+    return parts[0], parts[1]
 
 
 async def _store_refresh_token(rt: str, sub: str, tenant_id: str) -> None:
@@ -51,13 +76,20 @@ async def _store_refresh_token(rt: str, sub: str, tenant_id: str) -> None:
     if r is None:
         return
     try:
-        await r.setex(f"{_REFRESH_PREFIX}{rt}", _REFRESH_TOKEN_TTL, f"{sub}:{tenant_id}")
+        h = _rt_hash(rt)
+        await r.setex(f"{_REFRESH_PREFIX}{h}", _REFRESH_TOKEN_TTL, f"{sub}:{tenant_id}")
+        await r.sadd(f"{_REFRESH_IDX_PREFIX}{tenant_id}", h)
+        await r.expire(f"{_REFRESH_IDX_PREFIX}{tenant_id}", _REFRESH_TOKEN_TTL)
     except Exception as e:
         logger.warning("Nie udało się zapisać refresh tokenu: %s", e)
 
 
 async def invalidate_refresh_tokens_for_tenant(tenant_id: str) -> int:
-    """Usuwa refresh tokeny Redis przypisane do tenant_id (RODO — usunięcie konta)."""
+    """Usuwa refresh tokeny Redis przypisane do tenant_id (RODO / reuse-kill).
+
+    Najpierw odwrotny indeks `rt:idx:<tenant>`; SCAN zostaje wyłącznie jako
+    fallback dla kluczy sprzed migracji na hash (plaintext rt:<token>).
+    """
     from api.runtime import get_redis
 
     r = get_redis()
@@ -65,13 +97,23 @@ async def invalidate_refresh_tokens_for_tenant(tenant_id: str) -> int:
         return 0
     removed = 0
     try:
+        idx_key = f"{_REFRESH_IDX_PREFIX}{tenant_id}"
+        hashes = await r.smembers(idx_key)
+        for h in hashes or []:
+            hs = h.decode() if isinstance(h, bytes) else str(h)
+            removed += int(await r.delete(f"{_REFRESH_PREFIX}{hs}"))
+            await r.delete(f"{_REFRESH_USED_PREFIX}{hs}")
+        await r.delete(idx_key)
+        # Fallback: legacy klucze plaintext (sprzed hashowania RT).
         async for key in r.scan_iter(match=f"{_REFRESH_PREFIX}*"):
+            ks = key.decode() if isinstance(key, bytes) else str(key)
+            if ks.startswith(_REFRESH_USED_PREFIX) or ks.startswith(_REFRESH_IDX_PREFIX):
+                continue
             val = await r.get(key)
             if val is None:
                 continue
-            text = val.decode() if isinstance(val, bytes) else str(val)
-            parts = text.split(":", 1)
-            if len(parts) == 2 and parts[1] == tenant_id:
+            decoded = _decode_rt_value(val)
+            if decoded and decoded[1] == tenant_id:
                 await r.delete(key)
                 removed += 1
     except Exception as e:
@@ -80,20 +122,44 @@ async def invalidate_refresh_tokens_for_tenant(tenant_id: str) -> int:
 
 
 async def _consume_refresh_token(rt: str) -> Optional[tuple[str, str]]:
-    """Zwraca (sub, tenant_id) i natychmiast usuwa token (rotation)."""
+    """Zwraca (sub, tenant_id) i natychmiast usuwa token (rotation).
+
+    Reuse-detection: skonsumowany hash zostaje oznaczony `rt:used:<hash>`.
+    Ponowne użycie tego samego RT (po rotacji) = sygnał kradzieży → unieważniamy
+    WSZYSTKIE refresh tokeny tenanta (kill rodziny sesji), zwracamy None.
+    """
     from api.runtime import get_redis
     r = get_redis()
     if r is None:
         return None
     try:
-        val = await r.getdel(f"{_REFRESH_PREFIX}{rt}")
+        h = _rt_hash(rt)
+        val = await r.getdel(f"{_REFRESH_PREFIX}{h}")
         if not val:
+            # Legacy plaintext (sprzed migracji na hash) — jednorazowy fallback.
+            val = await r.getdel(f"{_REFRESH_PREFIX}{rt}")
+        if not val:
+            used = await r.get(f"{_REFRESH_USED_PREFIX}{h}")
+            if used:
+                decoded = _decode_rt_value(used)
+                if decoded:
+                    sub, tenant_id = decoded
+                    logger.warning(
+                        "Refresh token REUSE po rotacji (sub=%s) — "
+                        "unieważniam wszystkie sesje tenanta %s.", sub, tenant_id,
+                    )
+                    await invalidate_refresh_tokens_for_tenant(tenant_id)
             return None
-        text = val.decode() if isinstance(val, bytes) else val
-        parts = text.split(":", 1)
-        if len(parts) != 2:
+        decoded = _decode_rt_value(val)
+        if decoded is None:
             return None
-        return parts[0], parts[1]
+        sub, tenant_id = decoded
+        try:
+            await r.setex(f"{_REFRESH_USED_PREFIX}{h}", _REFRESH_TOKEN_TTL, f"{sub}:{tenant_id}")
+            await r.srem(f"{_REFRESH_IDX_PREFIX}{tenant_id}", h)
+        except Exception:
+            pass  # marker best-effort — rotation już się dokonała (getdel)
+        return sub, tenant_id
     except Exception as e:
         logger.warning("Błąd odczytu refresh tokenu: %s", e)
         return None
@@ -123,6 +189,22 @@ def _verify_password_argon2(password: str, stored_hash: str) -> bool:
         return _argon2_hasher().verify(stored_hash, password)
     except Exception:
         return False
+
+
+_DUMMY_PW_HASH: Optional[str] = None
+
+
+def _burn_dummy_verify() -> None:
+    """Wyrównanie czasu odpowiedzi loginu (anty-enumeracja username).
+
+    Brak usera kończył się natychmiastowym 401 bez kosztu Argon2 — różnica
+    czasu zdradzała, które loginy istnieją. Palimy porównywalny koszt na
+    hashu-wydmuszce. Hash liczony raz (lazy), verify przy każdym pudle.
+    """
+    global _DUMMY_PW_HASH
+    if _DUMMY_PW_HASH is None:
+        _DUMMY_PW_HASH = _hash_password_argon2(uuid.uuid4().hex)
+    _verify_password_argon2(uuid.uuid4().hex, _DUMMY_PW_HASH)
 
 
 def _hash_password_pbkdf2(password: str, salt: str) -> str:
@@ -201,7 +283,12 @@ async def register(request: Request, req: RegisterRequest):
 
     pw_hash = _hash_password_argon2(req.password)
     salt = ""  # Argon2id embeds salt in the hash string
-    tenant_id = hashlib.sha256(req.username.lower().encode()).hexdigest()[:16]
+    # Review 2026-06-10: tenant_id LOSOWY, nie sha256(username). Deterministyczny
+    # tenant oznaczał, że ponowna rejestracja usuniętego username odtwarzała ten
+    # sam tenant — gdyby RODO-wipe pominął jakąkolwiek tabelę, nowy właściciel
+    # username dziedziczyłby cudze dane. Losowość eliminuje tę klasę ryzyka.
+    # Istniejących kont nie dotyka: login czyta tenant_id z wiersza w DB.
+    tenant_id = uuid.uuid4().hex[:16]
 
     async for db in get_db():
         cur = await db.execute("SELECT 1 FROM users WHERE username = ?", (req.username.lower(),))
@@ -240,6 +327,7 @@ async def login(request: Request, req: LoginRequest):
         )
         row = await cur.fetchone()
         if not row:
+            _burn_dummy_verify()  # anty-enumeracja: stały koszt także bez usera
             raise HTTPException(401, "Nieprawidłowy login lub hasło.")
 
         pw_hash, salt, tenant_id, display_name = row[0], row[1], row[2], row[3]
@@ -381,12 +469,20 @@ async def refresh_token_endpoint(request: Request, req: RefreshRequest):
     )
 
 
+class RevokeRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
+
 @router.post("/revoke")
 @_limiter.limit("20/minute")
-async def revoke_token(request: Request):
+async def revoke_token(request: Request, req: Optional[RevokeRequest] = None):
     """
     Unieważnia bieżący token JWT (dodaje JTI do blocklist w Redis).
     Używaj przy wylogowaniu. Bez Redis — odpowiada 200 ale nie blokuje (fail-open).
+
+    M-JTI: opcjonalne body `{"refresh_token": ...}` — unieważnia też refresh
+    token. Bez tego logout blokował tylko access JTI, a refresh przeżywał
+    i pozwalał wymintować nowy access (sesja nieśmiertelna mimo wylogowania).
     """
     auth = (request.headers.get("authorization") or "").strip()
     if not auth.lower().startswith("bearer "):
@@ -399,11 +495,28 @@ async def revoke_token(request: Request):
     if payload is None:
         raise HTTPException(401, "Nieprawidłowy lub wygasły token.")
 
+    # Refresh najpierw — nawet gdy access JTI nie da się zablokować (stary
+    # format / brak Redis), próbujemy zabić refresh. Posiadanie wartości
+    # tokenu = kontrola nad nim, więc konsumpcja (getdel) jest bezpieczna.
+    refresh_revoked = False
+    if req and req.refresh_token:
+        consumed = await _consume_refresh_token(req.refresh_token)
+        refresh_revoked = consumed is not None
+        if consumed and consumed[0] != str(payload.get("sub", "")):
+            logger.warning(
+                "Revoke: refresh token innego usera (%s != %s) — skonsumowany.",
+                consumed[0], payload.get("sub"),
+            )
+
     jti = payload.get("jti")
     exp = payload.get("exp", 0)
     if not jti:
         # Token bez JTI (stary format) — nie możemy go zablokować indywidualnie.
-        return {"revoked": False, "detail": "Token nie zawiera JTI — wylogowanie tylko po stronie klienta."}
+        return {
+            "revoked": False,
+            "refresh_revoked": refresh_revoked,
+            "detail": "Token nie zawiera JTI — wylogowanie tylko po stronie klienta.",
+        }
 
     ttl = max(1, int(exp) - int(time.time()))
     # M-4: nie kłam o wyniku. block_jti zwraca True tylko gdy JTI realnie trafił
@@ -418,10 +531,11 @@ async def revoke_token(request: Request):
         )
         return {
             "revoked": False,
+            "refresh_revoked": refresh_revoked,
             "detail": (
                 "Revocation niedostępna (brak Redis) — token pozostaje ważny do "
                 "wygaśnięcia. Wyczyść token po stronie klienta."
             ),
         }
     logger.info("Token JTI %s unieważniony (TTL=%ds)", jti, ttl)
-    return {"revoked": True}
+    return {"revoked": True, "refresh_revoked": refresh_revoked}

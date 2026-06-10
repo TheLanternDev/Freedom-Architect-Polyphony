@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 config/patryk_identity.json
+memory/
 
 # Bazy danych i logi runtime
 data/
@@ -68,3 +69,11 @@ fa-lead-finder.skill
 .coverage.*
 coverage_baseline.txt
 /final_extended.mp4
+
+# Media robocze (reele, VO, materiały FCP) — nie wersjonujemy binarek
+*.mp4
+*.mp3
+*.mov
+*.wav
+tools/szow_voice_candidates/
+tools/fcp-*/

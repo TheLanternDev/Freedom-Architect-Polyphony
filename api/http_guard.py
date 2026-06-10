@@ -234,6 +234,28 @@ async def architekt_http_guard(
                 },
                 status_code=401,
             )
+        # P0-2 (check-in 2026-06-10): shared key NIE niesie tożsamości — bez
+        # jawnego tenanta cały ruch lądował w DEFAULT_TENANT → cross-user leak.
+        # Fail-closed: legacy bearer wymaga X-Tenant-Id (analogicznie do ścieżki
+        # service-header). Cichy default jest zakazany.
+        th = settings.tenant_header_name()
+        fwd_tid = (request.headers.get(th) or "").strip()
+        if not fwd_tid:
+            return JSONResponse(
+                {
+                    "detail": (
+                        f"Legacy ARCHITEKT_API_KEY wymaga nagłówka tenanta ({th}) — "
+                        "współdzielony klucz nie niesie tożsamości. Bez jawnego "
+                        "tenant_id żądanie jest odrzucane (izolacja danych). "
+                        "Docelowo: per-user JWT przez POST /auth/login."
+                    )
+                },
+                status_code=403,
+            )
+        uh = (os.getenv("AW_USER_HEADER") or "X-User-Id").strip()
+        fwd_uid = (request.headers.get(uh) or "").strip()
+        set_current_tenant_id(fwd_tid)
+        set_current_user_id(fwd_uid or fwd_tid)
         request.state.architekt_auth = "legacy_bearer"
         response = await call_next(request)
         response.headers["Deprecation"] = "true"

@@ -19,11 +19,11 @@ Pełna oferta: [FOUNDERS_OFFER.md](FOUNDERS_OFFER.md). Decyzje: [GTM_DECISIONS.m
 
 | Produkt | Cena | Uwagi |
 |---------|------|--------|
-| Licencja founders (źródło + instrukcja) | [DO UZUPEŁNIENIA] | Patrz GTM_DECISIONS S0.1 |
-| Opcjonalnie: binarka Tauri (macOS / Windows) | [DO UZUPEŁNIENIA] | Podpisana build wg TAURI_RELEASE |
+| Licencja founders (źródło + instrukcja) | **149 EUR** jednorazowo | Cena startowa founders; patrz GTM_DECISIONS S0.1 |
+| Opcjonalnie: binarka Tauri (macOS / Windows) | w cenie licencji | Podpisana build wg TAURI_RELEASE (po wdrożeniu certyfikatów) |
 
 ## Płatność
 
-[DO UZUPEŁNIENIA] — np. Stripe Payment Link (jednorazowo), przelew na fakturę, Gumroad.
+Faktura / przelew bankowy. Zamówienie: e-mail na **voidone@mypolyphony.com** → faktura → po zaksięgowaniu link do archiwum.
 
 Po opłaceniu: e-mail z linkiem do archiwum → [unpack-founders-archive.sh](../scripts/unpack-founders-archive.sh).

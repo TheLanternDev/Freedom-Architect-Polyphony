@@ -158,7 +158,14 @@ export function DebateHistory({ onSelect, disabled }: Props) {
           ))}
         </ul>
         {rows.length === 0 && !err && !disabled && (
-          <p className="aw-caption">{t("history.empty")}</p>
+          <div className="shrink-0 rounded-control border border-border/60 bg-surface-raised/40 px-3 py-4 text-center">
+            <p className="text-[12px] text-text-secondary leading-snug">
+              {t("history.empty")}
+            </p>
+            <p className="mt-1.5 text-[10px] text-text-tertiary leading-snug">
+              {t("history.empty_hint")}
+            </p>
+          </div>
         )}
       </div>
     </SidebarSection>

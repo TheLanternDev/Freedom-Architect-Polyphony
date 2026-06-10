@@ -31,7 +31,7 @@ Dokument **marketingowy / produktowy**, nie umowa. Cenę, VAT i warunki prawne u
 
 ## Wsparcie
 
-- Kontakt: **[DO UZUPEŁNIENIA]** (patrz [GTM_DECISIONS.md](GTM_DECISIONS.md) S0.4).
+- Kontakt: **voidone@mypolyphony.com** (patrz [GTM_DECISIONS.md](GTM_DECISIONS.md) S0.4).
 - Tryb **best effort** (np. odpowiedź w 48h roboczych), zakres: instalacja według `INSTALL.md`, błędy regresji w dostarczonej wersji — nie custom development.
 - Szablony: [SUPPORT_PLAYBOOK.md](SUPPORT_PLAYBOOK.md).
 
@@ -45,10 +45,10 @@ Telemetria produktu: domyślnie wyłączona (`APP_TELEMETRY` w buildzie UI).
 
 | Pole | Wartość |
 |------|---------|
-| Cena | [DO UZUPEŁNIENIA] — patrz [PRICING.md](PRICING.md) |
+| Cena | **149 EUR** (jednorazowo, founders; netto + VAT wg kraju) — patrz [PRICING.md](PRICING.md) |
 | Platformy | Paczka źródłowa (wszystkie OS z Pythonem 3.12+); opcjonalnie Tauri: macOS arm64, Windows x64 |
-| Kanał płatności | [DO UZUPEŁNIENIA] — Stripe Payment Link / faktura / Gumroad |
-| Kontakt supportu | [DO UZUPEŁNIENIA] |
+| Kanał płatności | Faktura / przelew bankowy (zamówienie e-mailem na adres supportu) |
+| Kontakt supportu | **voidone@mypolyphony.com** |
 
 ## Demo publiczne
 

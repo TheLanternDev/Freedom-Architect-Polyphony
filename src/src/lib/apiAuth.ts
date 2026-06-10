@@ -33,6 +33,37 @@ export function setStoredArchitektApiKey(key: string | null): void {
   }
 }
 
+// P0-2 follow-up: legacy ARCHITEKT_API_KEY nie niesie tożsamości, więc backend
+// (api/http_guard.py) wymaga JAWNEGO nagłówka X-Tenant-Id (fail-closed, 403 bez
+// niego). Desktop single-user deklaruje tenant "default" — to świadoma deklaracja
+// klienta (jeden użytkownik = jeden tenant), nie cichy default po stronie serwera.
+// Wdrożenia multi-user NIE używają tej ścieżki (JWT przez /auth/login).
+const LS_TENANT_ID = "aw_tenant_id";
+const DEFAULT_LEGACY_TENANT = "default";
+
+export function getStoredTenantId(): string {
+  if (typeof window === "undefined") return DEFAULT_LEGACY_TENANT;
+  try {
+    const v = localStorage.getItem(LS_TENANT_ID)?.trim();
+    return v || DEFAULT_LEGACY_TENANT;
+  } catch {
+    return DEFAULT_LEGACY_TENANT;
+  }
+}
+
+export function setStoredTenantId(tenantId: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (tenantId == null || !String(tenantId).trim()) {
+      localStorage.removeItem(LS_TENANT_ID);
+    } else {
+      localStorage.setItem(LS_TENANT_ID, String(tenantId).trim());
+    }
+  } catch {
+    /* quota / private mode */
+  }
+}
+
 const LS_CACHE_SKIP = "aw_cache_skip";
 
 export function setCacheSkip(skip: boolean): void {
@@ -102,6 +133,12 @@ export function getApiAuthHeaders(opts?: { skipCache?: boolean }): Record<string
     key = getStoredArchitektApiKey() ?? "";
   }
   const h: Record<string, string> = key ? { Authorization: `Bearer ${key}` } : {};
+  // Legacy API key: backend wymaga jawnego tenanta (fail-closed) — bez tego 403.
+  // Wysyłamy WYŁĄCZNIE na ścieżce API key; przy JWT tenant pochodzi z claimu
+  // (nagłówek mógłby kolidować z enforce_tenant_header_match).
+  if (key) {
+    h["X-Tenant-Id"] = getStoredTenantId();
+  }
   if (typeof window !== "undefined") {
     try {
       const m = localStorage.getItem("aw_council_mode");

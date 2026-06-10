@@ -36,8 +36,10 @@ def test_select_full_council_for_pelna_mode():
 def test_select_codzienny_returns_light_subset():
     out = orch.select_council_for_mode("codzienny")
     names = {a.name for a in out}
-    # Codzienny = subset bez Szowa/Deegi/Kidi/Tai/Relacjana.
-    assert names == set(orch._LIGHT_MODE_AGENTS)
+    # Jedno źródło prawdy: modes.MODE_AGENTS (nie zduplikowana stała w orchestratorze).
+    from modes import MODE_AGENTS
+
+    assert names == set(MODE_AGENTS["codzienny"])
 
 
 def test_select_unknown_mode_returns_full_council():
