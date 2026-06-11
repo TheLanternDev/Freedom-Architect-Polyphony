@@ -18,7 +18,7 @@ _ready_limiter = Limiter(key_func=get_remote_address)
 async def health():
     import main as m
 
-    from api.settings import demo_config_public
+    from api.settings import demo_config_public, jwt_secret_configured
 
     try:
         from config.llm_providers import effective_llm_backend
@@ -28,6 +28,10 @@ async def health():
         llm_b = "none"
     payload: dict[str, object] = {
         "status": "alive",
+        # P1-A5: frontend NIE może decydować o wymogu JWT lokalną flagą —
+        # serwer deklaruje, czy auth jest skonfigurowane. /health jest publiczny
+        # (ekran logowania), więc to jedyne bezpieczne źródło tej informacji.
+        "auth_required": jwt_secret_configured(),
         "council_agents": len(m.COUNCIL) if m.RADA_AVAILABLE else 0,
         "synthesizer": m.SYNTHESIZER.name if m.RADA_AVAILABLE else None,
         "version": "3.3",

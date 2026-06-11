@@ -48,18 +48,18 @@
 |----|---------|------------|-----------|-----------|
 | P1-A1 | Dev fallback SQLite przy złym PG — **brak RLS** | `db/backend.py:140–147` | Tylko `AW_ENV!=production`; prod fail-fast `135–139` | Świadomość dev |
 | P1-A2 | JWT w sessionStorage (web) / localStorage (Tauri) | `src/src/lib/tokenStorage.ts:4–15` | BFF + httpOnly cookies na web prod | P1 |
-| P1-A3 | Prod JTI revoke fail-closed bez Redis — brak testu prod path | `api/auth_identity.py:14–42` | Test `AW_ENV=production` + brak Redis → block | P1 |
+| P1-A3 | Prod JTI revoke fail-closed bez Redis | **ZAMKNIĘTE (2026-06-11)** | `tests/test_auth_identity_unit.py` (2 testy prod path) | — |
 | P1-A4 | `ensure_not_demo_blocked_route` | **ZAMKNIĘTE** | `account.py`, `integrations.py`, `test_demo_mode.py` | — |
-| P1-A5 | `App.tsx` — app bez JWT gdy `aw_jwt_enabled` ≠ `"1"` | `src/src/App.tsx:47–52`, `85–88` | Wymusić JWT na publicznym hoście prod | P1 |
+| P1-A5 | App bez JWT przy lokalnej fladze | **ZAMKNIĘTE (2026-06-11)** | `/health.auth_required` (meta.py) + enforcement w `App.tsx` | — |
 | P1-B1 | Retry SSE przed 1. eventem — ryzyko drugiej debaty | `src/src/hooks/useDebate.ts:190–206` | Idempotency-Key / debounce API | P1 |
 | P1-C1 | `main.py` poza coverage gate CI | `.github/workflows/ci.yml:62–65` | `--cov=main` lub routery do `api/` | P1 |
 | P1-C2 | Brak pytest API na żywym Postgres (poza smoke SQL) | `ci.yml:97–178` | Integracyjny job z `DATABASE_URL` | P1 |
 | P1-D1 | `/health/ready` sprawdza Redis gdy wymagany | **ZAMKNIĘTE** | `api/routers/meta.py` + `tests/test_health.py` (3 testy) | — |
 | P1-D2 | CD build+push na tag `v*` | **ZAMKNIĘTE (kod)** | `.github/workflows/deploy.yml` + `PRODUCTION_CHECKLIST.md` | Zostaje P1-D2.1: secrets [P] |
 | P1-D3 | Tauri updater wyłączony; brak notaryzacji w CI secrets | `docs/TAURI_RELEASE.md`, `tauri-release.yml` | Włączyć updater + Apple/Win signing | P1 |
-| P1-E1 | Koszty — globalny `cost_log.jsonl`, brak `tenant_id` w wpisie | `core/cost_tracking.py:215–234` | Per-tenant metering dla SaaS | P1 |
-| P1-E2 | Brak reset hasła / weryfikacji e-mail | `api/_rate_limit.py:27` (komentarz) | Flow lifecycle konta | P1 |
-| P1-E3 | `COMPLIANCE_PRIVACY.md` — szkielet | `docs/COMPLIANCE_PRIVACY.md:1–3` | Wypełnić pod operatora | P1 |
+| P1-E1 | Koszty bez `tenant_id` w wpisie | **ZAMKNIĘTE (2026-06-11)** | `build_cost_entry` czyta ContextVar; testy w `test_cost_budget.py` | — |
+| P1-E2 | Brak reset hasła | **ZAMKNIĘTE (BYOK, 2026-06-11)** | admin-issued token (`admin.py`) + `/auth/password-reset/confirm` | E-mail self-service przed otwartą rejestracją |
+| P1-E3 | `COMPLIANCE_PRIVACY.md` | **ZAMKNIĘTE (BYOK)** | Wypełniony pod model A (administrator/procesor, RODO checklista, LLM) | Hosted: rozszerzyć przed SaaS |
 
 ---
 
@@ -76,7 +76,7 @@
 | P2-D1 | Brak migracji SQL **down** | `db/backend.py:25–52` | Runbook pg_dump rollback | P2 |
 | P2-D2 | `.env.example` niekompletny (Sentry, LOG_FORMAT, …) | `.env.example` | Komentarze prod | P2 |
 | P2-E1 | `LoginScreen` „Skip login” | `src/src/components/LoginScreen.tsx:98–101`, `228` | Ukryć przy prod marketing | P2 |
-| P2-E2 | `FOUNDERS_OFFER.md` — placeholdery ceny | `docs/FOUNDERS_OFFER.md:27–31` | Uzupełnić przed publikacją | P2 |
+| P2-E2 | Cena w `FOUNDERS_OFFER.md` | **ZAMKNIĘTE** | 149 EUR + `docs/PRICING.md` | — |
 
 ---
 

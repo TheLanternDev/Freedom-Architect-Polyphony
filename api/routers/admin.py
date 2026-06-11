@@ -17,12 +17,15 @@ cyklicznego importu przy ładowaniu modułu.
 
 from __future__ import annotations
 
+import hashlib
 import hmac
 import logging
 import os
+import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, Field
 
 from db import get_db  # `db` nie importuje `main` → brak cyklu (jak w main.py)
 
@@ -48,6 +51,61 @@ def _require_admin(authorization: Optional[str]) -> None:
             status_code=401,
             detail="Invalid or missing Authorization bearer for admin",
         )
+
+
+PW_RESET_PREFIX = "pwreset:"
+PW_RESET_TTL = 1800  # 30 min
+
+
+class PasswordResetTokenRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=100)
+
+
+@router.post("/users/password-reset-token")
+async def admin_issue_password_reset_token(
+    body: PasswordResetTokenRequest,
+    authorization: Optional[str] = Header(None),
+):
+    """P1-E2: jednorazowy token resetu hasła, wydawany przez operatora.
+
+    Model founders/BYOK: brak infrastruktury e-mail — operator dostarcza token
+    użytkownikowi out-of-band. Token: 256-bit urlsafe; w Redis ląduje wyłącznie
+    sha256(token) z TTL 30 min (wzorzec jak refresh tokeny). Single-use —
+    konsumpcja w `/auth/password-reset/confirm` przez GETDEL.
+    Fail-closed: brak Redis → 503 (żadnego fallbacku in-memory dla sekretów).
+    """
+    _require_admin(authorization)
+    from api.runtime import get_redis
+
+    r = get_redis()
+    if r is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Redis niedostępny — reset hasła wyłączony (fail-closed).",
+        )
+    username = body.username.strip().lower()
+    async for db in get_db():
+        cur = await db.execute(
+            "SELECT 1 FROM users WHERE username = ?", (username,)
+        )
+        if not await cur.fetchone():
+            # Endpoint admin-only — 404 nie jest wektorem enumeracji.
+            raise HTTPException(status_code=404, detail="Użytkownik nie istnieje.")
+    token = secrets.token_urlsafe(32)
+    h = hashlib.sha256(token.encode()).hexdigest()
+    try:
+        await r.setex(f"{PW_RESET_PREFIX}{h}", PW_RESET_TTL, username)
+    except Exception as e:
+        logger.error("password-reset-token: zapis Redis padł: %s", e)
+        raise HTTPException(status_code=503, detail="Zapis tokenu nie powiódł się.")
+    logger.info("Wydano token resetu hasła dla %s (TTL %ss).", username, PW_RESET_TTL)
+    return {
+        "username": username,
+        "reset_token": token,
+        "expires_in_seconds": PW_RESET_TTL,
+        "single_use": True,
+        "confirm_endpoint": "POST /auth/password-reset/confirm",
+    }
 
 
 @router.post("/trigger-followups")

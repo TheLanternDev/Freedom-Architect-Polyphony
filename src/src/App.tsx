@@ -190,6 +190,19 @@ export default function App() {
         if (!r.ok) return;
         const j = await r.json();
         if (!cancelled) {
+          // P1-A5: serwer deklaruje wymóg auth — lokalna flaga `aw_jwt_enabled`
+          // przestaje być źródłem prawdy. Gdy backend ma skonfigurowane JWT,
+          // a klient nie ma tokenu → wymuś ekran logowania.
+          if (j?.auth_required === true) {
+            try {
+              localStorage.setItem("aw_jwt_enabled", "1");
+            } catch {
+              /* ignore */
+            }
+            if (getStoredJwt() === null) {
+              setAuthenticated(false);
+            }
+          }
           const hf = j?.fa2_via_header === true;
           if (hf) {
             setBackendMode(councilMode === "fa2" ? "fa2" : "personal");

@@ -158,6 +158,26 @@ def test_is_jti_blocked_false_on_redis_error():
         assert asyncio.run(ai.is_jti_blocked("any")) is False
 
 
+def test_is_jti_blocked_fail_closed_in_production_without_redis(monkeypatch):
+    """P1-A3: AW_ENV=production + brak Redis → token z JTI odrzucony (fail-closed).
+
+    Logout musi działać deterministycznie w produkcji; brak Redis = incydent,
+    nie ciche fail-open.
+    """
+    monkeypatch.setenv("AW_ENV", "production")
+    with patch("api.runtime.get_redis", return_value=None):
+        assert asyncio.run(ai.is_jti_blocked("any")) is True
+
+
+def test_is_jti_blocked_fail_closed_in_production_on_redis_error(monkeypatch):
+    """P1-A3: błąd Redis w produkcji również fail-closed (w dev fail-open)."""
+    monkeypatch.setenv("AW_ENV", "production")
+    r = MagicMock()
+    r.exists = AsyncMock(side_effect=ConnectionError("redis down"))
+    with patch("api.runtime.get_redis", return_value=r):
+        assert asyncio.run(ai.is_jti_blocked("any")) is True
+
+
 def test_block_jti_noop_when_no_redis():
     with patch("api.runtime.get_redis", return_value=None):
         # Nie rzuca; M-4: zwraca False (revoke no-op bez Redis).

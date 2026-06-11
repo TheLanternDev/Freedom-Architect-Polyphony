@@ -222,6 +222,16 @@ def build_cost_entry(
     context: str,
 ) -> dict[str, Any]:
     brief_hash = hashlib.sha256(context.encode("utf-8")).hexdigest()[:16]
+    # P1-E1: per-tenant metering — bez tenant_id w logu nie da się rozliczyć
+    # kosztów per klient (SaaS) ani audytować, czyj brief spalił budżet.
+    # ContextVar ustawiany przez http_guard; poza requestem (CLI/testy) — "".
+    # Lazy import + defensywnie: log kosztów nie może wywrócić ścieżki LLM.
+    try:
+        from db.tenant import current_tenant_id
+
+        tenant_id = current_tenant_id() or ""
+    except Exception:
+        tenant_id = ""
     return {
         "timestamp": datetime.now(UTC).isoformat(),
         "agent": agent,
@@ -230,6 +240,7 @@ def build_cost_entry(
         "out_tokens": output_tokens,
         "cost_usd": round(cost_usd, 6),
         "brief_hash": brief_hash,
+        "tenant_id": tenant_id,
     }
 
 

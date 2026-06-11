@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 
 import api.services.budget_guard as budget_guard
-from core.cost_tracking import BudgetSnapshot, _append_cost_line_sync
+from core.cost_tracking import BudgetSnapshot, _append_cost_line_sync, build_cost_entry
 
 
 def test_costs_status_returns_payload(client_no_redis):
@@ -62,3 +62,33 @@ def test_append_cost_line_sync_concurrent_writes(tmp_path: Path) -> None:
     assert len(lines) == 8
     indices = {json.loads(ln)["i"] for ln in lines}
     assert indices == set(range(8))
+
+
+def _entry_kwargs() -> dict:
+    return dict(
+        agent="Syez", model="m", input_tokens=10, output_tokens=20,
+        cost_usd=0.001234, context="brief",
+    )
+
+
+def test_build_cost_entry_includes_tenant_from_contextvar() -> None:
+    """P1-E1: wpis kosztu niesie tenant_id z ContextVar (per-tenant metering)."""
+    from db.tenant import reset_current_tenant_id, set_current_tenant_id
+
+    token = set_current_tenant_id("tenant-abc")
+    try:
+        entry = build_cost_entry(**_entry_kwargs())
+    finally:
+        # Izolacja między testami — przywróć poprzedni stan ContextVar.
+        reset_current_tenant_id(token)
+    assert entry["tenant_id"] == "tenant-abc"
+    assert entry["cost_usd"] == 0.001234
+
+
+def test_build_cost_entry_tenant_defaults_outside_request() -> None:
+    """Poza requestem (CLI/testy) tenant_id = DEFAULT_TENANT — wpis się nie wywraca."""
+    from db.tenant import DEFAULT_TENANT
+
+    entry = build_cost_entry(**_entry_kwargs())
+    assert entry["tenant_id"] == DEFAULT_TENANT
+    assert "brief_hash" in entry and len(entry["brief_hash"]) == 16

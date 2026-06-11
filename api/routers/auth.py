@@ -473,6 +473,66 @@ class RevokeRequest(BaseModel):
     refresh_token: Optional[str] = None
 
 
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(..., min_length=16, max_length=200)
+    new_password: str = Field(..., min_length=6, max_length=200)
+
+
+@router.post("/password-reset/confirm")
+@_limiter.limit("5/minute")
+async def password_reset_confirm(request: Request, req: PasswordResetConfirmRequest):
+    """P1-E2: konsumpcja jednorazowego tokenu resetu (wydanego przez admina).
+
+    Token weryfikowany przez sha256 + GETDEL (atomowe single-use). Po zmianie
+    hasła zabijamy refresh tokeny tenanta — zmiana hasła = koniec starych sesji
+    (tenant_id jest per-user od rejestracji, więc nie strzelamy w innych).
+    Anty-enumeracja: jeden generyczny 401 dla złego/zużytego/wygasłego tokenu.
+    Fail-closed: brak Redis → 503.
+    """
+    from api.runtime import get_redis
+
+    r = get_redis()
+    if r is None:
+        raise HTTPException(503, "Reset hasła niedostępny (brak Redis).")
+    h = hashlib.sha256(req.token.encode()).hexdigest()
+    try:
+        username_raw = await r.getdel(f"pwreset:{h}")
+    except Exception as e:
+        logger.error("password-reset/confirm: Redis padł: %s", e)
+        raise HTTPException(503, "Reset hasła chwilowo niedostępny.")
+    if not username_raw:
+        raise HTTPException(401, "Nieprawidłowy lub zużyty token resetu.")
+    username = (
+        username_raw.decode() if isinstance(username_raw, bytes) else str(username_raw)
+    ).strip().lower()
+
+    from db import get_db
+
+    new_hash = _hash_password_argon2(req.new_password)
+    tenant_id = ""
+    async for db in get_db():
+        cur = await db.execute(
+            "SELECT tenant_id FROM users WHERE username = ?", (username,)
+        )
+        row = await cur.fetchone()
+        if not row:
+            # User usunięty po wydaniu tokenu — ten sam generyczny komunikat.
+            raise HTTPException(401, "Nieprawidłowy lub zużyty token resetu.")
+        tenant_id = row[0]
+        await db.execute(
+            "UPDATE users SET pw_hash = ?, salt = '' WHERE username = ?",
+            (new_hash, username),
+        )
+        await db.commit()
+
+    if tenant_id:
+        killed = await invalidate_refresh_tokens_for_tenant(tenant_id)
+        logger.info(
+            "Hasło %s zresetowane; unieważniono %d refresh tokenów.", username, killed
+        )
+    return {"ok": True, "detail": "Hasło zmienione. Zaloguj się ponownie."}
+
+
 @router.post("/revoke")
 @_limiter.limit("20/minute")
 async def revoke_token(request: Request, req: Optional[RevokeRequest] = None):
