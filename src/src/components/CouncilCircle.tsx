@@ -1,12 +1,11 @@
 /**
  * CouncilCircle — Sala Rady (Krok 2 redesignu).
  *
- * Zastępuje grid AgentCard + TensionMeter gdy AW_COUNCIL_CIRCLE=1.
+ * Zastępuje wcześniejszy grid AgentCard + TensionMeter.
  * SVG: 9 agentów w kole + krawędzie napięć na żywo.
  * Panel detalu po prawej: pełny głos wybranego agenta.
  *
  * Bezpieczeństwo: tekst agenta renderowany jako text node, nie innerHTML.
- * Feature flag: localStorage.getItem("AW_COUNCIL_CIRCLE") === "1"
  */
 
 import { useState } from "react";

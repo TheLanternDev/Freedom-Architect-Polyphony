@@ -177,9 +177,10 @@ export function WorkspaceHeader({
               onClick={onReset}
               disabled={isActive}
               title={t("app.btn.reset")}
-              className="aw-btn-ghost px-2 py-1.5 disabled:opacity-35"
+              className="aw-btn-ghost inline-flex items-center gap-1.5 px-2 py-1.5 disabled:opacity-35"
             >
               <Icon icon={RefreshCw} size="sm" />
+              <span className="hidden sm:inline">{t("app.btn.reset")}</span>
             </button>
           )}
         </div>

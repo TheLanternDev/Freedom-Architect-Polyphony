@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { useLang } from "@/lib/i18n";
+import { CommitmentExportButtons } from "@/components/CommitmentExportButtons";
 
 interface Row {
   id: number;
@@ -110,6 +111,7 @@ export function CommitmentsTimeline({ projectId }: { projectId: number }) {
                   >
                     {busy === r.id ? "…" : t("commitments.timeline.check")}
                   </button>
+                  <CommitmentExportButtons commitmentId={r.id} />
                 </>
               )}
             </div>

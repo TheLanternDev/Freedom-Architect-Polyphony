@@ -19,6 +19,8 @@ import { NotificationsPanel } from "@/components/NotificationsPanel";
 import { ActiveProjectLimitModal, type ActiveProjectInfo } from "@/components/ActiveProjectLimitModal";
 import { DreamWizard } from "@/components/DreamWizard";
 import { IntegrationsModal } from "@/components/IntegrationsModal";
+import { FeedbackPanel } from "@/components/FeedbackPanel";
+import { clearIntegrationStatusCache } from "@/components/CommitmentExportButtons";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { OfflineBanner, addToOfflineQueue } from "@/components/OfflineBanner";
 import {
@@ -85,6 +87,27 @@ export default function App() {
   const [backendMode, setBackendMode] = useState<string | null>(null);
   const [dreamWizardOpen, setDreamWizardOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  // Feedback soft-launchu — opóźniony trigger po domknięciu debaty (AX2 pierwszeństwo:
+  // commit/kontynuacja/nowa debata w pierwszych ~90s), max 1× / 24h (7 dni po submit).
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackForDebate, setFeedbackForDebate] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (state.status !== "done" || state.debateId == null) return;
+    if (feedbackForDebate === state.debateId) return;
+    try {
+      const until = Number(localStorage.getItem("aw_feedback_snooze_until") ?? 0);
+      if (Number.isFinite(until) && Date.now() < until) return;
+    } catch {
+      // brak localStorage → pokaż po delayu
+    }
+    const debateId = state.debateId;
+    const timer = window.setTimeout(() => {
+      setFeedbackForDebate(debateId);
+      setFeedbackOpen(true);
+    }, 90_000);
+    return () => window.clearTimeout(timer);
+  }, [state.status, state.debateId, feedbackForDebate]);
   const [authenticated, setAuthenticated] = useState(() => {
     const jwt = getStoredJwt();
     return jwt !== null || !_jwtEnabled();
@@ -342,6 +365,22 @@ export default function App() {
         open={integrationsOpen}
         onClose={() => setIntegrationsOpen(false)}
       />
+      <FeedbackPanel
+        open={feedbackOpen}
+        debateId={feedbackForDebate ?? undefined}
+        onClose={(submitted) => {
+          setFeedbackOpen(false);
+          try {
+            const hours = submitted ? 7 * 24 : 24;
+            localStorage.setItem(
+              "aw_feedback_snooze_until",
+              String(Date.now() + hours * 3_600_000),
+            );
+          } catch {
+            // localStorage niedostępny — trudno, pokażemy ponownie
+          }
+        }}
+      />
       {councilMode === "personal" && <OnboardingPanel />}
       {/* AKSJOMAT 0 — kompas Fragmentu wbudowany w BriefForm (Krok 4 redesignu) */}
       {/* AKSJOMAT 2 — konfrontacja gdy backend zwraca 409 active_project_limit.
@@ -531,6 +570,7 @@ export default function App() {
           onLogout={() => {
             if (inDemo) clearDemoSession();
             else setStoredJwt(null);
+            clearIntegrationStatusCache();
             setAuthenticated(false);
             setDemoStatus(null);
           }}
@@ -637,8 +677,17 @@ export default function App() {
 
           {state.status === "error" && (
             <FadeIn>
-            <div className="aw-alert border-red-500/30 bg-red-900/10 text-red-400">
-              {state.error ?? t("app.error.unknown")}
+            <div className="space-y-3 no-print">
+              <div className="aw-alert border-red-500/30 bg-red-900/10 text-red-400">
+                {state.error ?? t("app.error.unknown")}
+              </div>
+              <button
+                type="button"
+                onClick={reset}
+                className="text-[13px] px-4 py-2.5 rounded-lg bg-teal/20 border border-teal/45 text-teal font-medium hover:bg-teal/30 transition-colors"
+              >
+                {t("syez.new_debate.btn")}
+              </button>
             </div>
             </FadeIn>
           )}
@@ -713,6 +762,7 @@ export default function App() {
                     : undefined
                 }
                 onCommitStep={handleCommit}
+                onNewDebate={reset}
               />
               {state.status === "done" && state.project?.id != null && (
                 <CommitmentsTimeline projectId={state.project.id} />

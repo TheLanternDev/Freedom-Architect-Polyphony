@@ -2,18 +2,11 @@
  * Feedback panel dla soft launchu (Tydzień 4 mapy luk).
  *
  * 3 pytania, niskotarczowy UX. Trigger: ręczny przycisk w UI ALBO po
- * domknięciu debaty (props `triggerOnDebateDone`). Bez retencji dłuższej
- * niż konieczna — payload trafia do `POST /feedback`, dalej do bazy
- * z RLS per tenant (patrz `db/migrations/0003_feedback_table.sql`).
- *
- * Świadomy design:
- *  - rating 1-5 jako gwiazdki (nie NPS 0-10 — soft launch potrzebuje
- *    krótkiego sygnału, nie statystycznej dokładności).
- *  - dwa pola tekstowe `what_worked` / `what_broke` (nigdy "comment").
- *  - debate_id automatycznie dolinkowany jeśli podany.
+ * domknięciu debaty (opóźniony w App.tsx — AX2 ma pierwszeństwo).
+ * Payload: POST /feedback → DB z RLS per tenant (0003_feedback_table.sql).
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 
@@ -29,6 +22,30 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
   const [broke, setBroke] = useState("");
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const first = panelRef.current?.querySelector<HTMLElement>(
+      "button, textarea, [href], input",
+    );
+    first?.focus();
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCloseRef.current(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      previous?.focus?.();
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -71,13 +88,20 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="feedback-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose(false);
+      }}
     >
-      <div className="w-full max-w-lg mx-4 rounded-2xl border border-white/10 bg-navy/95 p-6 shadow-2xl">
+      <div
+        ref={panelRef}
+        className="w-full max-w-lg mx-4 rounded-2xl border border-white/10 bg-navy/95 p-6 shadow-2xl"
+      >
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] uppercase tracking-widest text-white/40">
             Soft launch · feedback
           </span>
           <button
+            type="button"
             onClick={() => onClose(false)}
             className="text-white/35 hover:text-white/80 text-sm"
           >
@@ -100,6 +124,7 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
             {[1, 2, 3, 4, 5].map((n) => (
               <button
                 key={n}
+                type="button"
                 onClick={() => setRating(n)}
                 aria-pressed={rating === n}
                 className={
@@ -138,12 +163,15 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
         />
 
         {err && (
-          <p className="mt-3 text-[12px] text-amber-300">{err}</p>
+          <p className="mt-3 text-[12px] text-amber-300" role="alert">
+            {err}
+          </p>
         )}
 
         <div className="flex justify-end mt-5">
           <button
-            onClick={submit}
+            type="button"
+            onClick={() => void submit()}
             disabled={sending}
             className="text-[12px] px-4 py-2 rounded-full bg-teal/20 border border-teal/50 text-teal hover:bg-teal/30 disabled:opacity-50"
           >

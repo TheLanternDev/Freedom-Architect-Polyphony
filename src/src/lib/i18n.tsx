@@ -248,7 +248,6 @@ export const DICT: Record<string, Phrase> = {
   "mode.full.label": { pl: "Pełna Rada", en: "Full Council" },
   "mode.full.hint": { pl: "Wszystkie 9 perspektyw", en: "All 9 perspectives" },
   "mode.title": { pl: "Tryb Rady", en: "Council Mode" },
-  "mode.compact_title": { pl: "Tryby skrócone", en: "Focused modes" },
 
   "mode.fa2.title": { pl: "Tryb FA2 (biznes)", en: "FA2 mode (business)" },
   "mode.fa2.dreams.label": { pl: "Fundraising / wizja", en: "Fundraising / vision" },
@@ -327,27 +326,6 @@ export const DICT: Record<string, Phrase> = {
     en: "A higher value means less word overlap between the pair — a signal for Syez's synthesis, not an \"objective truth\".",
   },
 
-  "tensionmeter.title": { pl: "Sieć napięć", en: "Tension network" },
-  "tensionmeter.hint": {
-    pl: "Najedź na krawędź — zobaczysz opis pary (heurystyka jak w backendzie).",
-    en: "Hover an edge to read the pair note (same heuristic as the backend).",
-  },
-  "tensionmeter.why.high": {
-    pl: "wysokie napięcie leksykalne — konfrontacja sensów",
-    en: "high lexical tension — colliding meanings",
-  },
-  "tensionmeter.why.mid": {
-    pl: "napięcie twórcze — różne wektory, wspólny temat",
-    en: "creative tension — different vectors, shared topic",
-  },
-  "tensionmeter.why.low": {
-    pl: "niższe napięcie — podobne słownictwo (nie = zgoda)",
-    en: "lower tension — similar vocabulary (not agreement)",
-  },
-  "tensionmeter.legend.high": { pl: "wysoki konflikt", en: "high clash" },
-  "tensionmeter.legend.mid": { pl: "twórcze", en: "creative" },
-  "tensionmeter.legend.low": { pl: "zbliżone słowa", en: "lexical overlap" },
-
   "commitments.timeline.title": { pl: "Oś zobowiązań", en: "Commitments" },
   "commitments.timeline.empty": { pl: "Brak zapisów dla tego projektu.", en: "No rows for this project." },
   "commitments.timeline.note_ph": { pl: "Dowód (tekst)", en: "Evidence (text)" },
@@ -417,6 +395,11 @@ export const DICT: Record<string, Phrase> = {
     en: "Continuation: minimum five words (same rule as a new brief).",
   },
   "syez.continue.error": { pl: "Błąd kontynuacji", en: "Continuation error" },
+  "syez.continue.unavailable": {
+    pl: "Debata nie została zapisana — kontynuacja wątku niedostępna.",
+    en: "Debate was not saved — thread continuation unavailable.",
+  },
+  "syez.new_debate.btn": { pl: "Nowa debata", en: "New debate" },
   "syez.commit.no_debate": {
     pl: "Brak powiązania z debatą — zapis działa po zakończonej sesji.",
     en: "No debate link — saving works only after a finished session.",
@@ -451,30 +434,6 @@ export const DICT: Record<string, Phrase> = {
   "dreams.stuck.banner": {
     pl: "AKSJOMAT 2: projekt utknął — nie ma stanu „porzucony”, tylko domknięcie albo świadoma archiwizacja (≥50 znaków).",
     en: "AXIOM 2: project is stuck — there is no “abandoned”, only completion or conscious archive (≥50 chars).",
-  },
-
-  // Manifest (#15)
-  "manifest.title": {
-    pl: "Czym to nie jest — krótkie pozycjonowanie",
-    en: "What this is NOT — quick positioning",
-  },
-  "manifest.body": {
-    pl:
-      "To nie jest kolejny czat „zadaj pytanie AI” bez struktury — to debata 9 nazwanych perspektyw.\n\n" +
-      "To nie jest zamiennik terapii klinicznej ani superwizji psychologicznej.\n\n" +
-      "To nie jest jeden głos-asystent — to zestaw nazwanych perspektyw i lustro syntezy (Syez).\n\n" +
-      "To nie obiecuje „prawdy obiektywnej” — monitor napięć to heurystyka leksykalna, nie psychometria.\n\n" +
-      "🔒 Prywatność: twój brief nie trafia do treningu Anthropic (korzystamy z API production, " +
-      "nie z interfejsu claude.ai). Dane sesji żyją lokalnie w SQLite na twoim urządzeniu. " +
-      "Żadnej chmury danych bez twojej zgody.",
-    en:
-      "This is not another \"ask the AI\" chat without structure — it's a debate of 9 named perspectives.\n\n" +
-      "This is not a substitute for clinical therapy or psychological supervision.\n\n" +
-      "This is not a single assistant voice — it's a set of named perspectives plus Syez as mirror/synthesis.\n\n" +
-      "It does not promise \"objective truth\" — the tension monitor is a lexical heuristic, not psychometrics.\n\n" +
-      "🔒 Privacy: your brief does not go into Anthropic training (we use the production API, " +
-      "not the claude.ai interface). Session data lives locally in SQLite on your device. " +
-      "No data cloud without your consent.",
   },
 
   // Onboarding + szablony (#1)
@@ -655,6 +614,11 @@ export const DICT: Record<string, Phrase> = {
   "integrations.env_hint": {
     pl: "Klucze API ustawiasz w zmiennych środowiskowych backendu (np. NOTION_API_KEY). Nie wklejaj ich w UI.",
     en: "API keys are set via backend environment variables (e.g. NOTION_API_KEY). Do not paste them in the UI.",
+  },
+  "integrations.export.label": { pl: "Eksport:", en: "Export:" },
+  "integrations.export.err": {
+    pl: "Eksport nie powiódł się — spróbuj ponownie",
+    en: "Export failed — try again",
   },
 
   // Offline (#5)

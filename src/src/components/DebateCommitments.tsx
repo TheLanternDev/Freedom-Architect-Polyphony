@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { useLang } from "@/lib/i18n";
+import { CommitmentExportButtons } from "@/components/CommitmentExportButtons";
 
 /**
  * DebateCommitments — read-only przegląd zobowiązań danej debaty (Zadanie C).
@@ -62,15 +63,18 @@ export function DebateCommitments({ debateId }: { debateId: number }) {
             <p className="text-[12px] text-white/80 leading-snug whitespace-pre-wrap">
               {r.text}
             </p>
-            <span
-              className={`mt-1 inline-block text-[10px] px-1.5 py-0.5 rounded border ${
-                r.status === "open"
-                  ? "border-teal/30 text-teal/90"
-                  : "border-white/15 text-white/35"
-              }`}
-            >
-              {r.status}
-            </span>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-block text-[10px] px-1.5 py-0.5 rounded border ${
+                  r.status === "open"
+                    ? "border-teal/30 text-teal/90"
+                    : "border-white/15 text-white/35"
+                }`}
+              >
+                {r.status}
+              </span>
+              {r.status === "open" && <CommitmentExportButtons commitmentId={r.id} />}
+            </div>
           </li>
         ))}
       </ol>

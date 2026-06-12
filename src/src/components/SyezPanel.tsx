@@ -34,6 +34,7 @@ interface Props {
   sticky?: boolean;
   /** Tylko podgląd — bez eksportu, kontynuacji i zobowiązań. */
   readOnly?: boolean;
+  onNewDebate?: () => void;
 }
 
 function synthesisToMarkdown(
@@ -162,6 +163,7 @@ export function SyezPanel({
   onCommitStep,
   sticky = true,
   readOnly = false,
+  onNewDebate,
 }: Props) {
   const { t } = useLang();
   const isSynthesizing = status === "synthesizing";
@@ -539,7 +541,7 @@ export function SyezPanel({
       </div>{/* /left-col */}
 
       {/* Prawa kolumna — domknięcie (AX2): commit + kontynuacja */}
-      {!readOnly && !!(onCommitStep || onContinueThread) && (
+      {!readOnly && !!(onCommitStep || onContinueThread || onNewDebate) && (
         <div className="w-[264px] shrink-0 border-l border-white/[0.06] p-4 flex flex-col gap-5 no-print">
           {isDone && (onCommitStep || onContinueThread) && debateId != null && (
             <div className="text-[10px] uppercase tracking-[0.2em] text-gold/55">
@@ -601,6 +603,29 @@ export function SyezPanel({
                 {continuing ? t("syez.continue.btn_starting") : t("syez.continue.btn")}
               </button>
             </form>
+          )}
+          {isDone && onContinueThread && debateId != null && onNewDebate && (
+            <button
+              type="button"
+              onClick={onNewDebate}
+              className="aw-btn-ghost w-full text-[12px] px-3 py-2"
+            >
+              {t("syez.new_debate.btn")}
+            </button>
+          )}
+          {isDone && debateId == null && onNewDebate && (
+            <div className="space-y-2">
+              <p className="text-[12px] text-white/50 leading-snug">
+                {t("syez.continue.unavailable")}
+              </p>
+              <button
+                type="button"
+                onClick={onNewDebate}
+                className="w-full text-[13px] px-4 py-2.5 rounded-lg bg-teal/20 border border-teal/45 text-teal font-medium hover:bg-teal/30 transition-colors"
+              >
+                {t("syez.new_debate.btn")}
+              </button>
+            </div>
           )}
         </div>
       )}
