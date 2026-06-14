@@ -106,6 +106,47 @@ export const DICT: Record<string, Phrase> = {
     pl: "Founders BYOK: zarejestruj konto (JWT), aby eksportować dane i korzystać z RODO w aplikacji. Klucz ARCHITEKT_API_KEY to tryb zaawansowany bez per-user izolacji.",
     en: "Founders BYOK: register (JWT) to export data and use in-app privacy tools. ARCHITEKT_API_KEY is advanced mode without per-user isolation.",
   },
+  "setup.llm_key_label": {
+    pl: "Klucz Anthropic (BYOK)",
+    en: "Anthropic API key (BYOK)",
+  },
+  "setup.llm_key_placeholder": {
+    pl: "sk-ant-…",
+    en: "sk-ant-…",
+  },
+  "setup.llm_key_note": {
+    pl: "Klucz jest przechowywany lokalnie (keychain w aplikacji desktopowej) i wysyłany per żądanie — serwer go nie zapisuje.",
+    en: "The key is stored locally (keychain on desktop) and sent per request — the server never persists it.",
+  },
+  "setup.llm_key_clear": {
+    pl: "Usuń klucz Anthropic",
+    en: "Remove Anthropic key",
+  },
+  "setup.llm_key_saved": {
+    pl: "Klucz Anthropic zapisany lokalnie.",
+    en: "Anthropic key saved locally.",
+  },
+  "setup.llm_key_masked": {
+    pl: "Zapisany klucz: {mask}",
+    en: "Saved key: {mask}",
+  },
+
+  "llm_key.missing_gate": {
+    pl: "Brak klucza Anthropic — dodaj go w Ustawieniach (Połączenie), aby uruchomić debatę.",
+    en: "No Anthropic key — add it in Settings (Connection) to start a debate.",
+  },
+  "llm_key.missing_stream": {
+    pl: "Brak klucza LLM — dodaj swój klucz w Ustawieniach.",
+    en: "Missing LLM key — add your key in Settings.",
+  },
+  "llm_key.invalid": {
+    pl: "Klucz Anthropic został odrzucony — sprawdź go i wpisz ponownie w Ustawieniach.",
+    en: "Anthropic key was rejected — check it and re-enter in Settings.",
+  },
+  "llm_key.open_settings": {
+    pl: "Otwórz Ustawienia",
+    en: "Open Settings",
+  },
 
   "account.intro": {
     pl: "Eksportuj wszystkie dane tenanta (debates, marzenia, zobowiązania…) lub trwale usuń konto z lokalnej bazy.",

@@ -44,7 +44,7 @@ if str(ROOT) not in sys.path:
 @pytest.fixture(autouse=True)
 def _disable_anthropic_singleton(monkeypatch):
     """
-    Każdy test startuje z czystym BaseAgent._client = None i brakiem
+    Każdy test startuje z czystym cache klientów Anthropic (BYOK) i brakiem
     ANTHROPIC_API_KEY w środowisku.
     """
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -56,7 +56,8 @@ def _disable_anthropic_singleton(monkeypatch):
         pass
     try:
         from agents.base_agent import BaseAgent
-        monkeypatch.setattr(BaseAgent, "_client", None)
+        monkeypatch.setattr(BaseAgent, "_client_cache", {})
+        monkeypatch.setattr(BaseAgent, "_client_cache_order", [])
         monkeypatch.setattr(BaseAgent, "_redis", None)
     except Exception:
         pass

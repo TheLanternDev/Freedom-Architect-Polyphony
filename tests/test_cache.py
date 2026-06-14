@@ -18,9 +18,9 @@ from agents.base_agent import BaseAgent
 # ── _cache_key ──────────────────────────────────────────────────────────────
 
 
-def test_cache_key_has_v8_prefix_and_agent_name():
+def test_cache_key_has_v10_prefix_and_agent_name():
     key = BaseAgent._cache_key("Kogit", "ctx", "claude-sonnet-4-6", 0.5)
-    assert key.startswith("llm:v8:Kogit:")
+    assert key.startswith("llm:v10:Kogit:")
 
 
 def test_cache_key_is_deterministic_for_same_input():
@@ -102,7 +102,8 @@ def test_call_llm_reads_identity_from_contextvar(monkeypatch):
 
     async def _fake_call(self, context, dream=None, *, language="pl",
                          debate_mode="pelna", council_mode="personal",
-                         has_evolution_note=False, tenant_id=None, user_id=None):
+                         has_evolution_note=False, tenant_id=None, user_id=None,
+                         counter_role=False):
         # Replikujemy fragment _call_llm odczytujący ContextVar.
         if tenant_id is None or user_id is None:
             from db.tenant import current_tenant_id, current_user_id

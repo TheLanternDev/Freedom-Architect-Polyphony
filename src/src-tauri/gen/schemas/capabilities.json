@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability dla okna głównego Architekta Wolności","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open"]}}
+{"default":{"identifier":"default","description":"Default capability dla okna głównego Architekta Wolności","local":true,"windows":["main"],"permissions":["core:default","shell:allow-open","allow-store-llm-key","allow-get-llm-key","allow-clear-llm-key"]}}

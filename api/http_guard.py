@@ -18,11 +18,20 @@ from api.auth_identity import decode_user_jwt_checked
 from db.tenant import (
     DEFAULT_TENANT,
     DEFAULT_USER,
+    set_current_llm_key,
     set_current_tenant_id,
     set_current_user_id,
 )
 
 logger = logging.getLogger(__name__)
+
+_LLM_KEY_HEADER = "X-LLM-Key"
+
+
+def _read_llm_key_header(request: Request) -> str | None:
+    """Odczyt nagłówka BYOK — wartość nigdy nie trafia do logów."""
+    v = (request.headers.get(_LLM_KEY_HEADER) or "").strip()
+    return v or None
 
 
 def _public_paths() -> frozenset[str]:
@@ -116,6 +125,7 @@ async def architekt_http_guard(
     # Wartość i tak jest izolowana per-Task dzięki mechanizmowi ContextVar.
     set_current_tenant_id(DEFAULT_TENANT)
     set_current_user_id(DEFAULT_USER)
+    set_current_llm_key(None)
 
     api_key = settings.api_key_legacy()
     jwt_on = settings.jwt_secret_configured()
@@ -135,6 +145,7 @@ async def architekt_http_guard(
             logger.warning(
                 "⚠️  AW_INSECURE_NO_AUTH=1 — uwierzytelnianie pominięte (wyłącznie dev/test)"
             )
+            set_current_llm_key(_read_llm_key_header(request))
             return await call_next(request)
         return JSONResponse(
             {
@@ -189,6 +200,7 @@ async def architekt_http_guard(
             # Single-tenant deployment: nagłówki opcjonalne, ale honorujemy je gdy są.
             set_current_tenant_id(fwd_tid)
             set_current_user_id(fwd_uid or fwd_tid)
+        set_current_llm_key(_read_llm_key_header(request))
         return await call_next(request)
 
     auth = (request.headers.get("authorization") or "").strip()
@@ -219,6 +231,7 @@ async def architekt_http_guard(
                         {"detail": "tenant mismatch — nagłówek vs JWT"},
                         status_code=403,
                     )
+            set_current_llm_key(_read_llm_key_header(request))
             return await call_next(request)
 
     if api_key and bearer and hmac.compare_digest(bearer, api_key):
@@ -256,6 +269,7 @@ async def architekt_http_guard(
         fwd_uid = (request.headers.get(uh) or "").strip()
         set_current_tenant_id(fwd_tid)
         set_current_user_id(fwd_uid or fwd_tid)
+        set_current_llm_key(_read_llm_key_header(request))
         request.state.architekt_auth = "legacy_bearer"
         response = await call_next(request)
         response.headers["Deprecation"] = "true"

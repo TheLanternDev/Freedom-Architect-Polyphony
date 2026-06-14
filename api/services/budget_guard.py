@@ -35,7 +35,18 @@ def spent_today_usd() -> float:
 
 
 async def ensure_hard_budget_or_raise() -> None:
-    """Twarde limity env — blokuje start debaty (HTTP 402)."""
+    """Twarde limity env — blokuje start debaty (HTTP 402).
+
+    BYOK: gdy user dostarcza własny klucz Anthropic, pomijamy hard-cap
+    (user płaci bezpośrednio). Soft-tracking kosztów pozostaje bez zmian.
+    """
+    try:
+        from db.tenant import current_llm_key
+
+        if current_llm_key():
+            return
+    except Exception:
+        pass
     if evaluate_hard_budget is None or load_budget_snapshot is None:
         return
     block = evaluate_hard_budget(load_budget_snapshot())

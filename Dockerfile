@@ -1,8 +1,11 @@
 FROM python:3.13-slim-bookworm
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# DEP-1: instalujemy z przypiętego locka (deterministyczny build), nie z
+# `requirements.txt` (intent). `requirements.lock` jest źródłem prawdy —
+# wygenerowany przez `uv pip compile ... --python-version 3.13`.
+COPY requirements.txt requirements.lock ./
+RUN pip install --no-cache-dir -r requirements.lock
 
 COPY agents ./agents
 COPY api ./api

@@ -37,6 +37,7 @@ import {
 } from "@/config/product";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
+import { loadLlmKey } from "@/lib/llmKeyStorage";
 import {
   clearDemoSession,
   fetchDemoStatus,
@@ -91,6 +92,10 @@ export default function App() {
   // commit/kontynuacja/nowa debata w pierwszych ~90s), max 1× / 24h (7 dni po submit).
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackForDebate, setFeedbackForDebate] = useState<number | null>(null);
+
+  useEffect(() => {
+    void loadLlmKey();
+  }, []);
 
   useEffect(() => {
     if (state.status !== "done" || state.debateId == null) return;
@@ -306,7 +311,9 @@ export default function App() {
         addToOfflineQueue({ ...brief, language: lang });
         return;
       }
-      void startDebate({ ...brief, language: lang });
+      void startDebate({ ...brief, language: lang }, {
+        onNeedLlmKey: () => setSetupOpen(true),
+      });
     },
     [startDebate, lang],
   );
@@ -681,6 +688,17 @@ export default function App() {
               <div className="aw-alert border-red-500/30 bg-red-900/10 text-red-400">
                 {state.error ?? t("app.error.unknown")}
               </div>
+              {(state.error === t("llm_key.missing_gate") ||
+                state.error === t("llm_key.missing_stream") ||
+                state.error === t("llm_key.invalid")) && (
+                <button
+                  type="button"
+                  onClick={() => setSetupOpen(true)}
+                  className="text-[13px] px-4 py-2.5 rounded-lg border border-teal/40 text-teal hover:bg-teal/15 transition-colors"
+                >
+                  {t("llm_key.open_settings")}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={reset}
@@ -755,10 +773,13 @@ export default function App() {
                 onContinueThread={
                   state.debateId
                     ? (followUp) =>
-                        continueDebateThread({
-                          previous_debate_id: state.debateId!,
-                          follow_up: followUp,
-                        })
+                        continueDebateThread(
+                          {
+                            previous_debate_id: state.debateId!,
+                            follow_up: followUp,
+                          },
+                          { onNeedLlmKey: () => setSetupOpen(true) },
+                        )
                     : undefined
                 }
                 onCommitStep={handleCommit}

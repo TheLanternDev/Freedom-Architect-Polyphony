@@ -11,8 +11,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Optional
 
 from api.services._types import BriefLike, PhaseCouncilResult, PhaseSynthesisResult
-from agents.base_agent import _LLM_TIMEOUT_ERRORS
-from config.llm_providers import LLM_TIMEOUT_WAIT_SEC
+from agents.base_agent import (
+    InvalidLlmKeyError,
+    MissingLlmKeyError,
+    _LLM_TIMEOUT_ERRORS,
+)
+from config.llm_providers import LLM_TIMEOUT_WAIT_SEC, anthropic_api_key, effective_llm_backend
 
 logger = logging.getLogger(__name__)
 
@@ -535,6 +539,10 @@ async def _phase_council(
                     True,
                 )
             )
+        except MissingLlmKeyError:
+            await queue.put(("__missing_llm_key__", True))
+        except InvalidLlmKeyError:
+            await queue.put(("__invalid_llm_key__", True))
         except Exception as e:
             await queue.put((f"[błąd: {e}]", True))
 
@@ -543,6 +551,8 @@ async def _phase_council(
             text.startswith("[błąd")
             or text.startswith("[error")
             or text.startswith("[timeout:")
+            or text == "__missing_llm_key__"
+            or text == "__invalid_llm_key__"
         )
 
     for a in council:
@@ -560,6 +570,52 @@ async def _phase_council(
                     text, is_final = q.get_nowait()
                     if is_final:
                         done_agents.add(a.name)
+                        if text == "__missing_llm_key__":
+                            yield _sse(
+                                "stream_error",
+                                {
+                                    "message": (
+                                        "Brak klucza LLM — dodaj swój klucz w Ustawieniach"
+                                        if lang != "en"
+                                        else "Missing LLM key — add your key in Settings"
+                                    ),
+                                    "error_type": "missing_llm_key",
+                                },
+                            )
+                            yield _sse(
+                                "debate_done",
+                                {
+                                    "debate_id": None,
+                                    "agent_count": 0,
+                                    "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
+                                    "timestamp": datetime.now(UTC).isoformat(),
+                                    "error": True,
+                                },
+                            )
+                            return
+                        if text == "__invalid_llm_key__":
+                            yield _sse(
+                                "stream_error",
+                                {
+                                    "message": (
+                                        "Klucz Anthropic odrzucony — sprawdź i wpisz ponownie w Ustawieniach"
+                                        if lang != "en"
+                                        else "Anthropic key rejected — check and re-enter in Settings"
+                                    ),
+                                    "error_type": "invalid_llm_key",
+                                },
+                            )
+                            yield _sse(
+                                "debate_done",
+                                {
+                                    "debate_id": None,
+                                    "agent_count": 0,
+                                    "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
+                                    "timestamp": datetime.now(UTC).isoformat(),
+                                    "error": True,
+                                },
+                            )
+                            return
                         if _is_error_voice(text):
                             # AKSJOMAT 1: integralność Rady. Uszkodzony głos NIE trafia
                             # do Syeza jako pełnoprawny — i degradacja jest WIDOCZNA (#3).
@@ -927,6 +983,34 @@ async def _stream_debate_inner(
             "msg": _pending_msg(council_mode, brief.language),
         },
     )
+
+    # BYOK fail-closed: w produkcji bez klucza usera nie startujemy Rady.
+    try:
+        from api.settings import is_production
+
+        if is_production() and effective_llm_backend() == "none" and not anthropic_api_key():
+            _msg = (
+                "Brak klucza LLM — dodaj swój klucz w Ustawieniach"
+                if brief.language != "en"
+                else "Missing LLM key — add your key in Settings"
+            )
+            yield _sse(
+                "stream_error",
+                {"message": _msg, "error_type": "missing_llm_key"},
+            )
+            yield _sse(
+                "debate_done",
+                {
+                    "debate_id": None,
+                    "agent_count": 0,
+                    "synthesizer": SYNTHESIZER.name if RADA_AVAILABLE else None,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                    "error": True,
+                },
+            )
+            return
+    except Exception as e:
+        _log_orchestrator_issue("byok_precheck", e)
 
     # ── Safety check ─────────────────────────────────────────────────────────
     if _SAFETY_AVAILABLE and _safety_check is not None:

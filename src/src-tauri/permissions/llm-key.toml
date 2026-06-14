@@ -1,0 +1,14 @@
+[[permission]]
+identifier = "allow-store-llm-key"
+description = "Store Anthropic BYOK key in system keychain"
+commands.allow = ["store_llm_key"]
+
+[[permission]]
+identifier = "allow-get-llm-key"
+description = "Read Anthropic BYOK key from system keychain"
+commands.allow = ["get_llm_key"]
+
+[[permission]]
+identifier = "allow-clear-llm-key"
+description = "Remove Anthropic BYOK key from system keychain"
+commands.allow = ["clear_llm_key"]

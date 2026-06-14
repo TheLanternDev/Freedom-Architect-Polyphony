@@ -3,6 +3,10 @@ import { useLang } from "@/lib/i18n";
 import { humanizeFetchFailure } from "@/lib/fetchErrors";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
+import {
+  hasLlmKeyConfigured,
+  isLlmKeyRequired,
+} from "@/lib/llmKeyStorage";
 import type {
   AgentState,
   Brief,
@@ -104,8 +108,14 @@ export function useDebate() {
     }
     let streamErrorMessage: string | undefined;
     if (event === "stream_error") {
-      const p = payload as { message?: string };
-      streamErrorMessage = p?.message ?? tRef.current("debate.stream.broke");
+      const p = payload as { message?: string; error_type?: string };
+      if (p?.error_type === "missing_llm_key") {
+        streamErrorMessage = tRef.current("llm_key.missing_stream");
+      } else if (p?.error_type === "invalid_llm_key") {
+        streamErrorMessage = tRef.current("llm_key.invalid");
+      } else {
+        streamErrorMessage = p?.message ?? tRef.current("debate.stream.broke");
+      }
     }
     setState((s) =>
       reduceDebateEvent(s, event, payload, { streamErrorMessage }),
@@ -253,7 +263,16 @@ export function useDebate() {
   []);
 
   const startDebate = useCallback(
-    async (brief: Brief) => {
+    async (brief: Brief, opts?: { onNeedLlmKey?: () => void }) => {
+      if (isLlmKeyRequired() && !hasLlmKeyConfigured()) {
+        setState((s) => ({
+          ...s,
+          status: "error",
+          error: tRef.current("llm_key.missing_gate"),
+        }));
+        opts?.onNeedLlmKey?.();
+        return;
+      }
       // Nowy wątek — żadnych poprzednich tur do zachowania.
       await runDebateStream(
         `${getApiBase()}/debate/stream`,
@@ -265,7 +284,16 @@ export function useDebate() {
   );
 
   const continueDebateThread = useCallback(
-    async (body: DebateContinueBody) => {
+    async (body: DebateContinueBody, opts?: { onNeedLlmKey?: () => void }) => {
+      if (isLlmKeyRequired() && !hasLlmKeyConfigured()) {
+        setState((s) => ({
+          ...s,
+          status: "error",
+          error: tRef.current("llm_key.missing_gate"),
+        }));
+        opts?.onNeedLlmKey?.();
+        return;
+      }
       // Przed bootstrapem strumienia: zarchiwizuj bieżącą turę (głosy + synteza + promptText)
       // do `turns`, żeby UI mogło w Ruchu 2 wyrenderować pełen wątek zamiast resetować widok.
       let nextTurns: PriorTurn[] | undefined;

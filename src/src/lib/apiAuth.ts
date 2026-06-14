@@ -7,6 +7,7 @@
  * API key nadal w localStorage (modal Połączenie) — tylko desktop/dev.
  */
 import { clearStoredJwt, getStoredJwt } from "@/lib/tokenStorage";
+import { getLlmKeySync } from "@/lib/llmKeyStorage";
 
 const LS_ARCHITEKT_API_KEY = "aw_architekt_api_key";
 
@@ -119,6 +120,10 @@ export function getApiAuthHeaders(opts?: { skipCache?: boolean }): Record<string
     if (opts?.skipCache || getCacheSkip()) {
       h["X-AW-Cache"] = "skip";
     }
+    const llmKey = getLlmKeySync();
+    if (llmKey) {
+      h["X-LLM-Key"] = llmKey;
+    }
     return h;
   }
 
@@ -150,6 +155,10 @@ export function getApiAuthHeaders(opts?: { skipCache?: boolean }): Record<string
   // Cache bypass — przekazany jawnie lub z localStorage (toggle „świeża debata").
   if (opts?.skipCache || getCacheSkip()) {
     h["X-AW-Cache"] = "skip";
+  }
+  const llmKey = getLlmKeySync();
+  if (llmKey) {
+    h["X-LLM-Key"] = llmKey;
   }
   return h;
 }

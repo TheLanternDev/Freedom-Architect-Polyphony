@@ -69,7 +69,8 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install pip-audit
-      - run: pip-audit -r requirements.txt
+      # DEP-1: audytujemy przypięte wersje (to, co realnie wdrażamy), nie intent.
+      - run: pip-audit -r requirements.lock
 
   pytest:
     runs-on: ubuntu-latest
@@ -79,7 +80,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -r requirements.txt pytest pytest-asyncio pytest-cov prometheus-client pyyaml
+      # DEP-1: deterministyczny build z locka (zawiera już pytest/-asyncio/-cov,
+      # prometheus-client, pyyaml — wszystkie są w requirements.txt).
+      - run: pip install -r requirements.lock
       - name: Run tests with coverage gate
         run: |
           pytest tests/ -q \

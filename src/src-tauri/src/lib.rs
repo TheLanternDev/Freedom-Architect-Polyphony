@@ -20,6 +20,45 @@ use std::sync::Mutex;
 
 use tauri::Manager;
 
+const KEYRING_SERVICE: &str = "architekt-wolnosci";
+const KEYRING_USER: &str = "anthropic-api-key";
+
+#[tauri::command]
+fn store_llm_key(key: String) -> Result<(), String> {
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        return clear_llm_key();
+    }
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())?;
+    entry.set_password(trimmed).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_llm_key() -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(p) => {
+            let t = p.trim().to_string();
+            if t.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(t))
+            }
+        }
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn clear_llm_key() -> Result<(), String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 struct BackendHandle(Mutex<Option<Child>>);
 
 fn dir_has_main_py(p: &Path) -> bool {
@@ -133,6 +172,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(handle)
+        .invoke_handler(tauri::generate_handler![store_llm_key, get_llm_key, clear_llm_key])
         .build(tauri::generate_context!())
         .expect("error while building Architekt Wolnosci")
         .run(|app, event| {

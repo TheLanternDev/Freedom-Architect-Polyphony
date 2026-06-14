@@ -9,6 +9,13 @@ import {
   getStoredArchitektApiKey,
   setStoredArchitektApiKey,
 } from "@/lib/apiAuth";
+import {
+  clearLlmKey,
+  getLlmKeySync,
+  loadLlmKey,
+  maskLlmKey,
+  setLlmKey,
+} from "@/lib/llmKeyStorage";
 import { APP_TELEMETRY_ENABLED } from "@/config/product";
 import { AccountPrivacyPanel } from "@/components/AccountPrivacyPanel";
 
@@ -35,12 +42,18 @@ export function LocalSetupModal({
   const [tab, setTab] = useState<Tab>("connection");
   const [urlInput, setUrlInput] = useState("");
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [llmKeyInput, setLlmKeyInput] = useState("");
+  const [llmKeySavedMask, setLlmKeySavedMask] = useState("");
   const [testStatus, setTestStatus] = useState<"idle" | "ok" | "fail">("idle");
   const [testDetail, setTestDetail] = useState("");
 
-  const syncInputFromRuntime = useCallback(() => {
+  const syncInputFromRuntime = useCallback(async () => {
     setUrlInput(getApiBase() || "http://127.0.0.1:8000");
     setApiKeyInput(getStoredArchitektApiKey() ?? "");
+    await loadLlmKey();
+    const saved = getLlmKeySync();
+    setLlmKeyInput("");
+    setLlmKeySavedMask(saved ? maskLlmKey(saved) : "");
   }, []);
 
   useEffect(() => {
@@ -56,7 +69,7 @@ export function LocalSetupModal({
     return () => window.removeEventListener("aw-api-base-changed", onChange);
   }, [syncInputFromRuntime]);
 
-  const applyUrl = () => {
+  const applyUrl = async () => {
     const raw = urlInput.trim();
     if (!raw) {
       setStoredApiBaseOverride(null);
@@ -64,7 +77,16 @@ export function LocalSetupModal({
       setStoredApiBaseOverride(raw);
     }
     setStoredArchitektApiKey(apiKeyInput.trim() || null);
-    syncInputFromRuntime();
+    if (llmKeyInput.trim()) {
+      await setLlmKey(llmKeyInput.trim());
+    }
+    await syncInputFromRuntime();
+  };
+
+  const clearAnthropicKey = async () => {
+    await clearLlmKey();
+    setLlmKeyInput("");
+    await syncInputFromRuntime();
   };
 
   const clearOverride = () => {
@@ -162,6 +184,38 @@ export function LocalSetupModal({
                 autoComplete="off"
                 spellCheck={false}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] uppercase tracking-wider text-white/35">
+                {t("setup.llm_key_label")}
+              </label>
+              <input
+                type="password"
+                value={llmKeyInput}
+                onChange={(e) => setLlmKeyInput(e.target.value)}
+                placeholder={t("setup.llm_key_placeholder")}
+                className="w-full rounded-lg border border-white/15 bg-black/30 px-3 py-2 text-[13px] text-white placeholder:text-white/25 focus:outline-none focus:border-teal/50"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="text-[10px] text-white/35 leading-snug">
+                {t("setup.llm_key_note")}
+              </p>
+              {llmKeySavedMask && !llmKeyInput && (
+                <p className="text-[10px] text-teal/80">
+                  {t("setup.llm_key_masked").replace("{mask}", llmKeySavedMask)}
+                </p>
+              )}
+              {llmKeySavedMask && (
+                <button
+                  type="button"
+                  onClick={() => void clearAnthropicKey()}
+                  className="text-[11px] text-red-300/80 hover:text-red-200 transition-colors"
+                >
+                  {t("setup.llm_key_clear")}
+                </button>
+              )}
             </div>
 
             <div className="space-y-1.5">

@@ -51,6 +51,14 @@ if False:  # TYPE_CHECKING bez kosztu runtime
 
 logger = logging.getLogger(__name__)
 
+
+class MissingLlmKeyError(RuntimeError):
+    """Brak klucza Anthropic w żądaniu (BYOK fail-closed)."""
+
+
+class InvalidLlmKeyError(RuntimeError):
+    """Klucz Anthropic odrzucony przez API (np. 401)."""
+
 try:
     from business_fa2.config.roles import FA2_BUSINESS_ROLES as _FA2_BUSINESS_ROLES
     from business_fa2.config.roles import FA2_BUSINESS_ROLES_EN as _FA2_BUSINESS_ROLES_EN
@@ -257,8 +265,10 @@ _COUNTER_SKELETON_EN = (
 class BaseAgent(ABC):
     """Abstrakcyjna klasa bazowa dla każdego agenta Rady."""
 
-    # singleton-per-process (klient Anthropic + redis)
-    _client: Optional["AsyncAnthropic"] = None
+    # Per-klucz cache klientów Anthropic (BYOK) + redis singleton
+    _CLIENT_CACHE_MAX = 32
+    _client_cache: dict[str, "AsyncAnthropic"] = {}
+    _client_cache_order: list[str] = []
     _redis: Optional[Any] = None
 
     def __init__(self) -> None:
@@ -545,15 +555,22 @@ class BaseAgent(ABC):
     def _get_client(cls) -> Optional["AsyncAnthropic"]:
         if not _ANTHROPIC_OK:
             return None
-        if cls._client is None:
-            api_key = anthropic_api_key()
-            if not api_key:
-                return None
-            # SDK timeout — bez tego domyślnie ~10 min; patrz AW_LLM_TIMEOUT_SDK.
-            cls._client = AsyncAnthropic(
-                api_key=api_key, timeout=float(LLM_TIMEOUT_SDK_SEC)
-            )
-        return cls._client
+        api_key = anthropic_api_key()
+        if not api_key:
+            return None
+        cache_id = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+        cached = cls._client_cache.get(cache_id)
+        if cached is not None:
+            return cached
+        client = AsyncAnthropic(
+            api_key=api_key, timeout=float(LLM_TIMEOUT_SDK_SEC)
+        )
+        cls._client_cache[cache_id] = client
+        cls._client_cache_order.append(cache_id)
+        while len(cls._client_cache_order) > cls._CLIENT_CACHE_MAX:
+            evict = cls._client_cache_order.pop(0)
+            cls._client_cache.pop(evict, None)
+        return client
 
     @classmethod
     async def _get_redis(cls):
@@ -614,25 +631,22 @@ class BaseAgent(ABC):
         user_id: Optional[str] = None,
         counter_role: bool = False,
     ) -> str:
+        # v10: + llm_key_hash — izolacja cache między różnymi kluczami BYOK.
         # v9: + counter_role (anty-echo-chamber) w kluczu — ten sam brief z
-        # rolą kontry i bez niej to różne prompty, nie mogą dzielić cache.
-        # v8: izolacja cache per tenant_id + user_id (multi-tenancy hard isolation).
-        #
-        # Dlaczego tenant_id / user_id są częścią klucza:
-        # `context[:400]` może kolidować między userami (wspólny prefix briefu,
-        # ten sam Dream Architecture header, ten sam Daily Signal). Bez tych pól
-        # Redis zwracałby odpowiedź jednego użytkownika drugiemu — wyciek treści
-        # osobistej między kontami. To naruszenie multi-tenancy z `db/tenant.py`.
-        # Brak ID (None) → fallback do izolacji per-process (legacy path, tylko
-        # gdy caller jawnie nie ma kontekstu requestu, np. CLI / testy).
-        #
-        # v7 (legacy): izolacja per council_mode (personal vs fa2). Zachowana.
+        llm_key_hash = ""
+        try:
+            _ak = anthropic_api_key()
+            if _ak:
+                llm_key_hash = hashlib.sha256(_ak.encode("utf-8")).hexdigest()[:16]
+        except Exception:
+            pass
         raw = (
             f"{context[:400]}:{model}:{temperature}:{dream_id or ''}:"
             f"{language}:{debate_mode}:{council_mode}:"
-            f"{tenant_id or ''}:{user_id or ''}:{int(counter_role)}"
+            f"{tenant_id or ''}:{user_id or ''}:{int(counter_role)}:"
+            f"{llm_key_hash}"
         ).encode("utf-8")
-        return f"llm:v9:{name}:{hashlib.sha256(raw).hexdigest()}"
+        return f"llm:v10:{name}:{hashlib.sha256(raw).hexdigest()}"
 
     @retry(
         # Tenacity retry TYLKO dla RateLimitError + APIConnectionError.
@@ -665,7 +679,18 @@ class BaseAgent(ABC):
                 cfg["max_tokens"] = min(int(cfg["max_tokens"]), 380)
         backend = effective_llm_backend()
         client = self._get_client()
-        if backend == "none" or (backend == "anthropic" and client is None):
+        if backend == "anthropic" and client is None:
+            raise MissingLlmKeyError()
+        if backend == "none":
+            try:
+                from api.settings import is_production
+
+                if is_production():
+                    raise MissingLlmKeyError()
+            except MissingLlmKeyError:
+                raise
+            except Exception:
+                pass
             return self._fallback_contribute(context)
 
         dream_id = getattr(dream, "dream_id", None) if dream is not None else None
@@ -824,6 +849,8 @@ class BaseAgent(ABC):
         except _RETRYABLE:
             # transient — retry tenacity ponowi automatycznie
             raise
+        except AuthenticationError:
+            raise InvalidLlmKeyError() from None
         except BadRequestError as e:
             # 400 = nasz błąd (zły config, za długi context, etc.) — fail fast
             logger.error("LLM BadRequest for %s: %s", self.name, e)

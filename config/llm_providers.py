@@ -52,6 +52,25 @@ def _strip_key(name: str) -> str | None:
 
 
 def anthropic_api_key() -> str | None:
+    """BYOK: najpierw klucz z ContextVar (nagłówek X-LLM-Key); w prod bez niego → None."""
+    try:
+        from db.tenant import current_llm_key
+
+        ctx = current_llm_key()
+        if ctx:
+            return ctx
+    except Exception:
+        pass
+    # Brak klucza usera: env fallback TYLKO w dev. Błąd ustalenia trybu =
+    # fail-closed (traktuj jak prod → None), nie wyciekaj klucza serwera.
+    try:
+        from api.settings import is_production
+
+        prod = is_production()
+    except Exception:
+        prod = True
+    if prod:
+        return None
     return _strip_key("ANTHROPIC_API_KEY")
 
 
@@ -85,6 +104,14 @@ def effective_llm_backend() -> LLMBackend:
     # auto
     if ak:
         return "anthropic"
+    try:
+        from api.settings import is_production
+
+        if is_production():
+            # BYOK: w produkcji brak klucza usera → fail-closed (bez cichego xAI/env).
+            return "none"
+    except Exception:
+        pass
     if xk:
         return "xai"
     if os.getenv("OLLAMA_BASE_URL") and not ak and not xk:

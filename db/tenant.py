@@ -43,6 +43,9 @@ _current_tenant_id: ContextVar[str] = ContextVar(
 _current_user_id: ContextVar[str] = ContextVar(
     "architekt_current_user_id", default=DEFAULT_USER
 )
+_current_llm_key: ContextVar[str | None] = ContextVar(
+    "architekt_current_llm_key", default=None
+)
 
 
 def current_tenant_id() -> str:
@@ -76,3 +79,18 @@ def set_current_user_id(user_id: str | None) -> Token[str]:
 
 def reset_current_user_id(token: Token[str]) -> None:
     _current_user_id.reset(token)
+
+
+def current_llm_key() -> str | None:
+    """Klucz Anthropic z nagłówka żądania (BYOK). Nigdy nie loguj wartości."""
+    return _current_llm_key.get()
+
+
+def set_current_llm_key(llm_key: str | None) -> Token[str | None]:
+    """Ustawia klucz LLM (Token do `reset_current_llm_key`)."""
+    v = (llm_key or "").strip() or None
+    return _current_llm_key.set(v)
+
+
+def reset_current_llm_key(token: Token[str | None]) -> None:
+    _current_llm_key.reset(token)
