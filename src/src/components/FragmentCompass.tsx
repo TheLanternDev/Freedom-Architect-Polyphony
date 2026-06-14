@@ -11,49 +11,24 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Icon } from "@/components/ui/Icon";
+import { useLang } from "@/lib/i18n";
 
 type FragmentNode = "smile" | "perspective" | "path";
 
 const NODES: Array<{
   key: FragmentNode;
-  pl: string;
   icon: string;
-  short: string;
-  detail: string;
+  labelKey: string;
+  shortKey: string;
+  detailKey: string;
 }> = [
-  {
-    key: "smile",
-    pl: "Uśmiech",
-    icon: "☺",
-    short: "Postawa, nie emocja.",
-    detail:
-      'Ciekawość skierowana w siebie. „Ciekawe, jak sobie z tym poradzę" ' +
-      '— nawet gdy trudno. Poszerza wewnętrzny horyzont, zmniejsza spinę. ' +
-      'Nie wymaga że jest dobrze. Wymaga że jesteś.',
-  },
-  {
-    key: "perspective",
-    pl: "Perspektywa",
-    icon: "◐",
-    short: "Jak patrzeć, nie gdzie dojść.",
-    detail:
-      'Zmiana centrum z „cel" na „spojrzenie". Perspektywa nigdy się nie ' +
-      'kończy — zawsze jest coś, czego jeszcze nie widziałeś. Karm ciekawość ' +
-      'zamiast ją zabijać celem.',
-  },
-  {
-    key: "path",
-    pl: "Droga",
-    icon: "↝",
-    short: "Codzienne, rzeczywiste ruszanie się.",
-    detail:
-      "Bez Uśmiechu i Perspektywy Droga staje się pustostanem. Razem trzy " +
-      "elementy tworzą układ, który podtrzymuje się sam — nawet gdy jeden " +
-      "z nich słabnie.",
-  },
+  { key: "smile", icon: "☺", labelKey: "frag.smile", shortKey: "frag.smile_short", detailKey: "frag.smile_detail" },
+  { key: "perspective", icon: "◐", labelKey: "frag.persp", shortKey: "frag.persp_short", detailKey: "frag.persp_detail" },
+  { key: "path", icon: "↝", labelKey: "frag.path", shortKey: "frag.path_short", detailKey: "frag.path_detail" },
 ];
 
 export function FragmentCompass({ compact = false }: { compact?: boolean }) {
+  const { t } = useLang();
   const [active, setActive] = useState<FragmentNode | null>(null);
   const [expanded, setExpanded] = useState(!compact);
   const node = active ? NODES.find((n) => n.key === active) ?? null : null;
@@ -69,7 +44,7 @@ export function FragmentCompass({ compact = false }: { compact?: boolean }) {
         className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-white/[0.02] transition-colors rounded-card"
       >
         <span className="aw-eyebrow text-text-tertiary text-[9px]">
-          Fragment · kompas
+          {t("frag.kompas")}
         </span>
         <span className="flex items-center gap-1.5 shrink-0">
           <span className="text-[9px] text-text-tertiary/70" title="AKSJOMAT 0">
@@ -109,11 +84,11 @@ export function FragmentCompass({ compact = false }: { compact?: boolean }) {
                     {n.icon}
                   </div>
                   <div className="text-[11px] font-medium text-text-secondary">
-                    {n.pl}
+                    {t(n.labelKey)}
                   </div>
                   {!compact && (
                     <div className="text-[9px] text-text-tertiary mt-0.5 leading-snug">
-                      {n.short}
+                      {t(n.shortKey)}
                     </div>
                   )}
                 </button>
@@ -123,13 +98,12 @@ export function FragmentCompass({ compact = false }: { compact?: boolean }) {
 
           {node && (
             <p className="mt-2.5 text-[11px] leading-relaxed text-text-secondary">
-              {node.detail}
+              {t(node.detailKey)}
             </p>
           )}
           {!node && !compact && (
             <p className="mt-2.5 text-[10px] leading-relaxed text-text-tertiary">
-              To nie jest lista do odhaczenia. To kompas — wejdź z dowolnego
-              elementu.
+              {t("frag.hint")}
             </p>
           )}
         </div>

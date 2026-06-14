@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent, type ReactNode } from "react";
 import type {
   DebateStatus,
   SynthesisStructuredPayload,
@@ -148,6 +148,30 @@ function renderProse(text: string, anchor: string | null) {
       {text.slice(i + anchor.length)}
     </>
   );
+}
+
+/** Znacznik fa2 „⟦weryfikuj: …⟧" — dane zewnętrzne do weryfikacji (wizualnie bursztyn). */
+const VERIFY_RE = /⟦weryfikuj:[^⟧]*⟧/g;
+function renderRich(text: string, anchor: string | null): ReactNode {
+  const markers = text.match(VERIFY_RE);
+  if (!markers) return renderProse(text, anchor);
+  const parts = text.split(VERIFY_RE);
+  const out: ReactNode[] = [];
+  parts.forEach((p, i) => {
+    if (p) out.push(<span key={`p${i}`}>{renderProse(p, anchor)}</span>);
+    if (i < markers.length) {
+      out.push(
+        <span
+          key={`m${i}`}
+          title="Dane zewnętrzne — do weryfikacji"
+          className="rounded border border-amber-500/30 bg-amber-500/10 text-amber-100/90 px-1 py-[1px]"
+        >
+          {markers[i]}
+        </span>,
+      );
+    }
+  });
+  return <>{out}</>;
 }
 
 export function SyezPanel({
@@ -393,150 +417,168 @@ export function SyezPanel({
         </div>
       )}
 
-      {structured && isActive && (
-        <div className="space-y-6 mb-6 border-t border-white/[0.06] pt-5">
-          {structured.insights_per_agent && structured.insights_per_agent.length > 0 && (
-            <section>
-              <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-3">
-                {t("syez.section.insights")}
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {structured.insights_per_agent.map((row, i) => (
-                  <div
-                    key={`${row.agent}-${i}`}
-                    className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2"
-                  >
-                    <div className="text-[11px] text-teal/85 font-medium mb-1">{row.agent}</div>
-                    <p className="text-[12px] text-white/70 leading-snug">{row.insight}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {structured.tensions && structured.tensions.length > 0 && (
-            <section>
-              <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-3">
-                {t("syez.section.tensions")}
-              </h3>
-              <TensionBars tensions={structured.tensions} />
-            </section>
-          )}
-
-          {structured.recommendations && structured.recommendations.length > 0 && (
-            <section>
-              <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
-                {t("syez.section.recommendations")}
-              </h3>
-              <ol className="list-decimal list-inside space-y-1 text-[13px] text-white/75">
-                {structured.recommendations.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ol>
-            </section>
-          )}
-
-          {structured.open_questions && structured.open_questions.length > 0 && (
-            <section>
-              <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
-                {t("syez.section.open_questions")}
-              </h3>
-              <ul className="space-y-2">
-                {structured.open_questions.map((q, i) => (
-                  <li
-                    key={i}
-                    className="text-[13px] text-amber-100/90 bg-amber-500/[0.07] border border-amber-500/20 rounded-lg px-3 py-2"
-                  >
-                    {q}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {structured.action_steps && structured.action_steps.length > 0 && (
-            <section>
-              <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
-                {t("syez.section.action_steps")}
-              </h3>
-              <ul className="space-y-2">
-                {structured.action_steps.map((a, idx) => (
-                  <li
-                    key={idx}
-                    className="flex flex-col sm:flex-row sm:items-center gap-3 text-[13px] text-white/78 border border-white/[0.06] rounded-lg px-3 py-2"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <span className="text-teal/55 mr-1 select-none">●</span>
-                      <span>
-                        {a.step}
-                        {a.due && (
-                          <span className="block text-[11px] text-teal/75 mt-1">
-                            {t("syez.action.due")}: {a.due}
-                            {a.priority && ` · ${t("syez.action.priority")}: ${a.priority}`}
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                    {readOnly ? null : (
-                    <button
-                      type="button"
-                      disabled={committing === idx || !debateId}
-                      onClick={() => void handleCommit(idx, a.step, a.due)}
-                      className="no-print shrink-0 text-[11px] px-3 py-1.5 rounded-lg bg-teal/15 border border-teal/35 text-teal hover:bg-teal/25 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {committing === idx ? t("syez.btn.committing") : t("syez.btn.commit")}
-                    </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </div>
-      )}
-
-      <div className="border-l-2 border-teal/40 pl-4 space-y-4">
-        {!isActive && (
+      {!isActive && (
+        <div className="border-l-2 border-teal/40 pl-4">
           <p className="text-[12px] text-white/20 italic">
             {t("syez.empty_placeholder")}
           </p>
-        )}
-        {isActive && (
-          <div className="space-y-4">
-            {inferredQuestions.length > 0 && (
-              <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-3">
-                <div className="text-[10px] uppercase tracking-widest text-amber-200/55 mb-2">
-                  {t("syez.detected_questions")}
-                </div>
-                <ul className="space-y-2">
-                  {inferredQuestions.map((q, i) => (
-                    <li key={i} className="text-[12px] text-amber-50/95 leading-snug">
-                      {q}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {showAxis && tensionAxis && (
-              <TensionAxis axis={tensionAxis} onFocusAnchor={setFocusAnchor} />
-            )}
-            <div className="font-serif text-[15px] leading-[1.85] text-[#C9C8D4]">
-              {renderSegments.map((seg, idx) =>
-                seg.kind === "mermaid" ? (
-                  <MermaidBlock key={`m-${idx}`} chart={seg.value} />
-                ) : (
-                  <div key={`t-${idx}`} className="whitespace-pre-wrap">
-                    {renderProse(seg.value, focusAnchor)}
+        </div>
+      )}
+
+      {isActive && (
+        <div className="border-t border-white/[0.06] pt-5">
+          {/* Layout dwustrumieniowy: narracja (primary) ↔ mapa Rady (side).
+              Na <xl stack: mapa nad narracją; na xl boczna szyna z lewą krechą. */}
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_290px] gap-x-6 gap-y-5">
+            {/* ── Narracja syntezy (główny strumień czytania) ── */}
+            <div className="min-w-0 order-2 xl:order-1">
+              {inferredQuestions.length > 0 && (
+                <div className="mb-4 rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-3">
+                  <div className="text-[10px] uppercase tracking-widest text-amber-200/55 mb-2">
+                    {t("syez.detected_questions")}
                   </div>
-                ),
+                  <ul className="space-y-2">
+                    {inferredQuestions.map((q, i) => (
+                      <li key={i} className="text-[12px] text-amber-50/95 leading-snug">
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
-              {isSynthesizing && (
-                <span className="inline-block w-[2px] h-[13px] bg-teal ml-[2px] align-text-bottom animate-pulse" />
+              <div className="font-serif text-[15px] leading-[1.9] text-[#C9C8D4] max-w-[70ch] border-l-2 border-teal/40 pl-4">
+                {renderSegments.map((seg, idx) =>
+                  seg.kind === "mermaid" ? (
+                    <MermaidBlock key={`m-${idx}`} chart={seg.value} />
+                  ) : (
+                    <div key={`t-${idx}`} className="whitespace-pre-wrap mb-3 last:mb-0">
+                      {renderRich(seg.value, focusAnchor)}
+                    </div>
+                  ),
+                )}
+                {isSynthesizing && (
+                  <span className="inline-block w-[2px] h-[13px] bg-teal ml-[2px] align-text-bottom animate-pulse" />
+                )}
+              </div>
+            </div>
+
+            {/* ── Mapa Rady: oś napięć + głosy + napięcia (boczna szyna) ── */}
+            {(showAxis ||
+              (structured?.insights_per_agent?.length ?? 0) > 0 ||
+              (structured?.tensions?.length ?? 0) > 0) && (
+              <aside className="min-w-0 order-1 xl:order-2 space-y-5 xl:border-l xl:border-white/[0.06] xl:pl-5">
+                {showAxis && tensionAxis && (
+                  <TensionAxis axis={tensionAxis} onFocusAnchor={setFocusAnchor} />
+                )}
+                {structured?.insights_per_agent && structured.insights_per_agent.length > 0 && (
+                  <section>
+                    <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-3">
+                      {t("syez.section.insights")}
+                    </h3>
+                    <div className="space-y-2">
+                      {structured.insights_per_agent.map((row, i) => (
+                        <div
+                          key={`${row.agent}-${i}`}
+                          className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2"
+                        >
+                          <div className="text-[11px] text-teal/85 font-medium mb-1">{row.agent}</div>
+                          <p className="text-[12px] text-white/70 leading-snug">{row.insight}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+                {structured?.tensions && structured.tensions.length > 0 && (
+                  <section>
+                    <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-3">
+                      {t("syez.section.tensions")}
+                    </h3>
+                    <TensionBars tensions={structured.tensions} />
+                  </section>
+                )}
+              </aside>
+            )}
+          </div>
+
+          {/* ── Domknięcie (AX2): rekomendacje · pytania · kroki — pełna szerokość ── */}
+          {structured &&
+            ((structured.recommendations?.length ?? 0) > 0 ||
+              (structured.open_questions?.length ?? 0) > 0 ||
+              (structured.action_steps?.length ?? 0) > 0) && (
+            <div className="space-y-6 mt-6 border-t border-white/[0.06] pt-5">
+              {structured.recommendations && structured.recommendations.length > 0 && (
+                <section>
+                  <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
+                    {t("syez.section.recommendations")}
+                  </h3>
+                  <ol className="list-decimal list-inside space-y-1 text-[13px] text-white/75">
+                    {structured.recommendations.map((r, i) => (
+                      <li key={i}>{r}</li>
+                    ))}
+                  </ol>
+                </section>
+              )}
+
+              {structured.open_questions && structured.open_questions.length > 0 && (
+                <section>
+                  <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
+                    {t("syez.section.open_questions")}
+                  </h3>
+                  <ul className="space-y-2">
+                    {structured.open_questions.map((q, i) => (
+                      <li
+                        key={i}
+                        className="text-[13px] text-amber-100/90 bg-amber-500/[0.07] border border-amber-500/20 rounded-lg px-3 py-2"
+                      >
+                        {q}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {structured.action_steps && structured.action_steps.length > 0 && (
+                <section>
+                  <h3 className="text-[11px] uppercase tracking-widest text-white/35 mb-2">
+                    {t("syez.section.action_steps")}
+                  </h3>
+                  <ul className="space-y-2">
+                    {structured.action_steps.map((a, idx) => (
+                      <li
+                        key={idx}
+                        className="flex flex-col sm:flex-row sm:items-center gap-3 text-[13px] text-white/78 border border-white/[0.06] rounded-lg px-3 py-2"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="text-teal/55 mr-1 select-none">●</span>
+                          <span>
+                            {a.step}
+                            {a.due && (
+                              <span className="block text-[11px] text-teal/75 mt-1">
+                                {t("syez.action.due")}: {a.due}
+                                {a.priority && ` · ${t("syez.action.priority")}: ${a.priority}`}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        {readOnly ? null : (
+                        <button
+                          type="button"
+                          disabled={committing === idx || !debateId}
+                          onClick={() => void handleCommit(idx, a.step, a.due)}
+                          className="no-print shrink-0 text-[11px] px-3 py-1.5 rounded-lg bg-teal/15 border border-teal/35 text-teal hover:bg-teal/25 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+                        >
+                          {committing === idx ? t("syez.btn.committing") : t("syez.btn.commit")}
+                        </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               )}
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       </div>{/* /left-col */}
 

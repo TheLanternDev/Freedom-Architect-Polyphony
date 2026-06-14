@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
+import { useLang } from "@/lib/i18n";
 
 type Props = {
   open: boolean;
@@ -17,6 +18,7 @@ type Props = {
 };
 
 export function FeedbackPanel({ open, debateId, onClose }: Props) {
+  const { t } = useLang();
   const [rating, setRating] = useState<number>(0);
   const [worked, setWorked] = useState("");
   const [broke, setBroke] = useState("");
@@ -51,7 +53,7 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
 
   const submit = async () => {
     if (rating < 1) {
-      setErr("Wybierz ocenę 1–5.");
+      setErr(t("fb.err_rating"));
       return;
     }
     setSending(true);
@@ -105,20 +107,20 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
             onClick={() => onClose(false)}
             className="text-white/35 hover:text-white/80 text-sm"
           >
-            Później
+            {t("onb.later")}
           </button>
         </div>
 
         <h2 id="feedback-title" className="text-[17px] text-white mb-1">
-          Jak ci poszło?
+          {t("fb.title")}
         </h2>
         <p className="text-[12px] text-white/50 mb-4">
-          Trzy krótkie pytania. Pomagasz mi domknąć system zanim wpuszczę więcej osób.
+          {t("fb.subtitle")}
         </p>
 
         <div className="mb-4">
           <label className="block text-[11px] uppercase tracking-wide text-white/50 mb-2">
-            Ocena (1 = słabo, 5 = świetnie)
+            {t("fb.rating_label")}
           </label>
           <div className="flex items-center gap-2">
             {[1, 2, 3, 4, 5].map((n) => (
@@ -141,24 +143,24 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
         </div>
 
         <label className="block text-[11px] uppercase tracking-wide text-white/50 mb-1">
-          Co realnie pomogło?
+          {t("fb.worked_label")}
         </label>
         <textarea
           rows={2}
           value={worked}
           onChange={(e) => setWorked(e.target.value)}
-          placeholder={'Pomijalne. Np. „synteza wskazała ruch do 60 min".'}
+          placeholder={t("fb.worked_ph")}
           className="w-full bg-white/[0.04] border border-white/10 rounded-lg p-3 text-[13px] focus:outline-none focus:border-teal/50 mb-3"
         />
 
         <label className="block text-[11px] uppercase tracking-wide text-white/50 mb-1">
-          Co było mylące lub nie działało?
+          {t("fb.broke_label")}
         </label>
         <textarea
           rows={2}
           value={broke}
           onChange={(e) => setBroke(e.target.value)}
-          placeholder="Pomijalne. Konkret > ogólnik."
+          placeholder={t("fb.broke_ph")}
           className="w-full bg-white/[0.04] border border-white/10 rounded-lg p-3 text-[13px] focus:outline-none focus:border-teal/50"
         />
 
@@ -175,7 +177,7 @@ export function FeedbackPanel({ open, debateId, onClose }: Props) {
             disabled={sending}
             className="text-[12px] px-4 py-2 rounded-full bg-teal/20 border border-teal/50 text-teal hover:bg-teal/30 disabled:opacity-50"
           >
-            {sending ? "Wysyłam…" : "Wyślij"}
+            {sending ? t("fb.sending") : t("fb.send")}
           </button>
         </div>
       </div>

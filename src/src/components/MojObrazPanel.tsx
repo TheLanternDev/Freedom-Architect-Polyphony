@@ -3,6 +3,7 @@ import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { SidebarSection } from "@/components/ui/SidebarSection";
 import { LS_ONBOARDING_DONE } from "@/components/PersonalRitualPanels";
+import { useLang } from "@/lib/i18n";
 
 /**
  * MojObrazPanel — żywy obraz użytkownika (Zadanie B).
@@ -43,6 +44,7 @@ interface ObrazResp {
 }
 
 export function MojObrazPanel() {
+  const { t } = useLang();
   const [data, setData] = useState<Payload | null>(null);
   const [edited, setEdited] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
@@ -66,7 +68,7 @@ export function MojObrazPanel() {
         for (const a of j.answers ?? []) init[a.question_idx] = a.answer ?? "";
         setEdited(init);
       } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : "Błąd wczytywania");
+        if (!cancelled) setErr(e instanceof Error ? e.message : t("obraz.err.load"));
       }
     })();
     return () => {
@@ -107,7 +109,7 @@ export function MojObrazPanel() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setSavedAt(new Date().toLocaleTimeString().slice(0, 5));
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Błąd zapisu");
+      setErr(e instanceof Error ? e.message : t("obraz.err.save"));
     } finally {
       setBusy(false);
     }
@@ -145,7 +147,7 @@ export function MojObrazPanel() {
       const j = (await r.json()) as { obraz: ObrazModel; wersja: number };
       setObraz({ obraz: j.obraz, wersja: j.wersja, updated_at: new Date().toISOString() });
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Błąd syntezy");
+      setErr(e instanceof Error ? e.message : t("obraz.err.synth"));
     } finally {
       setObrazBusy(false);
     }
@@ -161,11 +163,11 @@ export function MojObrazPanel() {
   };
 
   return (
-    <SidebarSection label="Mój obraz" className="flex flex-col min-h-0 h-full">
+    <SidebarSection label={t("obraz.section")} className="flex flex-col min-h-0 h-full">
       <div className="flex flex-col min-h-0 flex-1">
         <p className="shrink-0 text-[10px] text-text-tertiary leading-snug mb-2">
-          Żywy obraz z onboardingu. Możesz edytować odpowiedzi — Rada bierze je pod
-          uwagę. {data && <span className="text-gold/60">{answeredCount}/{data.items.length}</span>}
+          {t("obraz.lead")}{" "}
+          {data && <span className="text-gold/60">{answeredCount}/{data.items.length}</span>}
         </p>
         {err && <p className="shrink-0 text-[11px] text-amber-400/80 mb-2">{err}</p>}
 
@@ -175,14 +177,14 @@ export function MojObrazPanel() {
             const list = (xs: string[]) => (xs ?? []).filter((x) => x && x.trim()).join("; ");
             const rows: Array<[string, string]> = o
               ? ([
-                  ["Wartości", list(o.wartosci)],
-                  ["Napięcia / cień", list(o.napiecia)],
-                  ["Relacje", list(o.relacje)],
-                  ["Wzorce", list(o.wzorce)],
-                  ["Ciało", o.cialo],
-                  ["Kreatywność", o.kreatywnosc],
-                  ["Duchowość", o.duchowosc],
-                  ["Potrzeba teraz", o.potrzeba_teraz],
+                  [t("obraz.row.values"), list(o.wartosci)],
+                  [t("obraz.row.tensions"), list(o.napiecia)],
+                  [t("obraz.row.relations"), list(o.relacje)],
+                  [t("obraz.row.patterns"), list(o.wzorce)],
+                  [t("obraz.row.body"), o.cialo],
+                  [t("obraz.row.creativity"), o.kreatywnosc],
+                  [t("obraz.row.spirituality"), o.duchowosc],
+                  [t("obraz.row.need_now"), o.potrzeba_teraz],
                 ].filter(([, v]) => v && v.trim()) as Array<[string, string]>)
               : [];
             const empty = !o || (rows.length === 0 && !o.zdanie_dla_siebie?.trim());
@@ -190,7 +192,7 @@ export function MojObrazPanel() {
               <div className="rounded-control border border-gold/25 bg-gold/[0.05] px-3 py-2.5">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[10px] uppercase tracking-[0.2em] text-gold/70">
-                    Obraz, który Rada widzi
+                    {t("obraz.council_sees")}
                   </span>
                   <button
                     type="button"
@@ -198,13 +200,12 @@ export function MojObrazPanel() {
                     disabled={obrazBusy}
                     className="text-[10px] px-2 py-0.5 rounded-control border border-gold/40 text-gold/90 hover:bg-gold/15 disabled:opacity-40 transition-colors"
                   >
-                    {obrazBusy ? "Destyluję…" : o ? "Odśwież" : "Zsyntetyzuj"}
+                    {obrazBusy ? t("obraz.btn.distilling") : o ? t("obraz.btn.refresh") : t("obraz.btn.synthesize")}
                   </button>
                 </div>
                 {empty ? (
                   <p className="text-[11px] text-text-tertiary leading-snug">
-                    Rada jeszcze nie złożyła Twojego obrazu z odpowiedzi. Kliknij
-                    „Zsyntetyzuj”, żeby zdestylować wysokosygnałowy ekstrakt.
+                    {t("obraz.empty")}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
@@ -223,7 +224,7 @@ export function MojObrazPanel() {
                     ))}
                     {obraz?.wersja != null && (
                       <p className="text-[9px] text-text-tertiary pt-0.5">
-                        wersja {obraz.wersja}
+                        {t("obraz.version")} {obraz.wersja}
                       </p>
                     )}
                   </div>
@@ -258,7 +259,7 @@ export function MojObrazPanel() {
             </div>
           ))}
           {!data && !err && (
-            <p className="aw-caption">Wczytuję…</p>
+            <p className="aw-caption">{t("obraz.loading")}</p>
           )}
         </div>
 
@@ -269,15 +270,15 @@ export function MojObrazPanel() {
             disabled={busy || !data}
             className="text-[12px] px-4 py-2 rounded-control bg-gold/20 border border-gold/50 text-gold font-medium hover:bg-gold/30 disabled:opacity-35 transition-colors"
           >
-            {busy ? "Zapisuję…" : "Zapisz obraz"}
+            {busy ? t("obraz.btn.saving") : t("obraz.btn.save")}
           </button>
-          {savedAt && <span className="text-[10px] text-teal/70">zapisano {savedAt}</span>}
+          {savedAt && <span className="text-[10px] text-teal/70">{t("obraz.saved")} {savedAt}</span>}
           <button
             type="button"
             onClick={redoOnboarding}
             className="ml-auto text-[10px] text-text-tertiary hover:text-text-secondary underline-offset-2 hover:underline"
           >
-            Przejdź onboarding ponownie
+            {t("obraz.redo")}
           </button>
         </div>
       </div>

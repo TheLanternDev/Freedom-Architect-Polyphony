@@ -6,6 +6,14 @@ import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { SidebarSection } from "@/components/ui/SidebarSection";
 import { cn } from "@/lib/cn";
 
+// Wartości kategorii w DB (PL) → klucze i18n.
+const CATEGORY_KEY: Record<string, string> = {
+  decyzja: "brief.category.decision",
+  projekt: "brief.category.project",
+  marzenie: "brief.category.dream",
+  schemat: "brief.category.pattern",
+};
+
 interface Row {
   id: number;
   created_at: string;
@@ -142,9 +150,9 @@ export function DebateHistory({ onSelect, disabled }: Props) {
                 <span className="text-text-tertiary/70 font-mono text-[10px] mr-1.5">
                   #{th.latest.id}
                 </span>
-                <span className="text-teal/80">{th.latest.mode}</span>
+                <span className="text-teal/80">{t(`mode.${th.latest.mode}`)}</span>
                 <span className="text-text-tertiary/50 mx-1">·</span>
-                <span className="text-text-tertiary">{th.latest.category}</span>
+                <span className="text-text-tertiary">{t(CATEGORY_KEY[th.latest.category] ?? "brief.category.decision")}</span>
                 {th.turnCount > 1 && (
                   <span className="ml-1.5 text-[9px] uppercase tracking-widest text-teal/70 bg-teal-dim border border-teal/20 rounded-full px-1.5 py-px align-middle">
                     {th.turnCount}× {t("thread.prior_turn").toLowerCase()}

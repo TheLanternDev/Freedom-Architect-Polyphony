@@ -225,6 +225,7 @@ export const DICT: Record<string, Phrase> = {
   "app.section.synthesis": { pl: "Synteza (Syez)", en: "Synthesis (Syez)" },
   "thread.prior_turn": { pl: "Tura", en: "Turn" },
   "thread.your_followup": { pl: "Ty (kontynuacja)", en: "You (follow-up)" },
+  "thread.your_brief": { pl: "Twój brief", en: "Your brief" },
   "thread.expand": { pl: "Rozwiń", en: "Expand" },
   "thread.collapse": { pl: "Zwiń", en: "Collapse" },
   "thread.prior_summary": {
@@ -506,25 +507,157 @@ export const DICT: Record<string, Phrase> = {
   },
   "brief.tpl.quit": {
     pl:
-      "Właśnie odszedłem z pracy albo poważnie rozważam odejście. Czuję ulgę i strach jednocześnie i potrzebuję perspektywy Rady zanim zrobię kolejny ruch.",
+      "Mam około trzech miesięcy poduszki finansowej i albo właśnie odszedłem z etatu, albo mam to zrobić w tym tygodniu. Czuję ulgę i panikę naraz. Boję się, że to ucieczka OD szefa, nie ruch DO czegoś własnego. Chcę, żeby Rada rozdzieliła te dwie rzeczy i dała mi jeden konkretny ruch na najbliższe 48 godzin, zanim podejmę decyzję pod wpływem emocji.",
     en:
-      "I just left my job or I'm seriously considering quitting. I feel relief and fear at once and I want the Council's perspectives before my next move.",
+      "I have roughly three months of savings and I've either just left my job or I'm about to this week. I feel relief and panic at once. I'm afraid this is escape FROM a boss, not a move TOWARD something of my own. I want the Council to separate the two and give me one concrete move for the next 48 hours, before I decide on emotion.",
   },
-  "brief.tpl.quit.label": { pl: "Zwolnienie / przejście", en: "Job exit / transition" },
+  "brief.tpl.quit.label": { pl: "Etat: zostać czy odejść", en: "Job: stay or leave" },
   "brief.tpl.dream": {
     pl:
-      "Mam konkretne marzenie lub wizję życia i chcę rozłożyć je na filary, kamienie milowe oraz jeden najmniejszy pierwszy krok którego nie porzucę po tygodniu.",
+      "Mam jedno marzenie, które wraca do mnie od lat, ale za każdym razem ginie pod codziennością i pracą zarobkową. Chcę je rozłożyć na trzy filary i kilka kamieni milowych, dostać najmniejszy pierwszy krok na dziś, którego nie porzucę po tygodniu, oraz usłyszeć od Rady wprost, co konkretnie zabija to marzenie za każdym razem, gdy się do niego zbliżam.",
     en:
-      "I have a concrete dream or life vision and I want it broken into pillars, milestones, and one smallest first step I won't abandon after a week.",
+      "I have one dream that's been coming back for years, but every time it dies under daily life and paid work. I want it broken into three pillars and a few milestones, the smallest first step for today that I won't abandon after a week, and to hear from the Council plainly what specifically kills this dream each time I get close to it.",
   },
-  "brief.tpl.dream.label": { pl: "Marzenie do rozłożenia", en: "Dream to unfold" },
+  "brief.tpl.dream.label": { pl: "Marzenie, które ciągle ucieka", en: "The dream that keeps slipping" },
   "brief.tpl.pattern": {
     pl:
-      "Widzę że powtarzam ten sam schemat blokady lub ucieczki i chcę nazwać marzenie które ten schemat zasłania oraz najmniejszy przełom następnych 24 godzin.",
+      "Już trzeci raz w tym roku rzucam coś na osiemdziesiąt procent i zaczynam nowy projekt od zera. Wmawiam sobie brak czasu albo że pomysł się wypalił, ale w środku wiem, że to coś innego. Chcę, żeby Rada nazwała, czego ten wzorzec naprawdę broni i czego boję się w samym momencie ukończenia, oraz dała mi jeden ruch na najbliższą godzinę, którego nie da się zracjonalizować.",
     en:
-      "I keep repeating the same blockage or escape pattern and I want to name the dream it hides plus the smallest breakthrough for the next 24 hours.",
+      "For the third time this year I'm abandoning something at eighty percent and starting a new project from scratch. I tell myself it's lack of time or that the idea burned out, but inside I know it's something else. I want the Council to name what this pattern actually protects and what I fear at the very moment of finishing, and give me one move for the next hour that can't be rationalized away.",
   },
-  "brief.tpl.pattern.label": { pl: "Schemat / blokada", en: "Pattern / blockage" },
+  "brief.tpl.pattern.label": { pl: "Rzucam na 80% i uciekam", en: "I quit at 80% and run" },
+
+  // Presety trybu Biznesowa (fa2) — konkretne dylematy, dane + scenariusze
+  "brief.tpl.fa2_saas": {
+    pl:
+      "Prowadzę software house B2B, około 18 osób, 140k EUR miesięcznie z usług przy marży 22%. Mam działający prototyp produktu SaaS, ale zero płacących klientów. Pytanie: czy w najbliższych 6 miesiącach przesuwać 40% zespołu na produkt kosztem zdolności usługowej, czy budować go „z nadwyżki” bez ruszania core'u? Chcę scenariusze Base / Bull / Bear, realne ryzyka cash flow i jeden najmniejszy ruch na najbliższe 60 minut.",
+    en:
+      "I run a B2B software house, about 18 people, 140k EUR per month from services at a 22% margin. I have a working SaaS prototype but zero paying customers. The question: over the next 6 months, do I move 40% of the team onto the product at the cost of service capacity, or build it 'from the surplus' without touching the core? I want Base / Bull / Bear scenarios, real cash-flow risks, and one smallest move for the next 60 minutes.",
+  },
+  "brief.tpl.fa2_saas.label": { pl: "Usługi → produkt (SaaS)", en: "Services → product (SaaS)" },
+  "brief.tpl.fa2_pricing": {
+    pl:
+      "Od trzech lat nie podniosłem cen, a koszty wzrosły o jakieś 20%. Boję się, że podwyżka odstraszy klientów, ale przy obecnych marżach ledwo wychodzę na swoje. Chcę, żeby Rada policzyła wpływ podwyżki o 10–15% w scenariuszach Base / Bull / Bear, nazwała realne ryzyko odejścia klientów i dała mi jeden konkretny ruch na ten tydzień — z jasnym triggerem decyzji.",
+    en:
+      "I haven't raised prices in three years while costs went up roughly 20%. I'm afraid a hike will scare customers off, but at current margins I'm barely breaking even. I want the Council to model the impact of a 10–15% increase across Base / Bull / Bear, name the real churn risk, and give me one concrete move for this week — with a clear decision trigger.",
+  },
+  "brief.tpl.fa2_pricing.label": { pl: "Podnieść ceny czy nie", en: "Raise prices or not" },
+  "brief.tpl.fa2_gtm": {
+    pl:
+      "Mam gotowy produkt B2B i przyzwoity ruch organiczny, ale konwersja na płacących klientów jest bliska zeru. Nie wiem, czy to problem produktu, ceny, czy dotarcia. Chcę, żeby Rada postawiła diagnozę opartą na danych, wskazała najsłabsze ogniwo lejka (popyt / model / wykonalność) i dała mi jeden eksperyment do odpalenia w najbliższe 48 godzin.",
+    en:
+      "I have a finished B2B product and decent organic traffic, but conversion to paying customers is close to zero. I don't know whether it's a product, pricing, or reach problem. I want the Council to give a data-grounded diagnosis, name the weakest link in the funnel (demand / model / feasibility), and give me one experiment to run in the next 48 hours.",
+  },
+  "brief.tpl.fa2_gtm.label": { pl: "Zero płacących klientów", en: "Zero paying customers" },
+
+  // ── Mój obraz (MojObrazPanel) ──
+  "obraz.section": { pl: "Mój obraz", en: "My image" },
+  "obraz.lead": {
+    pl: "Żywy obraz z onboardingu. Możesz edytować odpowiedzi — Rada bierze je pod uwagę.",
+    en: "A living image from onboarding. You can edit the answers — the Council takes them into account.",
+  },
+  "obraz.council_sees": { pl: "Obraz, który Rada widzi", en: "The image the Council sees" },
+  "obraz.btn.distilling": { pl: "Destyluję…", en: "Distilling…" },
+  "obraz.btn.refresh": { pl: "Odśwież", en: "Refresh" },
+  "obraz.btn.synthesize": { pl: "Zsyntetyzuj", en: "Synthesize" },
+  "obraz.empty": {
+    pl: "Rada jeszcze nie złożyła Twojego obrazu z odpowiedzi. Kliknij „Zsyntetyzuj”, żeby zdestylować wysokosygnałowy ekstrakt.",
+    en: "The Council hasn't assembled your image from the answers yet. Click “Synthesize” to distill a high-signal extract.",
+  },
+  "obraz.row.values": { pl: "Wartości", en: "Values" },
+  "obraz.row.tensions": { pl: "Napięcia / cień", en: "Tensions / shadow" },
+  "obraz.row.relations": { pl: "Relacje", en: "Relationships" },
+  "obraz.row.patterns": { pl: "Wzorce", en: "Patterns" },
+  "obraz.row.body": { pl: "Ciało", en: "Body" },
+  "obraz.row.creativity": { pl: "Kreatywność", en: "Creativity" },
+  "obraz.row.spirituality": { pl: "Duchowość", en: "Spirituality" },
+  "obraz.row.need_now": { pl: "Potrzeba teraz", en: "Need now" },
+  "obraz.version": { pl: "wersja", en: "version" },
+  "obraz.btn.saving": { pl: "Zapisuję…", en: "Saving…" },
+  "obraz.btn.save": { pl: "Zapisz obraz", en: "Save image" },
+  "obraz.saved": { pl: "zapisano", en: "saved" },
+  "obraz.redo": { pl: "Przejdź onboarding ponownie", en: "Redo onboarding" },
+  "obraz.loading": { pl: "Wczytuję…", en: "Loading…" },
+  "obraz.err.load": { pl: "Błąd wczytywania", en: "Load error" },
+  "obraz.err.save": { pl: "Błąd zapisu", en: "Save error" },
+  "obraz.err.synth": { pl: "Błąd syntezy", en: "Synthesis error" },
+
+  // ── Onboarding modal + rytuał (PersonalRitualPanels) ──
+  "onb.first_run": { pl: "Pierwsze uruchomienie", en: "First run" },
+  "onb.later": { pl: "Później", en: "Later" },
+  "onb.placeholder": {
+    pl: "Odpowiedz w swoim tempie. Możesz pominąć.",
+    en: "Answer at your own pace. You can skip.",
+  },
+  "onb.back": { pl: "← Wstecz", en: "← Back" },
+  "onb.next": { pl: "Dalej →", en: "Next →" },
+  "onb.finish": { pl: "Zakończ", en: "Finish" },
+  "ritual.morning": { pl: "Rytuał poranny", en: "Morning ritual" },
+  "ritual.evening": { pl: "Rytuał wieczorny", en: "Evening ritual" },
+
+  // ── Feedback (FeedbackPanel) ──
+  "fb.title": { pl: "Jak ci poszło?", en: "How did it go?" },
+  "fb.subtitle": {
+    pl: "Trzy krótkie pytania. Pomagasz mi domknąć system zanim wpuszczę więcej osób.",
+    en: "Three short questions. You help me close the system before I let more people in.",
+  },
+  "fb.rating_label": { pl: "Ocena (1 = słabo, 5 = świetnie)", en: "Rating (1 = poor, 5 = great)" },
+  "fb.worked_label": { pl: "Co realnie pomogło?", en: "What actually helped?" },
+  "fb.worked_ph": {
+    pl: "Pomijalne. Np. „synteza wskazała ruch do 60 min”.",
+    en: "Optional. E.g. “the synthesis pointed to a 60-min move”.",
+  },
+  "fb.broke_label": { pl: "Co było mylące lub nie działało?", en: "What was confusing or didn't work?" },
+  "fb.broke_ph": { pl: "Pomijalne. Konkret > ogólnik.", en: "Optional. Specifics > generalities." },
+  "fb.err_rating": { pl: "Wybierz ocenę 1–5.", en: "Pick a rating from 1–5." },
+  "fb.sending": { pl: "Wysyłam…", en: "Sending…" },
+  "fb.send": { pl: "Wyślij", en: "Send" },
+
+  // ── Brakujące klucze brief.* (pokazywały się jako surowe klucze / brak EN) ──
+  "brief.btn.start_fa2": { pl: "Zwołaj Radę Analityczną", en: "Convene the Analyst Council" },
+  "brief.btn.start_schematy": { pl: "Konfrontuj schemat", en: "Confront the pattern" },
+  "brief.btn.start_codzienny": { pl: "Zwołaj Radę", en: "Convene the Council" },
+  "brief.advanced.show": { pl: "Więcej opcji", en: "More options" },
+  "brief.advanced.hide": { pl: "Mniej opcji", en: "Fewer options" },
+
+  // ── Nawigacja / tytuły paneli bocznych ──
+  "nav.brief": { pl: "Brief / Debata", en: "Brief / Debate" },
+  "nav.dreams": { pl: "Marzenia i projekty", en: "Dreams & projects" },
+  "nav.notifications": { pl: "Powiadomienia i zobowiązania", en: "Notifications & commitments" },
+  "nav.notifications_short": { pl: "Powiadomienia", en: "Notifications" },
+  "nav.history": { pl: "Historia debat", en: "Debate history" },
+  "nav.settings": { pl: "Ustawienia", en: "Settings" },
+
+  // ── Tryby debaty (label w historii) ──
+  "mode.pelna": { pl: "Pełna", en: "Full" },
+  "mode.marzen": { pl: "Marzeń", en: "Dream" },
+  "mode.schematy": { pl: "Schematy", en: "Patterns" },
+  "mode.codzienny": { pl: "Codzienny", en: "Daily" },
+
+  // ── Widget Fragmentu (AKSJOMAT 0) ──
+  "frag.kompas": { pl: "Fragment · kompas", en: "Fragment · compass" },
+  "frag.hint": {
+    pl: "To nie jest lista do odhaczenia. To kompas — wejdź z dowolnego elementu.",
+    en: "This is not a checklist. It's a compass — enter from any element.",
+  },
+  "frag.smile": { pl: "Uśmiech", en: "Smile" },
+  "frag.smile_short": { pl: "Postawa, nie emocja.", en: "A stance, not an emotion." },
+  "frag.smile_detail": {
+    pl: "Ciekawość skierowana w siebie. „Ciekawe, jak sobie z tym poradzę” — nawet gdy trudno. Poszerza wewnętrzny horyzont, zmniejsza spinę. Nie wymaga że jest dobrze. Wymaga że jesteś.",
+    en: "Curiosity turned toward yourself. “I wonder how I'll handle this” — even when it's hard. It widens the inner horizon and lowers the tension. It doesn't require things to be good. It requires you to be here.",
+  },
+  "frag.persp": { pl: "Perspektywa", en: "Perspective" },
+  "frag.persp_short": { pl: "Jak patrzeć, nie gdzie dojść.", en: "How to look, not where to arrive." },
+  "frag.persp_detail": {
+    pl: "Zmiana centrum z „cel” na „spojrzenie”. Perspektywa nigdy się nie kończy — zawsze jest coś, czego jeszcze nie widziałeś. Karm ciekawość zamiast ją zabijać celem.",
+    en: "Shifting the center from “goal” to “gaze”. Perspective never ends — there's always something you haven't seen yet. Feed curiosity instead of killing it with a goal.",
+  },
+  "frag.path": { pl: "Droga", en: "Path" },
+  "frag.path_short": { pl: "Codzienne, rzeczywiste ruszanie się.", en: "Daily, real movement." },
+  "frag.path_detail": {
+    pl: "Bez Uśmiechu i Perspektywy Droga staje się pustostanem. Razem trzy elementy tworzą układ, który podtrzymuje się sam — nawet gdy jeden z nich słabnie.",
+    en: "Without Smile and Perspective, the Path becomes a hollow shell. Together the three form a system that sustains itself — even when one of them weakens.",
+  },
 
   // Portrety agentów (#4) — kim jest i dlaczego boli
   "agent.bio.Relacjan": {

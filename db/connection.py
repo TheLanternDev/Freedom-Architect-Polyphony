@@ -389,16 +389,15 @@ class _Repo:
         await db.execute(
             """
             INSERT INTO dreams (
-              id, tenant_id, created_at, raw_brief, core_dream, value_anchor,
+              id, tenant_id, raw_brief, core_dream, value_anchor,
               pillars_json, milestones_json, next_move_json,
               completion_criteria_json, functionality_checklist_json,
               status
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?, 'living')
+            ) VALUES (?,?,?,?,?,?,?,?,?,?, 'living')
             """,
             (
                 dream.dream_id,
                 _tid(),
-                dream.created_at,
                 dream.raw_brief,
                 dream.core_dream,
                 dream.value_anchor,
@@ -438,8 +437,8 @@ class _Repo:
             return int(row["id"])
         cur = await db.execute(
             "INSERT INTO projects (dream_id, tenant_id, status, started_at) "
-            "VALUES (?, ?, 'dreaming', ?)",
-            (dream_id, tid, _utcnow()),
+            "VALUES (?, ?, 'dreaming', datetime('now'))",
+            (dream_id, tid),
         )
         project_id = int(cur.lastrowid)
         for desc in functionality_checklist:
@@ -514,20 +513,20 @@ class _Repo:
         await db.execute(
             """
             UPDATE functionality_items
-               SET is_done = 1, done_at = ?, evidence_url = COALESCE(?, evidence_url)
+               SET is_done = 1, done_at = datetime('now'), evidence_url = COALESCE(?, evidence_url)
              WHERE id = ? AND tenant_id = ?
             """,
-            (_utcnow(), evidence_url, item_id, _tid()),
+            (evidence_url, item_id, _tid()),
         )
         # AKSJOMAT 2: każdy ruch = aktualizacja last_progress_at + przejście do IN_PROGRESS
         await db.execute(
             """
             UPDATE projects
-               SET last_progress_at = ?,
+               SET last_progress_at = datetime('now'),
                    status = CASE WHEN status = 'dreaming' THEN 'in_progress' ELSE status END
              WHERE id = ?
             """,
-            (_utcnow(), project_id),
+            (project_id,),
         )
         return project_id
 
@@ -1003,11 +1002,11 @@ class _Repo:
         await db.execute(
             """
             UPDATE projects
-               SET last_progress_at = ?,
+               SET last_progress_at = datetime('now'),
                    status = CASE WHEN status = 'dreaming' THEN 'in_progress' ELSE status END
              WHERE id = ? AND tenant_id = ?
             """,
-            (_utcnow(), project_id, _tid()),
+            (project_id, _tid()),
         )
 
     async def list_open_commitments_with_followup(self, db: Any) -> list[dict[str, Any]]:
@@ -1066,10 +1065,10 @@ class _Repo:
             UPDATE commitments
                SET status = 'released',
                    release_reason = ?,
-                   completed_at = ?
+                   completed_at = datetime('now')
              WHERE id = ? AND status = 'open' AND tenant_id = ?
             """,
-            (reason, _utcnow(), commitment_id, _tid()),
+            (reason, commitment_id, _tid()),
         )
         return cur.rowcount > 0
 
@@ -1090,11 +1089,11 @@ class _Repo:
             """
             UPDATE commitments
                SET status = 'completed',
-                   completed_at = ?,
+                   completed_at = datetime('now'),
                    text = text || ?
              WHERE id = ? AND status = 'open' AND tenant_id = ?
             """,
-            (_utcnow(), tail, commitment_id, _tid()),
+            (tail, commitment_id, _tid()),
         )
         return cur.rowcount > 0
 
@@ -1211,18 +1210,22 @@ class _Repo:
         user_subject: str,
         question_idx: int,
         answer: str,
-        updated_at: str,
+        updated_at: str,  # noqa: ARG002 — stempel czasu robi DB (patrz niżej)
     ) -> None:
+        # created_at/updated_at są TIMESTAMPTZ w PG — asyncpg odrzuca string ISO
+        # jako parametr (oczekuje datetime). Dlatego NIE wiążemy ich jako params:
+        # created_at z DEFAULT, updated_at przez `datetime('now')` (translator
+        # pg_wrap.fix_datetime_now → NOW()). Działa identycznie dla SQLite i PG.
         await db.execute(
             """
             INSERT INTO onboarding_answers (
-                tenant_id, user_subject, question_idx, answer, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                tenant_id, user_subject, question_idx, answer
+            ) VALUES (?, ?, ?, ?)
             ON CONFLICT(tenant_id, user_subject, question_idx) DO UPDATE SET
                 answer = excluded.answer,
-                updated_at = excluded.updated_at
+                updated_at = datetime('now')
             """,
-            (_tid(), user_subject, question_idx, answer, updated_at, updated_at),
+            (_tid(), user_subject, question_idx, answer),
         )
 
     async def list_onboarding_answers(
@@ -1244,21 +1247,25 @@ class _Repo:
         user_subject: str,
         obraz_json: str,
         wersja: int,
-        updated_at: str,
+        updated_at: str,  # noqa: ARG002 — stempel czasu robi DB (TIMESTAMPTZ w PG)
     ) -> None:
         """Zapisuje destylat Obrazu Użytkownika. Stempel tenant_id z ContextVar.
-        UNIQUE(tenant_id, user_subject) → 1 bieżący wiersz/użytkownik."""
+        UNIQUE(tenant_id, user_subject) → 1 bieżący wiersz/użytkownik.
+
+        created_at/updated_at są TIMESTAMPTZ w PG — asyncpg odrzuca string ISO
+        jako parametr. Stąd DEFAULT (created_at) + datetime('now') (updated_at,
+        translator pg_wrap → NOW()); spójne dla SQLite i PG."""
         await db.execute(
             """
             INSERT INTO user_obraz (
-                tenant_id, user_subject, obraz_json, wersja, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                tenant_id, user_subject, obraz_json, wersja
+            ) VALUES (?, ?, ?, ?)
             ON CONFLICT(tenant_id, user_subject) DO UPDATE SET
                 obraz_json = excluded.obraz_json,
                 wersja = excluded.wersja,
-                updated_at = excluded.updated_at
+                updated_at = datetime('now')
             """,
-            (_tid(), user_subject, obraz_json, wersja, updated_at, updated_at),
+            (_tid(), user_subject, obraz_json, wersja),
         )
 
     async def get_user_obraz(

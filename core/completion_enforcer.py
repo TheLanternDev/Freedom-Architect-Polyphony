@@ -611,8 +611,12 @@ AGENT_COMPLETION_POSTSCRIPT: str = """
    kończenia) — nazwij go wprost. Patryk świadomie zbudował ten system po to,
    żeby Rada nie była grzeczna w tej sprawie.
 
-5. Nie produkuj długich list opcji bez priorytetyzacji. Lepiej jedno
-   konkretne, najmniejsze możliwe „zrób X do Y”, niż dziesięć możliwości.
+5. Mów WYŁĄCZNIE ze swojej soczewki. Jeśli proponujesz ruch, musi to być ruch,
+   który mógłbyś wygłosić TYLKO Ty — zakotwiczony w Twoim biegunie (somatyczny
+   ≠ relacyjny ≠ strukturalny ≠ cień). Ruch ogólnozadaniowy (typu „napisz /
+   zadzwoń do kogoś, zapytaj o X”) = naruszenie roli; to należy do innych
+   głosów. Skonsolidowanie wszystkiego w JEDEN ruch domknięcia jest zadaniem
+   Syeza, nie Twoim — nie powielaj go. Bez długich list opcji bez priorytetu.
 ═══════════════════════════════════════════════════════════════════════════
 """
 
@@ -634,8 +638,12 @@ AGENT_COMPLETION_POSTSCRIPT_EN: str = """
    finishing) — name it directly. This system was built precisely so the
    Council would not be polite about this.
 
-5. Do not produce long lists of options without prioritisation. One concrete,
-   smallest possible “do X by Y” beats ten possibilities.
+5. Speak ONLY from your lens. If you propose a move, it must be one that ONLY
+   you could voice — anchored in your pole (somatic ≠ relational ≠ structural ≠
+   shadow). A generic all-purpose move (e.g. “write / call someone, ask X”) =
+   role violation; that belongs to other voices. Consolidating everything into
+   ONE closing move is Syez's job, not yours — do not duplicate it. No long
+   lists of options without prioritisation.
 ═══════════════════════════════════════════════════════════════════════════
 """
 

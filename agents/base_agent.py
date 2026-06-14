@@ -134,6 +134,7 @@ try:  # pragma: no cover
         APIStatusError,
         APITimeoutError,
         AsyncAnthropic,
+        AuthenticationError,
         BadRequestError,
         RateLimitError,
     )
@@ -153,7 +154,7 @@ except Exception:  # pragma: no cover
     class APITimeoutError(Exception):  # noqa: N818 — stub gdy brak anthropic SDK
         """Placeholder — przy _ANTHROPIC_OK=False nieużywany."""
 
-    RateLimitError = APIConnectionError = APIError = APIStatusError = BadRequestError = Exception
+    RateLimitError = APIConnectionError = APIError = APIStatusError = BadRequestError = AuthenticationError = Exception
     _ANTHROPIC_OK = False
     _RETRYABLE = (Exception,)
     _LLM_TIMEOUT_ERRORS = (asyncio.TimeoutError,)
@@ -452,7 +453,14 @@ class BaseAgent(ABC):
                     "would raise OR lower your confidence — this cuts motivated reasoning."
                 )
                 if council_mode == "fa2":
-                    _hygiene += " Every number carries a source or an explicit assumption."
+                    _hygiene += (
+                        " Every number carries a source or an explicit assumption. A FOURTH "
+                        "STATE — only for data outside the brief (market metrics, medians, "
+                        "report/benchmark names): wrap it in the marker ⟦weryfikuj: …⟧, e.g. "
+                        "\"⟦weryfikuj: median time-to-revenue 14 mo, OpenView⟧\". Without this "
+                        "marker do NOT state any external number or source — it is not an "
+                        "observation, it is an assumption to verify."
+                    )
                 if self.name in ("Szow", "Deega"):
                     _hygiene += (
                         " Before you cut something down, state in one sentence the strongest "
@@ -467,13 +475,32 @@ class BaseAgent(ABC):
                     "reasoning."
                 )
                 if council_mode == "fa2":
-                    _hygiene += " Każda liczba ma źródło albo jawne założenie."
+                    _hygiene += (
+                        " Każda liczba ma źródło albo jawne założenie. CZWARTY STAN — "
+                        "tylko dla danych spoza briefu (metryki rynkowe, mediany, nazwy "
+                        "raportów/benchmarków): owiń je w znacznik ⟦weryfikuj: …⟧, np. "
+                        "„⟦weryfikuj: mediana time-to-revenue 14 mc, OpenView⟧”. Bez tego "
+                        "znacznika NIE podawaj żadnej liczby ani źródła zewnętrznego — to "
+                        "nie obserwacja, to założenie do weryfikacji."
+                    )
                 if self.name in ("Szow", "Deega"):
                     _hygiene += (
                         " Zanim coś zetniesz, powiedz w jednym zdaniu najmocniejszą wersję "
                         "tezy, którą zaraz zakwestionujesz."
                     )
             parts.append(_hygiene)
+            # Ryzyko B (niwelacja): głosy najczęściej cytujące twarde dane dostają
+            # fa2-gated intensyfikator znacznika — żeby ⟦weryfikuj:…⟧ nie ginął pod
+            # obciążeniem. Tylko fa2 (w personal znacznik nie istnieje).
+            if council_mode == "fa2" and self.name in ("Obver", "Kogit", "Smaty", "Tai"):
+                parts.append(
+                    "You are one of the voices that cites hard data most — enforce "
+                    "⟦weryfikuj:…⟧ on yourself for EVERY external number/source, no exceptions."
+                    if language == "en"
+                    else "Jesteś jednym z głosów najczęściej cytujących twarde dane — "
+                    "egzekwuj na sobie ⟦weryfikuj:…⟧ przy KAŻDEJ liczbie/źródle spoza "
+                    "briefu, bez wyjątku."
+                )
 
         # Counter-hypothesis — tylko gdy ten agent pełni rolę testu przesłanki
         # (i nie jest Syezem). Szkielet (struktura testu) + kalibracja per głos,
@@ -957,7 +984,9 @@ class BaseAgent(ABC):
                 f"ZASADY TWOJEJ ANALIZY:\n"
                 f"1. Zacznij dokładnie tak: '{self.emoji} {self.name}: '\n"
                 f"2. Twoja odpowiedź to analiza z Twojej specjalizacji — konkretne liczby, "
-                f"nazwy platform, przedziały kosztów, metryki rynkowe.\n"
+                f"nazwy platform, przedziały kosztów, metryki rynkowe. Każda metryka "
+                f"rynkowa / nazwa raportu / mediana SPOZA briefu MUSI być w znaczniku "
+                f"⟦weryfikuj: …⟧; nie podawaj liczby zewnętrznej bez tego znacznika.\n"
                 f"3. Zaproponuj 1–2 konkretne nisze/pomysły pasujące do briefu, "
                 f"z krótkim uzasadnieniem dlaczego właśnie te.\n"
                 f"4. Długość: 4–8 zdań. Bez autoprezentacji i bez ogólników.\n\n"
@@ -974,7 +1003,12 @@ class BaseAgent(ABC):
                 f"'From my perspective...' — get to the point.\n"
                 f"2. DO NOT repeat the brief or the word 'Context:'.\n"
                 f"3. Max 3 sentences. Format: [observation] → [concrete suggestion "
-                f"that gets one item closer to being ticked off in the functionality_checklist].\n"
+                f"that gets one item closer to being ticked off in the functionality_checklist]. "
+                f"The suggestion must follow from YOUR specialization — one no other "
+                f"agent could voice; avoid generic all-purpose moves (Syez consolidates them). "
+                f"If your reflex move is one ANY voice could give (e.g. 'write/call someone "
+                f"and ask X') — drop it and give a micro-move only your pole could name, or "
+                f"give none.\n"
                 f"4. Start the message EXACTLY with: '{self.emoji} {self.name}: '\n"
                 f"   then the substance immediately.\n\n"
                 f"Reply now."
@@ -987,7 +1021,12 @@ class BaseAgent(ABC):
             f"'Z perspektywy...' — od razu konkret.\n"
             f"2. NIE powtarzaj briefu ani słowa 'Kontekst:'.\n"
             f"3. Maks. 3 zdania. Format: [obserwacja] → [konkretna sugestia "
-            f"przybliżająca odhaczenie pozycji z functionality_checklist].\n"
+            f"przybliżająca odhaczenie pozycji z functionality_checklist]. Sugestia musi "
+            f"wynikać z TWOJEJ specjalizacji — taka, której nie wygłosiłby inny agent; "
+            f"unikaj ruchów ogólnozadaniowych (Syez je skonsoliduje). Jeśli Twój "
+            f"odruchowy ruch mógłby paść z ust dowolnego głosu (np. «napisz/zadzwoń "
+            f"do kogoś i zapytaj o X») — porzuć go i daj mikro-ruch wyłącznie ze "
+            f"swojego bieguna albo nie dawaj żadnego.\n"
             f"4. Zacznij wypowiedź dokładnie tak: '{self.emoji} {self.name}: '\n"
             f"   a potem od razu treść merytoryczna.\n\n"
             f"Odpowiedz teraz."

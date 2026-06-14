@@ -439,7 +439,7 @@ export default function App() {
           {/* Brief / Debata — zamyka wysuwany panel */}
           <button
             type="button"
-            title="Brief / Debata"
+            title={t("nav.brief")}
             onClick={() => setSidePanel(null)}
             className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
               showBriefSetup && !sidePanel
@@ -452,7 +452,7 @@ export default function App() {
           {/* Marzenia — wysuwany panel */}
           <button
             type="button"
-            title="Marzenia i projekty"
+            title={t("nav.dreams")}
             onClick={() => setSidePanel((p) => p === "dreams" ? null : "dreams")}
             className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
               sidePanel === "dreams"
@@ -465,7 +465,7 @@ export default function App() {
           {/* Powiadomienia / Zobowiązania — wysuwany panel */}
           <button
             type="button"
-            title="Powiadomienia i zobowiązania"
+            title={t("nav.notifications")}
             onClick={() => setSidePanel((p) => p === "notifications" ? null : "notifications")}
             className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
               sidePanel === "notifications"
@@ -478,7 +478,7 @@ export default function App() {
           {/* Historia — wysuwany panel */}
           <button
             type="button"
-            title="Historia debat"
+            title={t("nav.history")}
             onClick={() => setSidePanel((p) => p === "history" ? null : "history")}
             className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
               sidePanel === "history"
@@ -492,7 +492,7 @@ export default function App() {
           {councilMode === "personal" && (
             <button
               type="button"
-              title="Mój obraz"
+              title={t("obraz.section")}
               onClick={() => setSidePanel((p) => p === "obraz" ? null : "obraz")}
               className={`w-9 h-9 rounded-lg flex items-center justify-center transition-colors duration-150 ${
                 sidePanel === "obraz"
@@ -509,7 +509,7 @@ export default function App() {
         <div className="shrink-0 pb-4 flex flex-col items-center border-t border-border/60 pt-3">
           <button
             type="button"
-            title="Ustawienia"
+            title={t("nav.settings")}
             onClick={() => setSetupOpen(true)}
             className="w-9 h-9 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-white/[0.04] hover:text-text-secondary transition-colors duration-150"
           >
@@ -524,10 +524,10 @@ export default function App() {
           {/* Header panelu */}
           <div className="shrink-0 h-14 flex items-center justify-between px-4 border-b border-border/80">
             <p className="aw-eyebrow">
-              {sidePanel === "dreams" && "Marzenia i projekty"}
-              {sidePanel === "history" && "Historia debat"}
-              {sidePanel === "notifications" && "Powiadomienia"}
-              {sidePanel === "obraz" && "Mój obraz"}
+              {sidePanel === "dreams" && t("nav.dreams")}
+              {sidePanel === "history" && t("nav.history")}
+              {sidePanel === "notifications" && t("nav.notifications_short")}
+              {sidePanel === "obraz" && t("obraz.section")}
             </p>
             <button
               type="button"
@@ -649,6 +649,7 @@ export default function App() {
               onModeChange={setMode}
               maxDescriptionLen={maxBriefChars}
               allowedModes={allowedDemoModes}
+              councilMode={councilMode}
             />
           </section>
           )}
@@ -723,12 +724,15 @@ export default function App() {
             </div>
           )}
 
-          {/* Prompt-bubble bieżącej kontynuacji — pokazuje follow-up usera tuż przed nową Radą.
-              Renderujemy tylko gdy to NIE jest pierwsza tura (brief #1 jest już widoczny w BriefForm). */}
-          {(state.turns?.length ?? 0) > 0 && state.currentPromptText && (
+          {/* Bąbel promptu bieżącej tury — echo briefu/follow-upu usera tuż przed Radą.
+              Pokazujemy też dla PIERWSZEJ tury (BriefForm znika po starcie, więc inaczej
+              brief #1 nie byłby widoczny przy wyniku ani w zapisanej debacie). */}
+          {state.currentPromptText && (agentList.length > 0 || state.synthesis) && (
             <FadeIn delay={0.04}>
             <div className="space-y-4">
-              <SectionDivider label={t("thread.your_followup")} />
+              <SectionDivider
+                label={(state.turns?.length ?? 0) > 0 ? t("thread.your_followup") : t("thread.your_brief")}
+              />
               <div className="aw-prose-bubble-accent">
                 {state.currentPromptText}
               </div>

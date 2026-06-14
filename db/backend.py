@@ -24,6 +24,33 @@ def runtime_use_postgres() -> bool:
     return _pg_pool is not None
 
 
+def _forbid_silent_sqlite_fallback() -> None:
+    """Fail-closed: DATABASE_URL wskazuje Postgres, ale pula nie żyje.
+
+    Bez tej bramki runtime (acquire_http_db / debate_stream_db) po cichu pisałby
+    do SQLite bez RLS — maskując brak izolacji per-tenant dokładnie w oknie awarii
+    DB (proces wystartował degraded, init puli padł). Startup-guard już to blokuje;
+    to jego runtime'owy odpowiednik. Świadoma furtka dev: AW_ALLOW_SQLITE_FALLBACK=1
+    (spójnie z init_database)."""
+    if not use_postgres() or _pg_pool is not None:
+        return
+    allow = os.getenv("AW_ALLOW_SQLITE_FALLBACK", "").strip().lower() in (
+        "1", "true", "yes",
+    )
+    if allow:
+        logger.warning(
+            "⚠️ AW_ALLOW_SQLITE_FALLBACK=1 — DATABASE_URL=Postgres, pula martwa, "
+            "runtime spada na SQLite (RLS NIE DZIAŁA). Tylko dev/offline."
+        )
+        return
+    raise RuntimeError(
+        "PostgreSQL niedostępny (pula nie zainicjalizowana), a DATABASE_URL wskazuje "
+        "Postgres. Odmawiam cichego fallbacku na SQLite — brak RLS = ryzyko cross-tenant. "
+        "Podnieś bazę (`docker compose up -d postgres`) i zrestartuj API, albo — jeśli "
+        "naprawdę chcesz dev bez izolacji — ustaw AW_ALLOW_SQLITE_FALLBACK=1."
+    )
+
+
 def _require_pg_pool() -> Any:
     if _pg_pool is None:
         raise RuntimeError(
@@ -210,6 +237,7 @@ async def acquire_http_db(sqlite_db_path: Path) -> AsyncIterator[Any]:
             yield PgConnection(raw)
         return
 
+    _forbid_silent_sqlite_fallback()
     import aiosqlite
 
     async with aiosqlite.connect(sqlite_db_path) as raw:
@@ -252,6 +280,7 @@ async def debate_stream_db(sqlite_db_path: Path) -> AsyncIterator[Any]:
             yield PgConnection(raw)
         return
 
+    _forbid_silent_sqlite_fallback()
     import aiosqlite
 
     conn = await aiosqlite.connect(sqlite_db_path)

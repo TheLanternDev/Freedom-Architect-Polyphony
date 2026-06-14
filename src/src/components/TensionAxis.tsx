@@ -109,7 +109,7 @@ export function TensionAxis({ axis, onFocusAnchor }: Props) {
         <h3 className="text-[11px] uppercase tracking-widest text-gold/60">
           Oś napięć — hierarchia Rady
         </h3>
-        <span className="text-[9px] text-white/30">structural ↔ somatic ↔ cień</span>
+        <span className="text-[9px] text-white/30">{axis.axis_label ?? "structural ↔ somatic ↔ cień"}</span>
       </div>
 
       {/* RDZEŃ — centralna oś wyciągnięta z prozy */}

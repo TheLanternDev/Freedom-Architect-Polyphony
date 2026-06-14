@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { SidebarSection } from "@/components/ui/SidebarSection";
+import { useLang } from "@/lib/i18n";
 
 export const LS_ONBOARDING_DONE = "aw_onboarding_v1_done";
 
 type Answers = Record<number, string>;
 
 export function OnboardingPanel() {
+  const { t } = useLang();
   const [open, setOpen] = useState(() => {
     if (typeof window === "undefined") return false;
     try { return localStorage.getItem(LS_ONBOARDING_DONE) !== "1"; }
@@ -66,10 +68,10 @@ export function OnboardingPanel() {
       <div className="w-full max-w-xl mx-4 rounded-2xl border border-gold/20 bg-surface/97 p-6 shadow-2xl">
         <div className="flex items-center justify-between mb-3">
           <span className="text-[11px] uppercase tracking-widest text-gold/55">
-            Pierwsze uruchomienie · {idx + 1}/{total}
+            {t("onb.first_run")} · {idx + 1}/{total}
           </span>
           <button onClick={() => close(false)} className="text-white/35 hover:text-white/80 text-sm">
-            Później
+            {t("onb.later")}
           </button>
         </div>
         {sekcja && (
@@ -82,7 +84,7 @@ export function OnboardingPanel() {
           rows={3}
           value={ans[idx] ?? ""}
           onChange={(e) => setAns({ ...ans, [idx]: e.target.value })}
-          placeholder="Odpowiedz w swoim tempie. Możesz pominąć."
+          placeholder={t("onb.placeholder")}
           className="w-full bg-white/[0.04] border border-white/10 rounded-lg p-3 text-[14px] focus:outline-none focus:border-teal/50"
         />
         <div className="flex justify-between mt-4">
@@ -91,21 +93,21 @@ export function OnboardingPanel() {
             onClick={() => setIdx(idx - 1)}
             className="text-[12px] text-white/40 disabled:opacity-30 hover:text-white/80"
           >
-            ← Wstecz
+            {t("onb.back")}
           </button>
           {idx < total - 1 ? (
             <button
               onClick={() => setIdx(idx + 1)}
               className="text-[12px] px-4 py-1.5 rounded-full bg-teal/15 border border-teal/40 text-teal hover:bg-teal/25"
             >
-              Dalej →
+              {t("onb.next")}
             </button>
           ) : (
             <button
               onClick={() => close(true)}
               className="text-[12px] px-4 py-1.5 rounded-full bg-teal/15 border border-teal/40 text-teal hover:bg-teal/25"
             >
-              Zakończ
+              {t("onb.finish")}
             </button>
           )}
         </div>
@@ -115,6 +117,7 @@ export function OnboardingPanel() {
 }
 
 export function DailyRitualPanel() {
+  const { t } = useLang();
   const [data, setData] = useState<{ poranek: string[]; wieczor: string[] } | null>(null);
 
   useEffect(() => {
@@ -133,7 +136,7 @@ export function DailyRitualPanel() {
   const hour = new Date().getHours();
   const block = hour < 14 ? "poranek" : "wieczor";
   const list = block === "poranek" ? data.poranek : data.wieczor;
-  const label = block === "poranek" ? "Rytuał poranny" : "Rytuał wieczorny";
+  const label = block === "poranek" ? t("ritual.morning") : t("ritual.evening");
 
   return (
     <SidebarSection label={label} collapsible className="no-print">

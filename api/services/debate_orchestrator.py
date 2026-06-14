@@ -331,20 +331,53 @@ def _pair_pole(a: str, b: str) -> str:
     return pa if _POLE_PRIORITY[pa] >= _POLE_PRIORITY[pb] else pb
 
 
+_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+
+
+def _strip_code_fences(text: str) -> str:
+    """Usuwa bloki ```…``` (m.in. ```mermaid) — etykiety węzłów zawierają imiona
+    agentów i zatruwały `why`/`prose_anchor` surowym kodem diagramu (C1)."""
+    if not text:
+        return ""
+    return _CODE_FENCE_RE.sub(" ", text)
+
+
+def _clip(s: str, limit: int = 200) -> str:
+    """Przycięcie po granicy słowa + „…" — zamiast twardego cięcia w połowie słowa (C3)."""
+    s = s.strip()
+    if len(s) <= limit:
+        return s
+    cut = s[:limit]
+    sp = cut.rfind(" ")
+    if sp > limit * 0.6:  # nie ucinaj zbyt agresywnie gdy brak spacji blisko końca
+        cut = cut[:sp]
+    return cut.rstrip() + "…"
+
+
 def _find_pair_sentence(prose: str, a: str, b: str) -> str:
-    """Zdanie z prozy wymieniające oba imiona agentów (mandat polifonii Stage 2)."""
+    """Zdanie z prozy (BEZ bloków kodu) wymieniające oba imiona agentów."""
     if not prose:
         return ""
     for s in re.split(r"(?<=[.!?])\s+", prose):
         if a in s and b in s:
-            return s.strip()[:240]
+            return _clip(s, 200)
     return ""
+
+
+# Trybo-zależny podpis osi (C4, wariant i): biegun = rejestr myślenia agenta,
+# nie temat. W fa2 ten sam słownik biegunów, ale podpis sygnalizuje, że opisuje
+# SPOSÓB rozumowania (nie „somatyczność" tematu biznesowego).
+_AXIS_LABEL: dict[str, str] = {
+    "personal": "structural ↔ somatic ↔ cień",
+    "fa2": "rejestr myślenia: strukturalny ↔ somatyczny ↔ cień",
+}
 
 
 def build_tension_axis(
     full_voices: dict[str, str],
     live_pairs: list[dict[str, Any]],
     synthesis: str,
+    council_mode: str = "personal",
 ) -> Optional[dict[str, Any]]:
     """Buduje hierarchiczny payload osi napięć. None → frontend wraca do Mermaida."""
     if not live_pairs:
@@ -355,28 +388,38 @@ def build_tension_axis(
         return None
     pairs = sorted(pairs, key=lambda p: float(p.get("intensity", 0)), reverse=True)[:8]
 
+    prose = _strip_code_fences(synthesis)
+
     tensions: list[dict[str, Any]] = []
     for p in pairs:
         a, b = p["a"], p["b"]
         inten = round(float(p.get("intensity", 0)), 3)
-        sent = _find_pair_sentence(synthesis, a, b)
+        pole = _pair_pole(a, b)
+        sent = _find_pair_sentence(prose, a, b)
         tensions.append({
             "between": [a, b],
-            "why": sent,
+            # C2: gdy proza nie nazwała tej pary — deterministyczny fallback,
+            # żeby mapa nigdy nie miała pustego `why`. Anchor zostaje null (brak
+            # highlightu w prozie), ale to nie „garbage".
+            "why": sent or f"Napięcie na osi {pole}: {a} ↔ {b}",
             "intensity": inten,
-            "axis_pole": _pair_pole(a, b),
+            "axis_pole": pole,
             "depth": _axis_depth(inten),
             "prose_anchor": sent or None,
         })
 
     ta, tb = pairs[0]["a"], pairs[0]["b"]
-    core_sent = _find_pair_sentence(synthesis, ta, tb)
+    core_sent = _find_pair_sentence(prose, ta, tb)
     central_axis = {
         "core": core_sent or f"{ta} ↔ {tb}",
         "poles": [ta, tb],
         "dominant_pole": _pair_pole(ta, tb),
     }
-    return {"central_axis": central_axis, "tensions": tensions}
+    return {
+        "central_axis": central_axis,
+        "tensions": tensions,
+        "axis_label": _AXIS_LABEL.get(council_mode, _AXIS_LABEL["personal"]),
+    }
 
 
 def build_syez_payload(
@@ -424,7 +467,15 @@ def build_syez_payload(
             "both agents' names (e.g. 'Kogit and Szow are in tension because...'). "
             "FORBIDDEN: averaging the conflict into compromise — if two voices pull "
             "in opposite directions, the synthesis must show that, not hide it. "
-            "Contradiction is information, not an error to be resolved."
+            "Contradiction is information, not an error to be resolved.\n"
+            "• CONSOLIDATION MANDATE (always): agents may have independently reached "
+            "a similar move — consolidating it is YOUR job, not theirs. Do not repeat "
+            "the same move nine times. Surface EXACTLY ONE closing move (≤60 min); if "
+            "many voices converged on a variant of it, name that explicitly as a signal "
+            "('most of the Council converged on X — not a coincidence, a strength'), "
+            "then show the MAP OF DIFFERENT PATHS: who, from which pole (somatic / "
+            "relational / structural / shadow), reached that move by a different route. "
+            "Convergence of goal with divergence of reasoning is the strongest result."
         )
         if brief.mode == "codzienny":
             parts.append(
@@ -472,7 +523,15 @@ def build_syez_payload(
         "imion obu agentów (np. 'Kogit i Szow są w napięciu, ponieważ...'). "
         "ZAKAZ uśredniania tego konfliktu do kompromisu — jeśli dwa głosy ciągną "
         "w przeciwne strony, synteza musi to pokazać, nie ukrywać. "
-        "Sprzeczność jest informacją, nie błędem do wyeliminowania."
+        "Sprzeczność jest informacją, nie błędem do wyeliminowania.\n"
+        "• MANDAT KONSOLIDACJI (zawsze): agenci mogli niezależnie dojść do "
+        "podobnego ruchu — to Twoje zadanie, nie ich. Nie powtarzaj tego samego "
+        "ruchu dziewięć razy. Wyłoń DOKŁADNIE JEDEN ruch domknięcia (≤60 min), a "
+        "jeśli wiele głosów zbiegło się do jego wariantu — nazwij to wprost jako "
+        "sygnał („większość Rady zeszła się do X — to nie przypadek, to siła”), "
+        "po czym pokaż MAPĘ RÓŻNYCH DRÓG: kto i z jakiego bieguna (somatyczny / "
+        "relacyjny / strukturalny / cień) doszedł do tego ruchu innym torem. "
+        "Zbieżność celu przy rozbieżności uzasadnień jest najmocniejszym wynikiem."
     )
     if brief.mode == "codzienny":
         parts.append(
@@ -783,7 +842,7 @@ async def _phase_synthesis(
     # ── Zadanie 1: hierarchiczna oś napięć (fallback do Mermaida gdy None) ─
     _axis: Optional[dict[str, Any]] = None
     try:
-        _axis = build_tension_axis(full_voices, pairs, synthesis)
+        _axis = build_tension_axis(full_voices, pairs, synthesis, council_mode)
         if _axis is not None:
             yield _sse("tension_axis", _axis)
     except Exception as e:  # noqa: BLE001 — wizualizacja nie może wywrócić syntezy

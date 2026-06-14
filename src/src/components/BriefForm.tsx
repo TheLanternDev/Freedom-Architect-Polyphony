@@ -43,6 +43,8 @@ interface Props {
   onModeChange?: (m: Brief["mode"]) => void;
   maxDescriptionLen?: number;
   allowedModes?: string[];
+  /** "personal" | "fa2" — przełącza zestaw gotowych briefów. */
+  councilMode?: string;
 }
 
 function tplPreview(text: string, max = 88): string {
@@ -59,6 +61,7 @@ export function BriefForm({
   onModeChange,
   maxDescriptionLen = 8000,
   allowedModes,
+  councilMode = "personal",
 }: Props) {
   const { lang, t } = useLang();
   const [description, setDescription] = useState("");
@@ -93,30 +96,54 @@ export function BriefForm({
 
   const templates = useMemo(
     () =>
-      [
-        {
-          labelKey: "brief.tpl.quit.label",
-          descKey: "brief.tpl.quit",
-          mode: "pelna" as const,
-          category: "decyzja" as const,
-          icon: FileText,
-        },
-        {
-          labelKey: "brief.tpl.dream.label",
-          descKey: "brief.tpl.dream",
-          mode: "marzen" as const,
-          category: "marzenie" as const,
-          icon: Sparkles,
-        },
-        {
-          labelKey: "brief.tpl.pattern.label",
-          descKey: "brief.tpl.pattern",
-          mode: "schematy" as const,
-          category: "schemat" as const,
-          icon: GitBranch,
-        },
-      ],
-    [],
+      councilMode === "fa2"
+        ? [
+            {
+              labelKey: "brief.tpl.fa2_saas.label",
+              descKey: "brief.tpl.fa2_saas",
+              mode: "pelna" as const,
+              category: "decyzja" as const,
+              icon: GitBranch,
+            },
+            {
+              labelKey: "brief.tpl.fa2_pricing.label",
+              descKey: "brief.tpl.fa2_pricing",
+              mode: "pelna" as const,
+              category: "decyzja" as const,
+              icon: FileText,
+            },
+            {
+              labelKey: "brief.tpl.fa2_gtm.label",
+              descKey: "brief.tpl.fa2_gtm",
+              mode: "pelna" as const,
+              category: "decyzja" as const,
+              icon: Sparkles,
+            },
+          ]
+        : [
+            {
+              labelKey: "brief.tpl.quit.label",
+              descKey: "brief.tpl.quit",
+              mode: "pelna" as const,
+              category: "decyzja" as const,
+              icon: FileText,
+            },
+            {
+              labelKey: "brief.tpl.dream.label",
+              descKey: "brief.tpl.dream",
+              mode: "marzen" as const,
+              category: "marzenie" as const,
+              icon: Sparkles,
+            },
+            {
+              labelKey: "brief.tpl.pattern.label",
+              descKey: "brief.tpl.pattern",
+              mode: "schematy" as const,
+              category: "schemat" as const,
+              icon: GitBranch,
+            },
+          ],
+    [councilMode],
   );
 
   function dismissOnboarding() {

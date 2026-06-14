@@ -115,6 +115,8 @@ export interface CentralAxis {
 export interface TensionAxisPayload {
   central_axis: CentralAxis;
   tensions: TensionNode[];
+  /** Trybo-zależny podpis osi (np. fa2: „rejestr myślenia: …"). */
+  axis_label?: string;
 }
 
 export interface CompletionAuditViolationPayload {
