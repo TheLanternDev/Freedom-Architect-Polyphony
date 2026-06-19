@@ -1,2 +1,0 @@
-[console_scripts]
-aw-reels = aw_reels.cli:main

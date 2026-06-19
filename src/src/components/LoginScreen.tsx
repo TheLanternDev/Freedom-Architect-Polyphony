@@ -62,6 +62,15 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
       setError(null);
       setBusy(true);
 
+      // Walidacja klienta zgodna z RegisterRequest/LoginRequest (api/routers/auth.py):
+      // register: username ≥2, hasło ≥6; login: hasło ≥4. Czytelny komunikat zamiast 422.
+      const minPw = mode === "register" ? 6 : 4;
+      if (username.trim().length < 2 || password.length < minPw) {
+        setError(`Nazwa min. 2 znaki, hasło min. ${minPw} znaków.`);
+        setBusy(false);
+        return;
+      }
+
       const endpoint =
         mode === "login" ? "/auth/login" : "/auth/register";
       const body: Record<string, string> = {

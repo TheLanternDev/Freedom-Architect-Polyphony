@@ -1,19 +1,22 @@
 # Architekt Wolności — Pełna Specyfikacja Techniczna
 
-> **Źródło prawdy:** ten dokument jest wyprowadzony **wyłącznie z faktycznego stanu kodu** (`main.py`, `agents/`, `core/`, `api/`, `db/`, `config/`), zweryfikowanego 2026-05-25. Nie pochodzi z wcześniejszych dokumentów `docs/` — gdzie kod i dokumenty się różnią, **rozstrzyga kod**.
+> **Źródło prawdy:** ten dokument jest wyprowadzony **wyłącznie z faktycznego stanu kodu** (`main.py`, `agents/`, `core/`, `api/`, `db/`, `config/`), zweryfikowanego **2026-06-18**. Przegląd funkcjonalny: `docs/ARCHITEKT_WOLNOSCI_OPIS.md`. Strategia: `docs/roadmap/ROADMAP_2026-06-17.md`. Gdzie kod i dokumenty się różnią, **rozstrzyga kod**.
 
 ---
 
-## 0. Rozbieżności kodu↔docs (rozwiązane 2026-05-25)
+## 0. Rozbieżności kodu↔docs (rozwiązane 2026-05-25; przegląd 2026-06-18)
 
-Wszystkie poniższe zostały usunięte — `docs/ARCHITECTURE.md` i `SPEC_CURRENT.md` zsynchronizowane z kodem.
+Wszystkie poniższe zostały usunięte — `docs/ARCHITECTURE.md`, `ARCHITEKT_WOLNOSCI_OPIS.md` i `SPEC_CURRENT.md` zsynchronizowane z kodem.
 
 | # | Obszar | Było (stare docs) | Stan faktyczny (kod) | Status |
 |---|--------|-------------------|----------------------|--------|
-| 1 | Modele LLM | Hybryda Haiku/Sonnet/Opus | Jednolity `claude-sonnet-4-6` (`config/agent_models.py`) | ✅ poprawiono ARCHITECTURE.md |
-| 2 | Integracje | Brak opisu | Router `/integrations` (Notion/Todoist/GCal) | ✅ opisano w sekcji 3 |
-| 3 | Wersja | „v3.4" w docstringu | app = 3.3 (etykieta iteracji modeli, nie wersja) | ✅ przeredagowano |
-| 4 | Role FA2 | 10 ról „Strategos/Operator/…" | Te same 9 agentów, biznesowe prompty (`business_fa2/config/roles.py`) | ✅ poprawiono ARCHITECTURE.md |
+| 1 | Modele LLM | Hybryda Haiku/Sonnet/Opus | Jednolity `claude-sonnet-4-6` (`config/agent_models.py`) | ✅ |
+| 2 | Integracje | Brak opisu | Router `/integrations` (Notion/Todoist/GCal) | ✅ |
+| 3 | Wersja | „v3.4" w docstringu | app = 3.3.0 (etykieta iteracji modeli) | ✅ |
+| 4 | Role FA2 | 10 ról „Strategos/Operator/…" | Te same 9 agentów, biznesowe prompty (`business_fa2/config/roles.py`) | ✅ |
+| 5 | Dystrybucja | SaaS / multi-tenant jako tor krytyczny | **Pudełko BYOK local-first**; RLS uśpione do hostingu (roadmap L1) | ✅ 2026-06-18 |
+| 6 | `tools/ig-reels` | Opisany jako część ekosystemu | **Usunięty**; zastąpiony `tools/reels-generator/` | ✅ 2026-06-18 |
+| 7 | POST `/dreams` | W niektórych docs | Marzenia powstają w pipeline debaty (`dream_service.py`), tylko GET | ✅ 2026-06-18 |
 
 ---
 
@@ -355,8 +358,8 @@ JWT multi-tenant; rejestracja/login z hashem hasła; `http_guard` wyciąga `tena
 ### Rate limiting (`api/_rate_limit.py`, `main.py`, `api/routers/{auth,account}.py`)
 `slowapi` z `key_func=jwt_or_ip_key`: per JWT `sub` gdy autentykowany (`u:<sub>`), fallback per IP (`ip:<addr>`) gdy nie. Storage: Redis (`REDIS_URL`) lub in-memory fallback. Limit per-user jest stabilny niezależnie od sieci klienta — dwóch userów za NAT-em mają niezależne buckety, jeden user z VPN-em nie obchodzi limitu rotacją IP.
 
-### Row-Level Security (`db/migrations/0002_enable_rls.sql`, `db/pg_wrap.py`)
-Defense-in-depth dla multi-tenancy w PostgreSQL. Każda tabela z `tenant_id` (dreams, debates, agent_voices, projects, functionality_items, completion_audits, commitments, agent_evolution) ma `ENABLE` + `FORCE ROW LEVEL SECURITY` oraz policy `tenant_isolation`: `USING/CHECK (tenant_id = current_setting('architekt.tenant_id', true) OR current_setting(...) = '')`. `PgConnection.execute` przed każdym query woła `SELECT set_config('architekt.tenant_id', <ctx>, false)` z aktywnego `ContextVar`. Bez tej warstwy bezpieczeństwo zależałoby wyłącznie od poprawności repo. Walidacja end-to-end: smoke w `db/migrations/0002_enable_rls.sql` (komentarz) — INSERT jako user-A + SELECT jako user-B musi zwrócić 0 wierszy.
+### Row-Level Security (`db/migrations/0002_enable_rls.sql`, `0009_harden_rls_bypass.sql`, `db/pg_wrap.py`)
+Defense-in-depth dla multi-tenancy w PostgreSQL (aktywne przy hosted SaaS; w modelu pudełkowym BYOK — uśpione, SQLite lokalnie). 12 tabel z `tenant_id` ma `ENABLE` + `FORCE ROW LEVEL SECURITY` oraz policy `tenant_isolation`: `USING/CHECK (tenant_id = current_setting('architekt.tenant_id', true))` — **bez** bypassu pustego GUC (migracja `0009`, fail-closed). Bypass DDL tylko przez jawny `architekt.migration_bypass='on'` w runnerze migracji. `PgConnection.execute` ustawia `set_config('architekt.tenant_id', <ctx>, true)` parametryzowane. Walidacja: `tests/test_rls_postgres_isolation.py` + job `rls-smoke` w CI.
 
 **WYMÓG PRODUKCYJNY:** aplikacja **MUSI** łączyć się z PG jako rola `NOSUPERUSER NOBYPASSRLS`. Superuser i role z `BYPASSRLS` omijają RLS niezależnie od `FORCE` — to zaprojektowane zachowanie Postgresa, nie bug. Supabase / RDS / Render / Fly dają zwykle dedykowanego "application user" bez tych przywilejów; weryfikuj przy deploy'u:
 ```sql

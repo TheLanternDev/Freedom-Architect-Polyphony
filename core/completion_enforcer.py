@@ -116,6 +116,17 @@ class Project(BaseModel):
     archived_at: Optional[str] = None
     functionality: list[FunctionalityItem] = Field(default_factory=list)
 
+    @field_validator(
+        "started_at", "last_progress_at", "completed_at", "archived_at", mode="before"
+    )
+    @classmethod
+    def _coerce_datetime_to_iso(cls, v: object) -> object:
+        # Postgres (asyncpg) zwraca natywny datetime; SQLite — str ISO.
+        # Model trzyma str ISO (zob. days_since_progress); koercja na froncie.
+        if isinstance(v, datetime):
+            return v.isoformat()
+        return v
+
     def completion_ratio(self) -> float:
         if not self.functionality:
             return 0.0
