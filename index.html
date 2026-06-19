@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Freedom Architect: Polyphony — Rada Nadzorcza</title>
+  <meta name="description" content="Dziewięć perspektyw. Jedna decyzja. Polifonia bez spłaszczania złożoności — warstwa narracyjna Freedom Architect.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/main.css">
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="container inner">
+      <a href="/" class="brand">Freedom Architect<span>:</span> Polyphony</a>
+      <nav class="nav-links">
+        <a href="#rada">Rada</a>
+        <a href="#jak-dziala">Jak działa</a>
+        <a href="/fragment">Fragment</a>
+        <a href="/testuj">Program testowy</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <p class="caps section-label">Warstwa narracyjna · pre-produkcja</p>
+        <h1 class="hero-hook">Decyzja, której nie podejmujesz sam — bo nikt nie widzi całej mapy.</h1>
+        <p class="lead" style="max-width: 38rem; margin-top: 1.25rem;">
+          Freedom Architect: Polyphony to nie kolejny chatbot z odpowiedzią. To Rada — dziewięć odrębnych perspektyw,
+          które ścierają się ze sobą, zanim powstanie synteza. Bez motywacyjnego języka. Bez obietnicy natychmiastowego dostępu.
+        </p>
+        <div class="btn-row">
+          <a href="#program" class="btn btn-primary">Zgłoś się do programu testowego</a>
+          <a href="#rada" class="btn btn-ghost">Poznaj Radę</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Rada Nadzorcza -->
+    <section id="rada">
+      <div class="container">
+        <p class="caps section-label">Rada Nadzorcza</p>
+        <h2 class="section-title">Dziewięć głosów. Żaden nie jest „główny”.</h2>
+        <p class="lead">Każdy agent reprezentuje inną warstwę poznania. Razem tworzą polifonię — nie konsensus za wszelką cenę.</p>
+
+        <div class="council-grid" id="council-grid">
+          <!-- wypełniane przez JS z kanonu manifest.yaml -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Jak działa + Canvas -->
+    <section id="jak-dziala">
+      <div class="container split">
+        <div>
+          <p class="caps section-label">Jak działa</p>
+          <h2 class="section-title">Ścieranie perspektyw. Synteza bez uproszczeń.</h2>
+          <p class="muted" style="margin-bottom: 1rem;">
+            Nie szukamy jednej „właściwej” odpowiedzi. Mapujemy napięcia między logiką, ciałem, cieniem i czasem —
+            a potem budujemy syntezę, która nie zgładza tego, co niewygodne.
+          </p>
+          <p class="muted">
+            Porusz kursorem nad wizualizacją. Węzły to perspektywy Rady. Złoty rdzeń — moment syntezy,
+            w którym złożoność pozostaje złożonością, ale staje się czytelna.
+          </p>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="polyphony-canvas" aria-label="Wizualizacja polifonii Rady"></canvas>
+          <p class="canvas-caption">Polifonia — linie napięć i złoty moment syntezy</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Program testowy -->
+    <section id="program">
+      <div class="container split">
+        <div>
+          <p class="caps section-label">Program testowy</p>
+          <h2 class="section-title">Kontrolowany dostęp. Nie dla wszystkich.</h2>
+          <p class="muted" style="margin-bottom: 1rem;">
+            System jest w stanie pre-produkcyjnym. Program testowy jest zamknięty — rekrutujemy liderów RevOps
+            i Operations, którzy pracują na prawdziwych decyzjach, nie na demo.
+          </p>
+          <p class="muted">
+            Zgłoszenie nie gwarantuje dostępu. Odpowiadamy tylko wybranym kandydatom.
+          </p>
+        </div>
+
+        <div class="form-panel">
+          <form data-polyphony-form novalidate>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="name">Imię i nazwisko</label>
+                <input type="text" id="name" name="name" required autocomplete="name" maxlength="200">
+              </div>
+              <div class="form-field">
+                <label for="company">Stanowisko / Firma</label>
+                <input type="text" id="company" name="company" required maxlength="200">
+              </div>
+              <div class="form-field">
+                <label for="email">Email służbowy</label>
+                <input type="email" id="email" name="email" required autocomplete="email" maxlength="200">
+              </div>
+              <!-- Honeypot -->
+              <div class="hp-field" aria-hidden="true">
+                <label for="website">Website</label>
+                <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+                <label for="hp">HP</label>
+                <input type="text" id="hp" name="hp" tabindex="-1" autocomplete="off">
+              </div>
+              <div class="cf-turnstile" data-theme="dark"></div>
+              <button type="submit" class="btn btn-primary" style="width:100%">Wyślij zgłoszenie</button>
+            </div>
+            <p class="form-note">Dane trafiają do zabezpieczonego endpointu. Bez spamu. Bez sprzedaży list mailingowych.</p>
+            <div class="form-status" role="status" aria-live="polite"></div>
+          </form>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container inner">
+      <span>Freedom Architect: Polyphony · mypolyphony.com</span>
+      <span class="muted">Warstwa narracyjna · 2026</span>
+    </div>
+  </footer>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/agents.js"></script>
+  <script src="/js/canvas/polyphony-main.js"></script>
+  <script src="/js/form.js"></script>
+  <script>
+    // Karty Rady z kanonu
+    const grid = document.getElementById("council-grid");
+    AGENTS.forEach((a) => {
+      const el = document.createElement("a");
+      el.href = `/${a.id}`;
+      el.className = "card";
+      el.innerHTML = `
+        <p class="caps card-role">${a.role}</p>
+        <h3 class="card-name">${a.name}</h3>
+        <p class="card-tagline">${a.tagline}</p>
+      `;
+      grid.appendChild(el);
+    });
+    initPolyphonyCanvas("polyphony-canvas");
+  </script>
+</body>
+</html>
