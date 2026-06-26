@@ -8,6 +8,10 @@
     {
       "pattern": "mypolyphony.com/*",
       "zone_name": "mypolyphony.com"
+    },
+    {
+      "pattern": "www.mypolyphony.com/*",
+      "zone_name": "mypolyphony.com"
     }
   ],
   "kv_namespaces": [
