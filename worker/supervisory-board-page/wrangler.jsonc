@@ -17,7 +17,7 @@
   "kv_namespaces": [
     {
       "binding": "FORM_COUNTER",
-      "id": "78b389b2bcaa4ecb9b52edb1a0e8d156"
+      "id": "78b389b2bcaa4ecb9b52edb1a0e8d156" // pragma: allowlist secret
     }
   ]
 }
