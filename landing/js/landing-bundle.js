@@ -480,6 +480,7 @@ function setHover(name){
 }
 function pickNameAt(clientX, clientY){
   const rect = canvas.getBoundingClientRect();
+  if(!rect.width || !rect.height) return null;
   const x = ((clientX - rect.left) / rect.width) * 2 - 1;
   const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
   mouseNDC.set(x, y);
@@ -493,10 +494,12 @@ canvas.addEventListener('pointermove', (e)=>{
   if(!e.isPrimary) return;
   pickNameAt(e.clientX, e.clientY);
 });
-canvas.addEventListener('click', (e)=>{
-  if(dragging) return;
+canvas.addEventListener('pointerdown', (e)=>{
+  if(!e.isPrimary) return;
+  if(currentView==='aksjomat') return;
   const picked = pickNameAt(e.clientX, e.clientY);
   if(!picked) return;
+  e.preventDefault();
   setHover(picked);
   focusAgent(picked);
 });
@@ -505,6 +508,8 @@ canvas.addEventListener('click', (e)=>{
 let dragging = false, dragStart = null;
 canvas.addEventListener('pointerdown', e=>{
   if(currentView!=='aksjomat') return;
+  canvas.style.cursor = 'grabbing';
+  canvas.style.touchAction = 'none';
   dragging = true; dragStart = {x:e.clientX, y:e.clientY, rx:triadRot.x, ry:triadRot.y};
 });
 window.addEventListener('pointermove', e=>{
@@ -515,6 +520,8 @@ window.addEventListener('pointermove', e=>{
 window.addEventListener('pointerup', e=>{
   if(dragging && dragStart){ triadRot.vx = 0; triadRot.vy = Math.max(-.02, Math.min(.02, (e.movementX||0)*.0009)) || .0016; }
   setTimeout(()=>dragging=false, 30);
+  canvas.style.cursor = hovered ? 'pointer' : (currentView==='aksjomat' ? 'grab' : 'default');
+  canvas.style.touchAction = currentView==='aksjomat' ? 'none' : 'manipulation';
 });
 
 /* ---------- VIEW MANAGER — cinematic camera tabs ---------- */
@@ -551,6 +558,12 @@ function setView(name, opts={}){
   const prevEl = document.getElementById('v-'+currentView);
   currentView = name;
   closeAgentDetail(true);
+  if(canvas){
+    canvas.style.touchAction = name==='aksjomat' ? 'none' : 'manipulation';
+    if(name==='aksjomat') canvas.style.cursor = 'grab';
+    else if(hovered) canvas.style.cursor = 'pointer';
+    else canvas.style.cursor = 'default';
+  }
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
   const V = VIEWS[name];
   const D = REDUCED ? 0 : 1.1;
