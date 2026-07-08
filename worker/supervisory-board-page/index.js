@@ -8,7 +8,8 @@ const HSTS_VALUE = 'max-age=31536000; includeSubDomains; preload';
 const STATIC_CACHE_CONTROL = 'public, max-age=604800, immutable';
 const HTML_CACHE_CONTROL = 'public, max-age=0, must-revalidate';
 const STATIC_PATH_RE =
-  /^\/(?:styles|js|assets)\/|\.(?:css|js|png|jpe?g|webp|svg|woff2?|ico|yaml)$/i;
+  /^\/(?:styles|js|assets|landing|demo\/assets|demo\/fixtures)\/|\.(?:css|js|json|png|jpe?g|webp|svg|woff2?|ico|yaml)$/i;
+const MOBILE_CSS_HREF = '/styles/mobile.css?v=20260708';
 
 const CLEAN_URL_PATHS = new Set([
   '/firmy',
@@ -421,6 +422,37 @@ async function handleSubmit(request, env) {
   );
 }
 
+function isHtmlResponse(response) {
+  const ct = response.headers.get('content-type') || '';
+  return ct.includes('text/html');
+}
+
+async function injectMobileStylesheet(response) {
+  if (!isHtmlResponse(response)) return response;
+  const html = await response.text();
+  if (!html.includes('</head>') || html.includes('/styles/mobile.css')) {
+    return new Response(html, response);
+  }
+  const injected = html.replace(
+    '</head>',
+    `  <link rel="stylesheet" href="${MOBILE_CSS_HREF}">\n</head>`,
+  );
+  return new Response(injected, response);
+}
+
+function applySecurityHeaders(response, pathname) {
+  const newHeaders = new Headers(response.headers);
+  for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
+    newHeaders.set(key, value);
+  }
+  newHeaders.set('Cache-Control', cacheControlForPath(pathname));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -448,16 +480,10 @@ export default {
       }
     }
 
-    const response = await fetchPagesAsset(request, url.pathname);
-    const newHeaders = new Headers(response.headers);
-    for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
-      newHeaders.set(key, value);
+    let response = await fetchPagesAsset(request, url.pathname);
+    if (isHtmlResponse(response)) {
+      response = await injectMobileStylesheet(response);
     }
-    newHeaders.set('Cache-Control', cacheControlForPath(url.pathname));
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders,
-    });
+    return applySecurityHeaders(response, url.pathname);
   },
 };

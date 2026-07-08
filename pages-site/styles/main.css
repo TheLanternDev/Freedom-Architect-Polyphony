@@ -407,3 +407,6 @@ section { padding: 4.5rem 0; }
 /* Two-column layout */
 .split { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; align-items: start; }
 @media (max-width: 860px) { .split { grid-template-columns: 1fr; } }
+
+/* Mobile layout — loaded on all viewports; rules gated inside mobile.css */
+@import url("mobile.css");
