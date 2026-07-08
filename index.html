@@ -1,83 +1,239 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="pl"
+  data-title-pl="Architekt Wolności — Rada Nadzorcza"
+  data-title-en="Freedom Architect — Supervisory Board"
+  data-desc-pl="Twoja Podświadomość ma głos. Dziewięć perspektyw. Jedna decyzja."
+  data-desc-en="Your Subconscious has a voice. Nine perspectives. One decision.">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Freedom Architect: Polyphony — Rada Nadzorcza</title>
-  <meta name="description" content="Dziewięć perspektyw. Jedna decyzja. Polifonia bez spłaszczania złożoności — dla firm i dla Ciebie.">
-  <link rel="icon" href="/assets/favicon.svg?v=1" type="image/svg+xml">
-  <link rel="canonical" href="https://mypolyphony.com/">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Freedom Architect: Polyphony">
-  <meta property="og:url" content="https://mypolyphony.com/">
-  <meta property="og:title" content="Freedom Architect: Polyphony — Rada Nadzorcza">
-  <meta property="og:description" content="Dziewięć perspektyw. Jedna decyzja. Polifonia bez spłaszczania złożoności — dla firm i dla Ciebie.">
-  <meta property="og:locale" content="pl_PL">
-  <meta name="twitter:card" content="summary">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles/main.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Architekt Wolności — Rada Nadzorcza. Dziewięć głosów, jedna decyzja. Multi-agent system for conscious decision-making · mypolyphony.com">
+<link rel="icon" href="/assets/favicon.svg?v=1" type="image/svg+xml">
+<link rel="canonical" href="https://mypolyphony.com/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Architekt Wolności">
+<meta property="og:url" content="https://mypolyphony.com/">
+<meta property="og:title" content="Architekt Wolności — Rada Nadzorcza">
+<meta property="og:description" content="Twoja Podświadomość ma głos. Dziewięć perspektyw. Jedna decyzja.">
+<meta property="og:locale" content="pl_PL">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#040406">
+<title>Architekt Wolności — Rada Nadzorcza</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<link rel="stylesheet" href="/landing/css/base.css?v=4">
+
 </head>
-<body data-page="home">
+<body data-scroll="1">
+<div id="loader">
+  <div>
+    <div class="loader-word">ARCHITEKT · WOLNOŚCI</div>
+    <div class="loader-sub"><span class="lang-pl">INICJALIZACJA RADY NADZORCZEJ</span><span class="lang-en">INITIALIZING THE SUPERVISORY BOARD</span></div>
+    <div class="loader-bar"><i></i></div>
+    <div class="loader-count">00</div>
+  </div>
+</div>
+<div id="cursor"></div><div id="cursor-ring"></div>
+<canvas id="scene"></canvas>
+<div class="veil"></div>
+<div class="grain"></div>
+<div id="nodeTip"><b></b><span></span></div>
 
-  <header class="site-header">
-    <div class="container inner">
-      <a href="/" class="brand">Freedom Architect<span>:</span> Polyphony</a>
-      <nav class="nav-links">
-        <a href="/firmy" data-i18n="nav.firms">Dla firm</a>
-        <a href="/osobista" data-i18n="nav.personal">Dla Ciebie</a>
-        <a href="/fragment" data-i18n="nav.fragment">Fragment</a>
-        <a href="/firmy#jak-dziala" data-i18n="nav.how">Jak działa</a>
-        <a href="/testuj" data-i18n="nav.test">Program testowy</a>
-      </nav>
+<nav id="topbar">
+  <div class="logo">ARCHITEKT<span>·</span>WOLNOŚCI</div>
+  <div id="tabs">
+    <button class="tab active" data-view="rada"><span class="lang-pl">RADA</span><span class="lang-en">COUNCIL</span></button>
+    <button class="tab" data-view="debata"><span class="lang-pl">DEBATA</span><span class="lang-en">DEBATE</span></button>
+    <button class="tab" data-view="aksjomat"><span class="lang-pl">AKSJOMAT 0</span><span class="lang-en">AXIOM 0</span></button>
+    <button class="tab" data-view="personal">PERSONAL</button>
+    <button class="tab" data-view="business">BUSINESS</button>
+    <button class="tab" data-view="daily">DAILY SIGNAL</button>
+  </div>
+  <button id="menutoggle" aria-label="Menu" title="Menu">☰</button>
+  <div class="bar-actions">
+    <a class="tab nav-link" href="/demo"><span class="lang-pl">DEMO</span><span class="lang-en">DEMO</span></a>
+    <a class="tab nav-link" href="/fragment"><span class="lang-pl">FRAGMENT</span><span class="lang-en">FRAGMENT</span></a>
+    <button id="audiotoggle" data-title-pl="Dźwięk ambient" data-title-en="Ambient sound">◎</button>
+    <button id="langtoggle">EN</button>
+    <a class="enter-link" href="/testuj"><span class="lang-pl">PROGRAM TESTOWY →</span><span class="lang-en">JOIN BETA →</span></a>
+  </div>
+</nav>
+
+<div id="hud">
+  <div><span class="lang-pl">WIDOK</span><span class="lang-en">VIEW</span> <b id="hudView">RADA</b></div>
+  <div>X-Council-Mode: <b id="hudMode">personal</b></div>
+  <div><span class="lang-pl">RDZEŃ</span><span class="lang-en">CORE</span> <b id="hudCore">SYEZ · <span class="lang-pl">LUSTRO</span><span class="lang-en">MIRROR</span></b></div>
+</div>
+<div id="hudRight">9 <span class="lang-pl">GŁOSÓW</span><span class="lang-en">VOICES</span> · 1 <span class="lang-pl">SYNTEZA</span><span class="lang-en">SYNTHESIS</span> · 0 <span class="lang-pl">GOTOWYCH ODPOWIEDZI</span><span class="lang-en">READY ANSWERS</span></div>
+<div id="footnote">© 2026 ARCHITEKT WOLNOŚCI · MYPOLYPHONY.COM · <span class="lang-pl">TO NIE JEST POMOC MEDYCZNA ANI TERAPEUTYCZNA · W KRYZYSIE: 116 123</span><span class="lang-en">NOT MEDICAL OR THERAPEUTIC HELP · IN CRISIS (PL): 116 123</span></div>
+
+<!-- ================= RADA ================= -->
+<section class="view active" id="v-rada">
+  <div class="panel intro">
+    <div class="pad">
+      <div class="eyebrow" data-st>mypolyphony.com — <span class="lang-pl">system operacyjny psychiki · pre-produkcja</span><span class="lang-en">an operating system for the psyche · pre-production</span></div>
+      <h1 class="big lang-pl" data-st>Twoja <span class="gilded">Podświadomość</span><br>ma głos.</h1>
+      <h1 class="big lang-en" data-st>Your <span class="gilded">Subconscious</span><br>has a voice.</h1>
+      <div class="divider" data-st></div>
+      <p class="serif" data-st>
+        <span class="lang-pl">Dziewięć odrębnych głosów krąży wokół Syeza — lustra, nie dziesiątego głosu. Ścierają się, zanim powstanie synteza. <em>Bez języka motywacyjnego. Bez gotowej odpowiedzi.</em></span>
+        <span class="lang-en">Nine distinct voices orbit Syez — a mirror, not a tenth voice. They clash before a synthesis forms. <em>No motivational language. No ready answer.</em></span>
+      </p>
+      <div class="chips" id="agentChips" data-st></div>
     </div>
-  </header>
+  </div>
+  <div class="hint"><i></i><span class="lang-pl">KLIKNIJ GŁOS W KONSTELACJI, BY GO USŁYSZEĆ</span><span class="lang-en">CLICK A VOICE IN THE CONSTELLATION TO HEAR IT</span></div>
+  <div class="panel" id="agentDetail">
+    <button class="close-x" id="detailClose">✕</button>
+    <div class="pad" id="agentDetailBody"></div>
+  </div>
+</section>
 
-  <main>
-    <section class="hero">
-      <div class="container">
-        <p class="caps section-label" data-i18n="home.hero.label">Warstwa narracyjna · pre-produkcja</p>
-        <h1 class="hero-hook" data-i18n="home.hero.title">Dziewięć perspektyw. Jedna decyzja. Polifonia bez konsensusu za wszelką cenę.</h1>
-        <p class="lead" style="max-width: 40rem; margin-top: 1.25rem;" data-i18n="home.hero.lead">
-          Freedom Architect: Polyphony to nie kolejny chatbot z odpowiedzią. To Rada — dziewięć odrębnych głosów,
-          które ścierają się ze sobą, zanim powstanie synteza. Bez motywacyjnego języka. Bez obietnicy natychmiastowego dostępu.
-        </p>
-        <div class="btn-row" style="margin-top: 1.75rem;">
-          <a href="/testuj" class="btn btn-primary" data-i18n="nav.test">Program testowy</a>
-          <a href="#rada-full" class="btn btn-ghost" data-i18n="home.council.all">Zobacz całą Radę</a>
-        </div>
+<!-- ================= DEBATA ================= -->
+<section class="view" id="v-debata">
+  <div class="panel controls">
+    <div class="pad">
+      <div class="eyebrow" data-st><span class="lang-pl">Debata Rady</span><span class="lang-en">Council debate</span></div>
+      <div class="mode-switch" data-st>
+        <button class="mode-btn active" data-mode="personal">PERSONAL</button>
+        <button class="mode-btn" data-mode="fa2">BUSINESS (fa2)</button>
       </div>
-    </section>
-
-    <section id="rada">
-      <div class="container">
-        <p class="caps section-label" data-i18n="home.council.label">Rada Nadzorcza</p>
-        <h2 class="section-title" data-i18n="home.council.title">Dziewięć głosów. Żaden nie jest „główny”.</h2>
-        <p class="lead" data-i18n="home.council.lead">Każdy agent reprezentuje inną warstwę poznania. Razem tworzą polifonię — nie konsensus za wszelką cenę.</p>
-        <div class="council-grid" id="council-grid-preview"></div>
-        <div class="btn-row">
-          <a href="#rada-full" class="btn btn-ghost" data-i18n="home.council.all">Zobacz całą Radę</a>
-        </div>
+      <input type="text" id="demoInput" class="lang-pl" placeholder="np. Zmienić pracę czy zostać?" maxlength="90" data-st>
+      <input type="text" id="demoInputEn" class="lang-en" placeholder="e.g. Change jobs or stay?" maxlength="90" data-st>
+      <input type="password" id="apiKey" data-ph-pl="Klucz OpenRouter · BYOK (opcjonalny)" data-ph-en="OpenRouter API key · BYOK (optional)" placeholder="Klucz OpenRouter · BYOK (opcjonalny)" autocomplete="off" data-st>
+      <div class="presets lang-pl" data-st>
+        <button class="preset" data-topic="Zmienić pracę czy zostać?">Zmienić pracę czy zostać?</button>
+        <button class="preset" data-topic="Podnieść ceny produktu?">Podnieść ceny produktu?</button>
+        <button class="preset" data-topic="Zakończyć tę relację?">Zakończyć tę relację?</button>
       </div>
-    </section>
-
-    <section id="rada-full">
-      <div class="container">
-        <div class="council-grid" id="council-grid"></div>
+      <div class="presets lang-en" data-st>
+        <button class="preset" data-topic="Change jobs or stay?">Change jobs or stay?</button>
+        <button class="preset" data-topic="Raise the product price?">Raise the product price?</button>
+        <button class="preset" data-topic="End this relationship?">End this relationship?</button>
       </div>
-    </section>
-  </main>
-
-  <footer class="site-footer">
-    <div class="container inner">
-      <span>Freedom Architect: Polyphony · mypolyphony.com</span>
-      <span class="muted" data-i18n="footer.layer">Warstwa narracyjna · 2026</span>
+      <button id="runDebate" class="btn" data-st><span class="lang-pl">Uruchom debatę →</span><span class="lang-en">Run the debate →</span></button>
+      <a href="/demo" class="btn" data-st style="margin-top:4px"><span class="lang-pl">Pełne demo nagranej debaty →</span><span class="lang-en">Full recorded debate demo →</span></a>
+      <p class="small-note" data-st>
+        <span class="lang-pl">Bez klucza — symulacja przepływu. Z kluczem (<b>BYOK</b>) — Rada odpowiada naprawdę; klucz nie opuszcza przeglądarki. Rozmawiasz z systemem AI, nie z człowiekiem. To nie jest pomoc medyczna ani terapeutyczna.</span>
+        <span class="lang-en">No key — a flow simulation. With a key (<b>BYOK</b>) — the Council genuinely answers; the key never leaves your browser. You're talking to an AI system, not a human. This is not medical or therapeutic help.</span>
+      </p>
     </div>
-  </footer>
+  </div>
+  <div class="panel feedwrap">
+    <div class="feed-scroll" id="feedScroll">
+      <div class="demo-placeholder" id="demoPlaceholder"><span class="lang-pl">Rada czeka na temat.</span><span class="lang-en">The Council is waiting for a topic.</span></div>
+      <div class="demo-feed" id="demoFeed"></div>
+    </div>
+  </div>
+</section>
 
-  <script src="/js/config.js"></script>
-  <script src="/js/agents.js"></script>
-  <script src="/js/i18n.js"></script>
+<!-- ================= AKSJOMAT 0 ================= -->
+<section class="view" id="v-aksjomat">
+  <div class="draghint" data-st><span class="lang-pl">UŚMIECH ↔ PERSPEKTYWA ↔ DROGA<br><br>PRZECIĄGNIJ, BY OBRÓCIĆ UKŁAD — SAM SIĘ PODTRZYMUJE</span><span class="lang-en">SMILE ↔ PERSPECTIVE ↔ PATH<br><br>DRAG TO ROTATE — THE SYSTEM SUSTAINS ITSELF</span></div>
+  <div class="panel axpanel">
+    <div class="axgrid">
+      <div class="axiom" data-st>
+        <span class="axiom-num"><span class="lang-pl">AKSJOMAT 0</span><span class="lang-en">AXIOM 0</span></span>
+        <h4><span class="lang-pl">Uśmiech ↔ Perspektywa ↔ Droga</span><span class="lang-en">Smile ↔ Perspective ↔ Path</span></h4>
+        <p><span class="lang-pl">Samopodtrzymujący się układ trzech elementów zamiast liniowego celu. Wejście możliwe z każdego punktu. Kompas, nie mapa. Nadrzędny wobec wszystkiego w systemie.</span><span class="lang-en">A self-sustaining system of three elements instead of a linear goal. Enter from any point. A compass, not a map. Superordinate to everything in the system.</span></p>
+      </div>
+      <div class="axiom" data-st>
+        <span class="axiom-num"><span class="lang-pl">AKSJOMAT 1</span><span class="lang-en">AXIOM 1</span></span>
+        <h4><span class="lang-pl">Architektura Marzenia</span><span class="lang-en">Dream Architecture</span></h4>
+        <p><span class="lang-pl">Każdy agent i każda synteza mają dostęp do szerszego kontekstu — marzenia, wartości i kierunku, któremu służy decyzja. Istnieje po to, by służyć Aksjomatowi 0.</span><span class="lang-en">Every agent and every synthesis can see the wider context — the dream, values and direction the decision serves. It exists to serve Axiom 0.</span></p>
+      </div>
+      <div class="axiom" data-st>
+        <span class="axiom-num"><span class="lang-pl">AKSJOMAT 2</span><span class="lang-en">AXIOM 2</span></span>
+        <h4><span class="lang-pl">Domknięcie</span><span class="lang-en">Completion</span></h4>
+        <p><span class="lang-pl">Rada zawsze prowadzi do najmniejszego możliwego ruchu do przodu — czegoś do zrobienia w 60 minut. Chroni Aksjomat 0 przed rozpadem w codzienności.</span><span class="lang-en">The Council always leads to the smallest possible step forward — doable in 60 minutes. It guards Axiom 0 from dissolving in the everyday.</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PERSONAL ================= -->
+<section class="view" id="v-personal">
+  <div class="panel main">
+    <div class="pad">
+      <div class="eyebrow" data-st>01 · PERSONAL MODE</div>
+      <h1 class="big" data-st style="font-size:clamp(1.9rem,3.4vw,3rem)"><span class="lang-pl">Decyzja, której nie podejmujesz sam</span><span class="lang-en">A decision you don't make alone</span></h1>
+      <div class="divider" data-st></div>
+      <p class="serif" data-st>
+        <span class="lang-pl">Bo nie widzisz całej swojej mapy. Jesteś teraz <em>wewnątrz</em> konstelacji — dziewięć głosów patrzy na decyzję z dziewięciu stron: logika, ciało, cień, czas. Tryb personal nie daje afirmacji. Pokazuje, co w decyzji pozostaje niewygodne. Surowo. Transformacyjnie.</span>
+        <span class="lang-en">Because you can't see your whole map. You are now <em>inside</em> the constellation — nine voices looking at the decision from nine sides: logic, body, shadow, time. Personal mode hands out no affirmations. It shows what stays uncomfortable. Raw. Transformational.</span>
+      </p>
+      <ul class="feature-list" data-st>
+        <li><span class="lang-pl">A0 — destylacja marzenia i Obraz Użytkownika</span><span class="lang-en">A0 — dream distillation and the User Image</span></li>
+        <li><span class="lang-pl">Rada nie „naprawia" ani nie diagnozuje</span><span class="lang-en">The Council doesn't "fix" or diagnose you</span></li>
+        <li><span class="lang-pl">Synteza nie zgładza sprzeczności — zostawia je widoczne</span><span class="lang-en">Synthesis doesn't erase contradictions — it leaves them visible</span></li>
+        <li><span class="lang-pl">Debaty zostają lokalnie · model na Twoim kluczu (BYOK)</span><span class="lang-en">Debates stay local · the model runs on your key (BYOK)</span></li>
+      </ul>
+      <div class="mode-cta" data-st>
+        <button class="btn" data-goto="debata" data-setmode="personal"><span class="lang-pl">Otwórz debatę w tym trybie →</span><span class="lang-en">Open a debate in this mode →</span></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= BUSINESS ================= -->
+<section class="view" id="v-business">
+  <div class="panel main">
+    <div class="pad">
+      <div class="eyebrow" data-st>02 · BUSINESS MODE (fa2) · X-Council-Mode: fa2</div>
+      <h1 class="big" data-st style="font-size:clamp(1.9rem,3.4vw,3rem)"><span class="lang-pl">Decyzja operacyjna, której nikt nie widzi w całości</span><span class="lang-en">An operational decision nobody sees in full</span></h1>
+      <div class="divider" data-st></div>
+      <p class="serif" data-st>
+        <span class="lang-pl">Konstelacja przechodzi w szyk analityczny. Freedom Architect Business mapuje napięcia w zespole, modele i metryki — potem buduje syntezę ze scenariuszami <em>Base, Bull i Bear</em>. Nie demo. Prawdziwe decyzje, na których stoi operacja.</span>
+        <span class="lang-en">The constellation shifts into analytic formation. Freedom Architect Business maps tensions across team, models and metrics — then builds a synthesis with <em>Base, Bull and Bear</em> scenarios. Not a demo. Real decisions the operation stands on.</span>
+      </p>
+      <ul class="feature-list" data-st>
+        <li><span class="lang-pl">Bez A0 i Obrazu Użytkownika — czysta analityka</span><span class="lang-en">No A0 or User Image — pure analytics</span></li>
+        <li><span class="lang-pl">Scenariusze Base / Bull / Bear w syntezie</span><span class="lang-en">Base / Bull / Bear scenarios in the synthesis</span></li>
+        <li><span class="lang-pl">Dla liderów RevOps i Operations</span><span class="lang-en">For RevOps and Operations leaders</span></li>
+      </ul>
+      <div class="mode-cta" data-st>
+        <button class="btn" data-goto="debata" data-setmode="fa2"><span class="lang-pl">Otwórz debatę fa2 →</span><span class="lang-en">Open an fa2 debate →</span></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DAILY SIGNAL ================= -->
+<section class="view" id="v-daily">
+  <div class="panel main">
+    <div class="pad">
+      <div class="eyebrow" data-st>DAILY SIGNAL · <span class="lang-pl">HORYZONT 18H</span><span class="lang-en">18H HORIZON</span></div>
+      <h1 class="big" data-st style="font-size:clamp(1.9rem,3.2vw,2.7rem)"><span class="lang-pl">Nie lista zadań.<br>Świadomy wybór.</span><span class="lang-en">Not a to-do list.<br>A conscious choice.</span></h1>
+      <div class="divider" data-st></div>
+      <p class="serif" data-st>
+        <span class="lang-pl">Codzienny, wysokosygnałowy filtr na najbliższe 18 godzin. Łuk przed Tobą to Twój horyzont — trzy punkty świetlne to elementy układu, który sam się podtrzymuje.</span>
+        <span class="lang-en">A daily, high-signal filter for the next 18 hours. The arc before you is your horizon — the three points of light are the elements of a self-sustaining system.</span>
+      </p>
+      <div class="signal-slot" data-st style="--accent:#f0d878">
+        <label style="color:#f0d878"><span class="lang-pl">UŚMIECH — ciekawość skierowana w siebie</span><span class="lang-en">SMILE — curiosity turned inward</span></label>
+        <input type="text" data-slot="0" maxlength="80" data-ph-pl="ciekawe, jak sobie z tym poradzę…" data-ph-en="curious how I'll handle this…" placeholder="ciekawe, jak sobie z tym poradzę…">
+      </div>
+      <div class="signal-slot" data-st style="--accent:#9ad8e8">
+        <label style="color:#9ad8e8"><span class="lang-pl">PERSPEKTYWA — jak patrzeć, nie gdzie dojść</span><span class="lang-en">PERSPECTIVE — how to look, not where to arrive</span></label>
+        <input type="text" data-slot="1" maxlength="80" data-ph-pl="nowy kąt na to, co już widzę…" data-ph-en="a new angle on what I already see…" placeholder="nowy kąt na to, co już widzę…">
+      </div>
+      <div class="signal-slot" data-st style="--accent:#d4915a">
+        <label style="color:#d4915a"><span class="lang-pl">DROGA — rzeczywisty ruch dzisiaj</span><span class="lang-en">PATH — real movement today</span></label>
+        <input type="text" data-slot="2" maxlength="80" data-ph-pl="jeden konkretny krok dziś…" data-ph-en="one concrete step today…" placeholder="jeden konkretny krok dziś…">
+      </div>
+      <p class="small-note" data-st style="margin-top:14px"><span class="lang-pl">Zapis tylko w pamięci tej sesji. Sygnał, nie archiwum.</span><span class="lang-en">Held only in this session's memory. A signal, not an archive.</span></p>
+    </div>
+  </div>
+</section>
+
+<div class="triad-label" id="tl0">UŚMIECH</div>
+<div class="triad-label" id="tl1">PERSPEKTYWA</div>
+<div class="triad-label" id="tl2">DROGA</div>
+
+<script src="/landing/js/agents-data.js?v=4"></script>
+<script src="/landing/js/landing-bundle.js?v=4"></script>
+
 </body>
 </html>
