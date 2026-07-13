@@ -14,6 +14,8 @@
       "nav.how": "Jak działa",
       "nav.fragment": "Fragment",
       "nav.test": "Program testowy",
+      "nav.menu": "Menu nawigacji",
+      "nav.close": "Zamknij menu",
       "nav.backCouncil": "← Rada",
       "nav.forwardCouncil": "Rada →",
       "footer.layer": "Warstwa narracyjna · 2026",
@@ -124,6 +126,8 @@
       "nav.how": "How it works",
       "nav.fragment": "Fragment",
       "nav.test": "Beta program",
+      "nav.menu": "Navigation menu",
+      "nav.close": "Close menu",
       "nav.backCouncil": "← Council",
       "nav.forwardCouncil": "Council →",
       "footer.layer": "Narrative layer · 2026",
@@ -492,8 +496,53 @@
     });
   }
 
+  function initMobileNav() {
+    var header = document.querySelector(".site-header");
+    var inner = header && header.querySelector(".inner");
+    var panel = inner && inner.querySelector(".header-right");
+    if (!header || !inner || !panel || inner.querySelector(".nav-toggle")) return;
+
+    panel.id = "site-nav-panel";
+
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "nav-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", "site-nav-panel");
+    toggle.setAttribute("aria-label", t("nav.menu"));
+    toggle.innerHTML = '<span class="nav-toggle-icon" aria-hidden="true"></span>';
+
+    inner.insertBefore(toggle, panel);
+
+    function setOpen(open) {
+      header.classList.toggle("is-nav-open", open);
+      document.body.classList.toggle("nav-open", open);
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      toggle.setAttribute("aria-label", open ? t("nav.close") : t("nav.menu"));
+    }
+
+    toggle.addEventListener("click", function () {
+      setOpen(!header.classList.contains("is-nav-open"));
+    });
+
+    panel.querySelectorAll(".nav-links a").forEach(function (link) {
+      link.addEventListener("click", function () {
+        setOpen(false);
+      });
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") setOpen(false);
+    });
+
+    window.matchMedia("(min-width: 861px)").addEventListener("change", function (mq) {
+      if (mq.matches) setOpen(false);
+    });
+  }
+
   function initI18n() {
     injectLangSwitcher();
+    initMobileNav();
     var lang = getLang();
     applyLang(lang);
   }

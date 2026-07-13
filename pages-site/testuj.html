@@ -4,74 +4,52 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Program testowy — Freedom Architect: Polyphony</title>
-  <meta name="description" content="Kontrolowany dostęp do programu testowego — ścieżka firmowa lub osobista.">
-  <link rel="icon" href="/assets/favicon.svg?v=1" type="image/svg+xml">
-  <link rel="canonical" href="https://mypolyphony.com/testuj">
-  <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Freedom Architect: Polyphony">
-  <meta property="og:url" content="https://mypolyphony.com/testuj">
-  <meta property="og:title" content="Program testowy — Freedom Architect: Polyphony">
-  <meta property="og:description" content="Kontrolowany dostęp do programu testowego — ścieżka firmowa lub osobista.">
-  <meta property="og:locale" content="pl_PL">
-  <meta name="twitter:card" content="summary">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles/main.css">
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=renderPolyphonyTurnstile" async defer></script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
-<body data-page="test">
-
+<body>
   <header class="site-header">
     <div class="container inner">
       <a href="/" class="brand">Freedom Architect<span>:</span> Polyphony</a>
       <nav class="nav-links">
-        <a href="/firmy" data-i18n="nav.firms">Dla firm</a>
-        <a href="/osobista" data-i18n="nav.personal">Dla Ciebie</a>
-        <a href="/fragment" data-i18n="nav.fragment">Fragment</a>
-        <a href="/firmy#jak-dziala" data-i18n="nav.how">Jak działa</a>
-        <a href="/testuj" data-i18n="nav.test">Program testowy</a>
+        <a href="/#rada">Rada</a>
+        <a href="/fragment">Fragment</a>
       </nav>
     </div>
   </header>
 
   <main class="container" style="padding: 4rem 0; max-width: 560px;">
-    <p class="caps section-label" data-i18n="test.label">Program testowy</p>
-    <h1 class="serif section-title" data-i18n="test.title">Zgłoszenie</h1>
-    <p class="muted" style="margin-bottom: 2rem;" data-test-lead data-i18n="test.lead">
+    <p class="caps section-label">Program testowy</p>
+    <h1 class="serif section-title">Zgłoszenie</h1>
+    <p class="muted" style="margin-bottom: 2rem;">
       Kontrolowany dostęp. System w stanie pre-produkcyjnym. Odpowiadamy tylko wybranym kandydatom.
     </p>
 
     <div class="form-panel">
-      <form data-polyphony-form action="#" method="post" novalidate>
+      <form data-polyphony-form novalidate>
         <div class="form-grid">
           <div class="form-field">
-            <label for="track" data-i18n="form.track">Ścieżka</label>
-            <select id="track" name="track" data-track-select class="track-select">
-              <option value="firma" data-i18n="form.track.firma">Dla firm</option>
-              <option value="osobista" data-i18n="form.track.osobista">Dla Ciebie</option>
-            </select>
+            <label for="name">Imię i nazwisko</label>
+            <input type="text" id="name" name="name" required maxlength="200">
           </div>
           <div class="form-field">
-            <label for="name" data-i18n="form.name">Imię i nazwisko</label>
-            <input type="text" id="name" name="name" required maxlength="200" autocomplete="name">
-          </div>
-          <div class="form-field" data-field-company>
-            <label for="company" data-i18n="form.company">Stanowisko / Firma</label>
-            <input type="text" id="company" name="company" maxlength="200">
+            <label for="company">Stanowisko / Firma</label>
+            <input type="text" id="company" name="company" required maxlength="200">
           </div>
           <div class="form-field">
-            <label for="email" data-email-label data-i18n="form.email">Email służbowy</label>
-            <input type="email" id="email" name="email" required maxlength="200" autocomplete="email">
+            <label for="email">Email służbowy</label>
+            <input type="email" id="email" name="email" required maxlength="200">
           </div>
           <div class="hp-field" aria-hidden="true">
             <input type="text" name="website" tabindex="-1" autocomplete="off">
             <input type="text" name="hp" tabindex="-1" autocomplete="off">
           </div>
           <div class="cf-turnstile"></div>
-          <button type="button" data-polyphony-submit class="btn btn-primary" style="width:100%" data-i18n="form.submit">Wyślij zgłoszenie</button>
+          <button type="submit" class="btn btn-primary" style="width:100%">Wyślij zgłoszenie</button>
         </div>
-        <p class="form-note" data-i18n="form.note">Dane trafiają do zabezpieczonego endpointu. Bez spamu. Bez sprzedaży list mailingowych.</p>
         <div class="form-status" role="status" aria-live="polite"></div>
       </form>
     </div>
@@ -80,12 +58,11 @@
   <footer class="site-footer">
     <div class="container inner">
       <span>Freedom Architect: Polyphony · mypolyphony.com</span>
-      <span class="muted" data-i18n="footer.layer">Warstwa narracyjna · 2026</span>
     </div>
   </footer>
 
   <script src="/js/config.js"></script>
-  <script src="/js/i18n.js"></script>
   <script src="/js/form.js"></script>
+  <script src="/js/i18n.js"></script>
 </body>
 </html>

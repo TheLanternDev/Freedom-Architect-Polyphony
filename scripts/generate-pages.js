@@ -128,6 +128,7 @@ function agentPage(agent, prev, next) {
 
   <script src="/js/canvas/agent-canvas.js"></script>
   <script>initAgentCanvas("agent-canvas", "${agent.canvas}");</script>
+  <script src="/js/i18n.js"></script>
 </body>
 </html>
 `;
@@ -224,6 +225,7 @@ function fragmentPage() {
       resize(); window.addEventListener("resize", resize); draw();
     })();
   </script>
+  <script src="/js/i18n.js"></script>
 </body>
 </html>
 `;
@@ -295,6 +297,7 @@ function testujPage() {
 
   <script src="/js/config.js"></script>
   <script src="/js/form.js"></script>
+  <script src="/js/i18n.js"></script>
 </body>
 </html>
 `;

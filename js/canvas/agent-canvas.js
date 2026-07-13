@@ -31,7 +31,11 @@
       const rect = canvas.parentElement.getBoundingClientRect();
       dpr = Math.min(window.devicePixelRatio || 1, 2);
       w = rect.width;
-      h = Math.max(280, Math.min(400, w * 0.65));
+      const isMobile = window.matchMedia("(max-width: 860px)").matches;
+      const minH = isMobile ? 220 : 280;
+      const maxH = isMobile ? 320 : 400;
+      const ratio = isMobile ? 0.58 : 0.65;
+      h = Math.max(minH, Math.min(maxH, w * ratio));
       canvas.width = w * dpr;
       canvas.height = h * dpr;
       canvas.style.height = h + "px";
