@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SITE="$ROOT/sites/nexus"
-PROJECT="${CF_PAGES_PROJECT:-Nexus-portfolio}"
+PROJECT="${CF_PAGES_PROJECT:-nexus-portfolio}"
 BRANCH="${CF_PAGES_BRANCH:-main}"
 
 if ! command -v npx >/dev/null 2>&1; then
