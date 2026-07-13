@@ -27,5 +27,6 @@ npx --yes wrangler@4 pages deploy . \
 echo ""
 echo "✅ NEXUS wdrożony do osobnego slotu: ${PROJECT}"
 echo "   URL (domyślny): https://${PROJECT}.pages.dev"
-echo "   Opcjonalna domena: nexus.mypolyphony.com (dodaj w Pages → Custom domains)"
+echo "   Następny krok — własna domena:"
+echo "   Cloudflare Dashboard → Workers & Pages → ${PROJECT} → Custom domains → nexus.mypolyphony.com"
 echo "   mypolyphony.com NIE jest dotykany tym deployem."
