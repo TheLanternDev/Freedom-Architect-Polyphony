@@ -19,12 +19,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Cloudflare Pages (mypolyphony-nexus)
+      - name: Deploy to Cloudflare Pages (Nexus-portfolio)
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy sites/nexus --project-name=mypolyphony-nexus --branch=main
+          command: pages deploy sites/nexus --project-name=Nexus-portfolio --branch=main
         continue-on-error: true
 
       - name: Reminder when secrets missing

@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SITE="$ROOT/sites/nexus"
-PROJECT="${CF_PAGES_PROJECT:-mypolyphony-nexus}"
+PROJECT="${CF_PAGES_PROJECT:-Nexus-portfolio}"
 BRANCH="${CF_PAGES_BRANCH:-main}"
 
 if ! command -v npx >/dev/null 2>&1; then
@@ -26,7 +26,7 @@ npx --yes wrangler@4 pages deploy . \
 
 echo ""
 echo "✅ NEXUS wdrożony do osobnego slotu: ${PROJECT}"
-echo "   URL (domyślny): https://${PROJECT}.pages.dev"
+echo "   URL (domyślny): https://nexus-portfolio.pages.dev"
 echo "   Następny krok — własna domena:"
 echo "   Cloudflare Dashboard → Workers & Pages → ${PROJECT} → Custom domains → nexus.mypolyphony.com"
 echo "   mypolyphony.com NIE jest dotykany tym deployem."

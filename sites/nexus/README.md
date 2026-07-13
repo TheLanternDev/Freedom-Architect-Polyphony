@@ -7,7 +7,7 @@ Interaktywna strona 3D (landing Architekta Wolności). **Deploy idzie do osobneg
 | Slot | Projekt CF | URL | Zawartość |
 |------|------------|-----|-----------|
 | Główna strona | `supervisory-board-page` (Worker + Pages) | `mypolyphony.com` | Narracja, formularz, podstrony agentów |
-| **NEXUS** | **`mypolyphony-nexus`** (Pages) | `mypolyphony-nexus.pages.dev` lub `nexus.mypolyphony.com` | 3D landing, fragment, testuj |
+| **NEXUS** | **`Nexus-portfolio`** (Pages) | `nexus-portfolio.pages.dev` lub `nexus.mypolyphony.com` | 3D landing, fragment, testuj |
 
 ## Deploy (lokalnie / Cursor)
 
@@ -17,14 +17,14 @@ export CLOUDFLARE_API_TOKEN=...   # albo login OAuth
 ./scripts/deploy-nexus.sh
 ```
 
-Zmienna `CF_PAGES_PROJECT` nadpisuje nazwę projektu (domyślnie `mypolyphony-nexus`).
+Zmienna `CF_PAGES_PROJECT` nadpisuje nazwę projektu (domyślnie `Nexus-portfolio`).
 
 ## Ważne dla Cursora / agentów
 
-- **Zawsze** używaj `--project-name=mypolyphony-nexus` (lub ten skrypt).
+- **Zawsze** używaj `--project-name=Nexus-portfolio` (lub ten skrypt).
 - **Nigdy** nie deployuj `sites/nexus/` do projektu obsługującego `mypolyphony.com`.
 - Linki do `/demo` prowadzą na `https://mypolyphony.com/demo` (demo nie jest w tym bundle).
 
 ## Custom domain
 
-W Cloudflare Dashboard → Workers & Pages → **mypolyphony-nexus** → Custom domains → dodaj `nexus.mypolyphony.com`.
+W Cloudflare Dashboard → Workers & Pages → **Nexus-portfolio** → Custom domains → dodaj `nexus.mypolyphony.com`.
