@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="g" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff6b2c"/>
+      <stop offset="45%" stop-color="#1a0510"/>
+      <stop offset="100%" stop-color="#020203"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#g)"/>
+  <circle cx="600" cy="315" r="48" fill="#ff9a4a" opacity="0.9"/>
+  <circle cx="600" cy="315" r="120" fill="none" stroke="#2ee6ff" stroke-width="2" opacity="0.5"/>
+  <circle cx="600" cy="315" r="200" fill="none" stroke="#ff6b2c" stroke-width="1" opacity="0.35"/>
+  <text x="600" y="520" text-anchor="middle" font-family="Georgia, serif" font-size="64" fill="#ffffff" letter-spacing="18">VERGE</text>
+</svg>
