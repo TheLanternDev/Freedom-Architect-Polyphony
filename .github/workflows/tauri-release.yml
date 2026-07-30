@@ -71,6 +71,18 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run tauri:build:release
+      - name: Create DMG
+        working-directory: src
+        run: ./scripts/make-dmg.sh
+      - name: Sanity check — app, sidecar and DMG exist
+        run: |
+          APP="src/src-tauri/target/release/bundle/macos/Freedom Architect.app"
+          SIDECAR="$APP/Contents/MacOS/architekt-backend"
+          DMG=$(find src/src-tauri/target/release/bundle/dmg -maxdepth 1 -type f -name 'Freedom Architect_*.dmg' -print -quit)
+          test -d "$APP" || { echo "::error::Brak $APP"; exit 1; }
+          test -x "$SIDECAR" || { echo "::error::Brak wykonywalnego sidecara $SIDECAR"; exit 1; }
+          test -n "$DMG" || { echo "::error::Brak DMG"; exit 1; }
+          ls -lh "$SIDECAR" "$DMG"
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
