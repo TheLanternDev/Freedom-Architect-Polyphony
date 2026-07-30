@@ -19,21 +19,11 @@ Zmiany kluczowe vs. v3.1:
 
 from __future__ import annotations
 
-# `src/.env` (lub `AW_ENV_FILE`) — przed importami lokalnymi; wypełnia brakujące / puste zmienne.
-try:  # pragma: no cover
-    import importlib.util
-    from pathlib import Path as _RepoPath
-
-    _aw_root = _RepoPath(__file__).resolve().parent
-    _aw_spec = importlib.util.spec_from_file_location(
-        "aw_env_bootstrap", _aw_root / "env_bootstrap.py"
-    )
-    if _aw_spec and _aw_spec.loader:
-        _aw_env = importlib.util.module_from_spec(_aw_spec)
-        _aw_spec.loader.exec_module(_aw_env)
-        _aw_env.load_repo_env()
-except Exception:
-    pass
+# Bootstrap `.env` / trybu boxed — PRZED importami lokalnymi.
+# JEDYNA implementacja żyje w `config/__init__.py` (dedup review 2026-07-16:
+# wcześniej dwie rozjeżdżające się kopie tej samej logiki tutaj i w config).
+# `import config` uruchamia ją; kolejność ma znaczenie, stąd import na górze.
+import config as _aw_config  # noqa: F401  (side-effect: env_bootstrap.load_repo_env)
 
 import asyncio
 import hmac
@@ -473,6 +463,27 @@ async def _editions() -> dict[str, object]:
     return out
 
 
+@app.middleware("http")
+async def _security_headers_middleware(request: Request, call_next):
+    response = await architekt_http_guard(request, call_next)
+    from api.settings import is_production, security_hardened
+
+    # Nagłówki anty-sniffing/anty-framing: prod ORAZ boxed (review 2026-07-30).
+    # Wcześniej tylko `is_production()`, więc SPRZEDAWANE pudełko ich nie miało —
+    # a to jedyny wariant, w którym webview ma IPC do Keychaina (`get_llm_key`).
+    # Dokładnie ten scenariusz uzasadniał wyrzucenie 'unsafe-inline' z CSP.
+    if security_hardened():
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # HSTS tylko w prawdziwej produkcji (HTTPS). Boxed słucha po HTTP na
+    # 127.0.0.1 — HSTS byłby tam bez sensu, a w skrajnym przypadku przypiąłby
+    # `localhost` do https w przeglądarce użytkownika.
+    if is_production():
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
+
 # L-3: ŚWIADOMA DECYZJA — brak `allow_credentials=True`.
 # Auth idzie przez nagłówek `Authorization: Bearer <JWT>` (patrz api/http_guard.py
 # i src/src/lib/tokenStorage.ts), NIE przez cookie. Dlatego:
@@ -485,24 +496,18 @@ async def _editions() -> dict[str, object]:
 #       (a) ustawić jawną listę origins (żaden `*`),
 #       (b) dodać ochronę CSRF (SameSite + token), bo cookie auth jest podatne na CSRF,
 #     czego Bearer-w-nagłówku nie wymaga. Patrz docs/SECURITY_PRODUCTION.md.
+#
+# KOLEJNOŚĆ: CORSMiddleware MUSI być rejestrowany PO `@app.middleware("http")`
+# (add_middleware wstawia na początek stosu → ostatni = najbardziej zewnętrzny).
+# Gdy guard zwraca 401/403/423 bez `call_next`, zewnętrzny CORS i tak dokleja
+# Access-Control-Allow-Origin. Odwrotna kolejność sprawiała, że WebKit/Tauri
+# dostawał „Failed to fetch" i UI kłamał „backend nie odpowiada" przy wygasłej sesji.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_allow_origins(),
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
-
-
-@app.middleware("http")
-async def _security_headers_middleware(request: Request, call_next):
-    response = await architekt_http_guard(request, call_next)
-    from api.settings import is_production
-    if is_production():
-        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
 
 
 # ==================== MODELE API ====================

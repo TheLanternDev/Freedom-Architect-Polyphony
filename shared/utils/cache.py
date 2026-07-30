@@ -7,9 +7,11 @@ Klucz prefiksu agenta steruje wyborem: "fa2:..." → dysk; reszta → RAM.
 TTL i znaczniki czasu zapobiegają zwracaniu starych „insightów" jako świeżych.
 """
 from __future__ import annotations
-import hashlib, json, os, time
+import hashlib, json, logging, os, tempfile, time
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_TTL = int(os.getenv("AW_CACHE_TTL", "86400"))  # 24h personal
 _FA2_TTL = int(os.getenv("AW_FA2_CACHE_TTL", "604800"))  # 7d fa2
@@ -33,13 +35,48 @@ except Exception:
     _HAVE_FERNET = False
 
 def _fernet() -> Optional["Fernet"]:
+    """Klucz szyfrujący cache FA2 — tworzony przy pierwszym użyciu.
+
+    Zapis przez temp + `os.replace` (review 2026-07-30). Poprzednia wersja
+    (`O_EXCL`, potem `os.write`) domykała TOCTOU na uprawnieniach, ale otwierała
+    NOWE okno: proces B dostawał `FileExistsError`, szedł do
+    `Fernet(_KEY_FILE.read_bytes())` i przy pustym pliku (A jeszcze nie zapisał)
+    dostawał `ValueError` — a `_save_disk`/`_load_disk` łapią tylko `OSError`,
+    więc wyjątek leciał w górę ze ścieżki requestu. `os.replace` jest atomowy:
+    plik pod docelową nazwą albo nie istnieje, albo jest kompletny.
+    """
     if not _HAVE_FERNET:
         return None
     if not _KEY_FILE.exists():
-        _KEY_FILE.write_bytes(Fernet.generate_key())
-        try: _KEY_FILE.chmod(0o600)
-        except Exception: pass
-    return Fernet(_KEY_FILE.read_bytes())
+        tmp = None
+        try:
+            fd, tmp = tempfile.mkstemp(dir=str(_HOME), prefix=".cache-key-", suffix=".tmp")
+            try:
+                os.write(fd, Fernet.generate_key())
+            finally:
+                os.close(fd)
+            os.chmod(tmp, 0o600)
+            # Nie nadpisujemy klucza, jeśli inny proces zdążył pierwszy —
+            # nadpisanie unieważniłoby cache zapisany jego kluczem.
+            if not _KEY_FILE.exists():
+                os.replace(tmp, _KEY_FILE)
+                tmp = None
+        except OSError as e:
+            logger.warning("cache: nie mogę utworzyć klucza szyfrującego (%s) — cache FA2 wyłączony.", e)
+            return None
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+    try:
+        return Fernet(_KEY_FILE.read_bytes())
+    except (OSError, ValueError) as e:
+        # Uszkodzony/obcięty klucz nie może wywalić requestu — cache jest
+        # optymalizacją, nie warunkiem odpowiedzi Rady.
+        logger.warning("cache: klucz %s nieczytelny (%s) — cache FA2 wyłączony.", _KEY_FILE, e)
+        return None
 
 _disk: dict[str, tuple[float, str]] = {}
 _disk_loaded = False
@@ -61,8 +98,10 @@ def _save_disk() -> None:
     if f is None: return
     try:
         _DISK_FILE.write_bytes(f.encrypt(json.dumps(_disk).encode()))
-        try: _DISK_FILE.chmod(0o600)
-        except Exception: pass
+        try:
+            _DISK_FILE.chmod(0o600)
+        except OSError as e:
+            logger.warning("cache: nie udało się ustawić 0600 na %s (%s) — szyfrowany cache może być czytelny dla innych.", _DISK_FILE, e)
     except OSError:
         pass
 

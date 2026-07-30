@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -21,7 +23,7 @@ async def is_jti_blocked(jti: str) -> bool:
       Tokeny bez claimu `jti` nie są dotknięte (revocation niemożliwe bez JTI).
     """
     from api.runtime import get_redis
-    from api.settings import is_production
+    from api.settings import is_boxed, is_production
     r = get_redis()
     if r is None:
         if is_production():
@@ -30,6 +32,13 @@ async def is_jti_blocked(jti: str) -> bool:
                 "JTI check: Redis niedostępny w produkcji — token z JTI=%s odrzucony (fail-closed)", jti
             )
             return True
+        if is_boxed():
+            # Boxed (review 2026-07-30): Redis świadomie NIE istnieje, więc
+            # fail-closed zablokowałby każdy token i uczyniłby paczkę bezużyteczną.
+            # Ale fail-open oznaczał, że „Wyloguj" NIE unieważniał tokenu —
+            # kasował go tylko z webview. Dla single-usera na jednej maszynie
+            # wystarcza lokalna blocklista na dysku (patrz `_local_blocklist`).
+            return _local_blocklist_has(jti)
         # Dev/staging: fail-open (Redis opcjonalny).
         return False
     try:
@@ -50,14 +59,90 @@ async def block_jti(jti: str, ttl_seconds: int) -> bool:
     NIE może uczciwie zwrócić `revoked: true` (M-4).
     """
     from api.runtime import get_redis
+    from api.settings import is_boxed
     r = get_redis()
     if r is None:
+        # Boxed bez Redis: blocklista na dysku, żeby /auth/revoke mówił prawdę.
+        if is_boxed():
+            return _local_blocklist_add(jti, ttl_seconds)
         return False
     try:
         await r.setex(f"{_JTI_BLOCKLIST_PREFIX}{jti}", ttl_seconds, "1")
         return True
     except Exception as e:
         logger.warning("Nie udało się zablokować JTI %s: %s", jti, e)
+        return False
+
+
+# ── Lokalna blocklista JTI (tylko tryb boxed, bez Redis) ────────────────────
+# Format: {"<jti>": <epoch_expiry>}. Wpisy po terminie są usuwane przy zapisie
+# — plik nie rośnie w nieskończoność. Zapis atomowy (temp + os.replace), 0600.
+# Boxed to jeden proces i jeden worker uvicorna (patrz boxed_entry.py), więc
+# nie ma tu współbieżności między procesami do obsłużenia.
+
+def _local_blocklist_path() -> "Path":
+    from pathlib import Path
+
+    override = (os.getenv("AW_JTI_BLOCKLIST_PATH") or "").strip()
+    if override:
+        return Path(override)
+    try:
+        from env_bootstrap import app_data_dir
+
+        return app_data_dir() / "data" / "jti_blocklist.json"
+    except Exception:
+        return Path("jti_blocklist.json")
+
+
+def _local_blocklist_load() -> dict[str, float]:
+    import json
+
+    p = _local_blocklist_path()
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, float] = {}
+    for k, v in raw.items():
+        try:
+            out[str(k)] = float(v)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _local_blocklist_has(jti: str) -> bool:
+    exp = _local_blocklist_load().get(jti)
+    return exp is not None and exp > time.time()
+
+
+def _local_blocklist_add(jti: str, ttl_seconds: int) -> bool:
+    import json
+    import tempfile
+
+    now = time.time()
+    data = {k: v for k, v in _local_blocklist_load().items() if v > now}
+    data[jti] = now + max(1, int(ttl_seconds))
+    p = _local_blocklist_path()
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".jti-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, p)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+        return True
+    except OSError as e:
+        logger.warning("Lokalna blocklista JTI: zapis nieudany (%s) — revoke nie jest trwały.", e)
         return False
 
 

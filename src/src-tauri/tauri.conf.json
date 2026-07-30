@@ -19,17 +19,23 @@
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' tauri: ipc: https://fonts.googleapis.com https://fonts.gstatic.com http://127.0.0.1:8000 http://localhost:8000 ws://localhost:8000 ws://127.0.0.1:8000; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: tauri:; object-src 'none'; base-uri 'self'"
+      "csp": "default-src 'self'; connect-src 'self' tauri: ipc: http://127.0.0.1:8000 http://localhost:8000 ws://localhost:8000 ws://127.0.0.1:8000; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: tauri:; worker-src 'self'; object-src 'none'; base-uri 'self'",
+      "devCsp": "default-src 'self'; connect-src 'self' tauri: ipc: http://127.0.0.1:8000 http://localhost:8000 ws://localhost:8000 ws://127.0.0.1:8000 ws://localhost:1420 ws://127.0.0.1:1420; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: tauri:; worker-src 'self'; object-src 'none'; base-uri 'self'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": false,
+    "externalBin": [
+      "binaries/architekt-backend"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

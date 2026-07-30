@@ -81,6 +81,24 @@ def _isolate_device_seal(tmp_path_factory, monkeypatch):
     """
     seal_dir = tmp_path_factory.mktemp("device_seal")
     monkeypatch.setenv("AW_DEVICE_SEAL_DIR", str(seal_dir))
+    # Proces-wide cache seal-checka (5s TTL) przeżywa granice testów: wynik
+    # "locked" z jednego testu serwowałby 423 następnym w ciągu 5 sekund.
+    # Bust przed i po — izolacja per test, nie per szczęśliwy timing.
+    # `except Exception`, nie `except ImportError` (review 2026-07-30): gdyby
+    # `_bust_cache` kiedyś zniknął przy refaktorze, AttributeError wyleciałby
+    # z fixture'u autouse PRZED `yield` — czyli wywaliłby CAŁY suite błędem
+    # w setupie, zamiast jednego czytelnego niepowodzenia.
+    try:
+        import core.device_seal as _ds
+
+        _bust = _ds._bust_cache
+    except Exception:  # pragma: no cover
+        yield
+        return
+
+    _bust()
+    yield
+    _bust()
 
 
 @pytest.fixture
