@@ -15,6 +15,13 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+# Druga instancja appki NIE MOŻE wystartować (review 2026-07-30): jej preflight
+# czytał backend.pid pierwszej instancji, rozpoznawał proces jako „nasz" i
+# ubijał go SIGTERM+SIGKILL — w środku debaty, ze spalonymi tokenami BYOK
+# i SQLite w połowie zapisu. macOS deduplikuje po ŚCIEŻCE bundla, więc dwa
+# bundle (target/release/… i /Applications/…, oba tworzone przez
+# dist:mac:install-local) chodziły równolegle; Windows nie deduplikuje wcale.
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyring = "3"
