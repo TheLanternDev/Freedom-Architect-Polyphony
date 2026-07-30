@@ -23,7 +23,12 @@ import {
   AgentDetail,
   TensionList,
 } from "@/components/CouncilCircle";
-import { agentForm, gpuBudget } from "@/lib/agentForms";
+import {
+  agentForm,
+  gpuBudget,
+  prefersReducedMotion,
+  onReducedMotionChange,
+} from "@/lib/agentForms";
 
 const AGENT_ORDER = [
   "Kogit", "Szow", "Kidi", "Tai", "Obver", "Relacjan", "Emojy", "Smaty", "Deega",
@@ -114,8 +119,17 @@ export function Council3D({ agents, tensions }: Props) {
     if (!glOk || !mountRef.current) return;
     const mount = mountRef.current;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     const budget = gpuBudget();
+    // antialias sterowany budżetem GPU (review 2026-07-30): Backdrop3D leciał
+    // z `antialias: false, powerPreference: "low-power"`, a ta scena z twardym
+    // `antialias: true` — dwa konteksty WebGL na jednym ekranie z rozjechanymi
+    // ustawieniami. Na słabym GPU (budget.detail === 0) MSAA idzie precz;
+    // przy dpr ≥ 2 i tak jest praktycznie niewidoczny.
+    const renderer = new THREE.WebGLRenderer({
+      antialias: budget.detail > 0 && budget.dpr < 2,
+      alpha: true,
+      powerPreference: "low-power",
+    });
     renderer.setPixelRatio(budget.dpr);
     mount.appendChild(renderer.domElement);
 
@@ -384,12 +398,22 @@ export function Council3D({ agents, tensions }: Props) {
       mount.style.cursor = hovered ? "pointer" : "";
 
       renderer.render(scene, camera);
-      raf = requestAnimationFrame(frame);
+      if (!reducedMotion) raf = requestAnimationFrame(frame);
     };
+
+    // prefers-reduced-motion: jedna klatka zamiast pętli rAF (patrz Backdrop3D).
+    // Konstelacja Rady zostaje widoczna i klikalna, tylko przestaje się ruszać.
+    let reducedMotion = prefersReducedMotion();
     frame();
+    const offReduced = onReducedMotionChange((next) => {
+      reducedMotion = next;
+      cancelAnimationFrame(raf);
+      frame(); // przy next=false pętla wznawia się sama w środku frame()
+    });
 
     return () => {
       cancelAnimationFrame(raf);
+      offReduced();
       ro.disconnect();
       mount.removeEventListener("pointermove", onMove);
       mount.removeEventListener("click", onClick);

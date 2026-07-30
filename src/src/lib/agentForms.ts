@@ -17,6 +17,32 @@ export interface GpuBudget {
   detail: 0 | 1;
 }
 
+/**
+ * Czy user prosi o ograniczenie animacji (review 2026-07-30).
+ *
+ * `index.css` ma `@media (prefers-reduced-motion: reduce)`, ale to nie dotyka
+ * pętli `requestAnimationFrame` — dwie scény WebGL kręciły się dalej, ignorując
+ * ustawienie systemowe. Dla części osób ciągły ruch w tle to nie kwestia gustu
+ * (migrena, wrażliwość przedsionkowa), a na słabszym GPU to dodatkowo stały
+ * koszt baterii.
+ *
+ * Świadomie NIE memoizowane: użytkownik może przełączyć ustawienie bez
+ * restartu aplikacji, a komponenty subskrybują zmiany przez `onReducedMotionChange`.
+ */
+export function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** Subskrypcja zmian preferencji; zwraca funkcję odpinającą. */
+export function onReducedMotionChange(cb: (reduced: boolean) => void): () => void {
+  if (typeof window === "undefined" || !window.matchMedia) return () => {};
+  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const handler = (e: MediaQueryListEvent) => cb(e.matches);
+  mq.addEventListener("change", handler);
+  return () => mq.removeEventListener("change", handler);
+}
+
 let _budget: GpuBudget | null = null;
 export function gpuBudget(): GpuBudget {
   if (_budget) return _budget;

@@ -86,9 +86,7 @@ export function getCacheSkip(): boolean {
   }
 }
 
-/** Zwraca true gdy JWT ma poprawną strukturę i exp > now. Wygasłe odrzucamy
- *  od razu — żeby `getApiAuthHeaders` spadł do VITE_ARCHITEKT_API_KEY zamiast
- *  wysyłać Bearer, który backend i tak odrzuci 401-ką. */
+/** Zwraca true gdy JWT ma poprawną strukturę i exp > now. */
 function jwtNotExpired(token: string): boolean {
   try {
     const parts = token.split(".");
@@ -103,47 +101,82 @@ function jwtNotExpired(token: string): boolean {
   }
 }
 
-export function getApiAuthHeaders(opts?: { skipCache?: boolean }): Record<string, string> {
-  let jwt: string | null = getStoredJwt();
-  if (jwt && !jwtNotExpired(jwt)) {
-    clearStoredJwt();
-    jwt = null;
-  }
+/**
+ * VITE_ARCHITEKT_API_KEY: tylko w trybie deweloperskim (import.meta.env.DEV).
+ * W buildzie produkcyjnym Vite inlinuje klucz do bundle — stałby się publiczny.
+ */
+function devBuildTimeKey(): string | undefined {
+  return import.meta.env.DEV
+    ? (import.meta.env.VITE_ARCHITEKT_API_KEY as string | undefined)?.trim() || undefined
+    : undefined;
+}
+
+/**
+ * JEDNO miejsce, które ustala poświadczenie do backendu — i nagłówki, i verdykt
+ * „czy warto w ogóle wysyłać żądanie".
+ *
+ * PO CO (review 2026-07-30): `hasValidApiAuth()` i `getApiAuthHeaders()` liczyły
+ * to samo dwa razy i rozjeżdżały się w jednym istotnym punkcie — headers przy
+ * wygasłym JWT robiły `clearStoredJwt()`, a `hasValidApiAuth` nie. Pre-flight
+ * w `useDebate` woła tylko to drugie, więc user mający JEDNOCZEŚNIE stary JWT
+ * i ważny legacy API key dostawał „sesja wygasła" i zrzut do logowania —
+ * dopóki jakiś inny komponent nie wywołał headers i nie wyczyścił tokenu.
+ * Lockout zależny od kolejności renderów. Teraz jedna funkcja, jeden efekt.
+ *
+ * Świadomie zachowane: gdy w storage leży JWT (choćby wygasły), NIE spadamy do
+ * legacy API key — serwer z aktywnym ARCHITEKT_JWT_SECRET odrzuca shared key,
+ * więc lepszym sygnałem jest wymuszenie ponownego logowania.
+ */
+export function resolveAuth(opts?: { skipCache?: boolean }): {
+  headers: Record<string, string>;
+  valid: boolean;
+} {
+  const base = _councilAndLlmHeaders(opts);
+  const jwt = getStoredJwt();
+
   if (jwt) {
-    const h: Record<string, string> = { Authorization: `Bearer ${jwt}` };
-    if (typeof window !== "undefined") {
-      try {
-        const m = localStorage.getItem("aw_council_mode");
-        h["X-Council-Mode"] = m === "fa2" ? "fa2" : "personal";
-      } catch { /* ignore */ }
+    if (jwtNotExpired(jwt)) {
+      return { headers: { Authorization: `Bearer ${jwt}`, ...base }, valid: true };
     }
-    if (opts?.skipCache || getCacheSkip()) {
-      h["X-AW-Cache"] = "skip";
-    }
-    const llmKey = getLlmKeySync();
-    if (llmKey) {
-      h["X-LLM-Key"] = llmKey;
-    }
-    return h;
+    // Wygasły — usuwamy TU, żeby kolejne wywołanie (i pre-flight) widziało
+    // już stan bez martwego tokenu.
+    clearStoredJwt();
+    return { headers: base, valid: false };
   }
 
-  // VITE_ARCHITEKT_API_KEY: tylko w trybie deweloperskim (import.meta.env.DEV).
-  // W buildzie produkcyjnym Vite inlinuje klucz do bundle — staje się publiczny.
-  // Fix: w produkcji ignorujemy zmienną build-time i używamy wyłącznie localStorage
-  // (klucz ustawiony przez użytkownika w modalce Połączenie) lub JWT z /auth/login.
-  let key = (import.meta.env.DEV
-    ? (import.meta.env.VITE_ARCHITEKT_API_KEY as string | undefined)?.trim()
-    : undefined);
+  const key = devBuildTimeKey() ?? getStoredArchitektApiKey() ?? "";
   if (!key) {
-    key = getStoredArchitektApiKey() ?? "";
+    return { headers: base, valid: false };
   }
-  const h: Record<string, string> = key ? { Authorization: `Bearer ${key}` } : {};
-  // Legacy API key: backend wymaga jawnego tenanta (fail-closed) — bez tego 403.
-  // Wysyłamy WYŁĄCZNIE na ścieżce API key; przy JWT tenant pochodzi z claimu
-  // (nagłówek mógłby kolidować z enforce_tenant_header_match).
-  if (key) {
-    h["X-Tenant-Id"] = getStoredTenantId();
-  }
+  return {
+    headers: {
+      Authorization: `Bearer ${key}`,
+      ...base,
+      // Legacy API key: backend wymaga jawnego tenanta (fail-closed) — bez tego 403.
+      // Wysyłamy WYŁĄCZNIE na ścieżce API key; przy JWT tenant pochodzi z claimu
+      // (nagłówek mógłby kolidować z enforce_tenant_header_match).
+      "X-Tenant-Id": getStoredTenantId(),
+    },
+    valid: true,
+  };
+}
+
+/**
+ * Czy mamy JAKIEKOLWIEK ważne poświadczenie do backendu w tej chwili.
+ * Pre-flight guard (useDebate) używa tego, żeby NIE wysyłać żądania bez auth,
+ * które backend odrzuci 401-ką — a w spakowanej apce webview pokaże to jako
+ * mylące „backend nie odpowiada".
+ */
+export function hasValidApiAuth(): boolean {
+  return resolveAuth().valid;
+}
+
+export function getApiAuthHeaders(opts?: { skipCache?: boolean }): Record<string, string> {
+  return resolveAuth(opts).headers;
+}
+
+function _councilAndLlmHeaders(opts?: { skipCache?: boolean }): Record<string, string> {
+  const h: Record<string, string> = {};
   if (typeof window !== "undefined") {
     try {
       const m = localStorage.getItem("aw_council_mode");
@@ -152,7 +185,6 @@ export function getApiAuthHeaders(opts?: { skipCache?: boolean }): Record<string
       /* ignore */
     }
   }
-  // Cache bypass — przekazany jawnie lub z localStorage (toggle „świeża debata").
   if (opts?.skipCache || getCacheSkip()) {
     h["X-AW-Cache"] = "skip";
   }

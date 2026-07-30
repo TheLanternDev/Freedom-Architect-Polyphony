@@ -7,7 +7,20 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Icon } from "@/components/ui/Icon";
+import { isTauriWebview } from "@/lib/tokenStorage";
 import type { DebateState } from "@/types/debate";
+
+/**
+ * Czy nagłówek musi zrobić miejsce na natywne przyciski okna?
+ * `titleBarStyle: "Overlay"` w tauri.conf.json działa WYŁĄCZNIE na macOS —
+ * na Windows/Linux Tauri je ignoruje, więc zapas byłby pustym marginesem.
+ * W przeglądarce (hosted web) też nie ma żadnego natywnego titlebara.
+ */
+function isMacOsOverlayTitlebar(): boolean {
+  if (!isTauriWebview() || typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /Mac OS X|Macintosh/.test(ua);
+}
 
 interface Props {
   status: DebateState["status"];
@@ -62,8 +75,21 @@ export function WorkspaceHeader({
   const statusClass = STATUS_STYLE[status] ?? STATUS_STYLE.idle;
 
   return (
-    <header className="shrink-0 border-b border-border bg-surface/30 backdrop-blur-sm">
-      <div className="px-6 lg:px-8 py-3.5 flex items-center gap-4">
+    <header
+      data-tauri-drag-region
+      className="shrink-0 border-b border-border bg-surface/40 backdrop-blur-xl"
+    >
+      {/* Zapas na natywne traffic lights (titleBarStyle: Overlay) TYLKO na macOS.
+          Na Windows/Linux nie ma tam czego omijać, a stałe pl-20 dawało 80 px
+          martwego marginesu — regresja od chwili dodania joba build-windows
+          (review 2026-07-30). */}
+      <div
+        data-tauri-drag-region
+        className={cn(
+          "pr-6 lg:pr-8 py-3.5 flex items-center gap-4",
+          isMacOsOverlayTitlebar() ? "pl-20" : "pl-6",
+        )}
+      >
         {/* Mobile title */}
         <div className="lg:hidden min-w-0 flex-1">
           <span className="font-display text-[17px] text-text-primary truncate">

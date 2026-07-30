@@ -2,7 +2,8 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useLang } from "@/lib/i18n";
 import { humanizeFetchFailure } from "@/lib/fetchErrors";
 import { getApiBase } from "@/lib/apiBase";
-import { getApiAuthHeaders } from "@/lib/apiAuth";
+import { getApiAuthHeaders, hasValidApiAuth } from "@/lib/apiAuth";
+import { clearStoredJwt } from "@/lib/tokenStorage";
 import {
   hasLlmKeyConfigured,
   isLlmKeyRequired,
@@ -79,6 +80,27 @@ function snapshotCurrentTurn(s: DebateState): PriorTurn | null {
   };
 }
 
+/**
+ * Czy event `error` ze strumienia SSE mówi o odrzuconym uwierzytelnieniu?
+ * Backend potrafi zamknąć strumień w środku debaty, gdy token wygaśnie —
+ * bez tego rozpoznania wyglądało to jak losowe urwanie streamu.
+ * Sprawdzamy kod/status, nie treść komunikatu (ta jest tłumaczona).
+ */
+function _isAuthErrorPayload(payload: unknown): boolean {
+  if (!payload || typeof payload !== "object") return false;
+  const p = payload as Record<string, unknown>;
+  const status = Number(p.status ?? p.status_code ?? p.code);
+  if (status === 401 || status === 403) return true;
+  const code = String(p.code ?? p.error ?? p.reason ?? "").toLowerCase();
+  return (
+    code === "unauthorized" ||
+    code === "forbidden" ||
+    code === "token_expired" ||
+    code === "auth_expired" ||
+    code === "invalid_token"
+  );
+}
+
 export function useDebate() {
   const { t } = useLang();
   const tRef = useRef(t);
@@ -95,8 +117,15 @@ export function useDebate() {
 
   const [state, setState] = useState<DebateState>(INITIAL_STATE);
   const readerRef = useRef<ReadableStreamDefaultReader<string> | null>(null);
+  // Ostatni onNeedAuth (zrzut do ekranu logowania) — trzymany w ref, żeby
+  // wewnętrzna warstwa SSE mogła go wywołać przy in-flight 401/403 bez
+  // przewlekania przez wszystkie parametry (wzorzec jak tRef).
+  const onNeedAuthRef = useRef<(() => void) | undefined>(undefined);
 
   const reset = useCallback(() => {
+    // Callback z POPRZEDNIEJ debaty nie ma prawa przeżyć resetu — inaczej
+    // zostaje wskaźnik na closure z nieaktualnego renderu (review 2026-07-30).
+    onNeedAuthRef.current = undefined;
     readerRef.current?.cancel();
     setState(INITIAL_STATE);
   }, []);
@@ -146,6 +175,20 @@ export function useDebate() {
       });
 
       if (!res.ok || !res.body) {
+        // Auth wygasł/odrzucony przez backend, a odpowiedź jest czytelna
+        // (dev/proxy/same-origin). Wyczyść martwy token, pokaż właściwy
+        // komunikat i zrzuć usera do logowania — zamiast generycznego błędu.
+        if (res.status === 401 || res.status === 403) {
+          clearStoredJwt();
+          setState((s) => ({
+            ...s,
+            status: "error",
+            error: tRef.current("debate.auth.expired"),
+            pendingMsg: undefined,
+          }));
+          onNeedAuthRef.current?.();
+          return;
+        }
         let errorMsg = `HTTP ${res.status}`;
         try {
           const data = await res.json();
@@ -207,6 +250,26 @@ export function useDebate() {
           }
 
           receivedFirstEvent = true;
+
+          // 401/403 W TRAKCIE strumienia (review 2026-07-30). Sprawdzanie tylko
+          // `!res.ok` na starcie nie pokrywało wygaśnięcia tokenu w 3. minucie
+          // 5-minutowej debaty: strumień urywał się jako generyczne „stream się
+          // urwał", a serwer dalej palił tokeny BYOK. Backend emituje `error`
+          // z kodem — reagujemy tak jak na 401 przy starcie, ale zostawiamy
+          // głosy, które user już widzi.
+          if (eventLine === "error" && _isAuthErrorPayload(payload)) {
+            clearStoredJwt();
+            reader.cancel().catch(() => {});
+            setState((s) => ({
+              ...s,
+              status: "error",
+              error: tRef.current("debate.auth.expired_mid_stream"),
+              pendingMsg: undefined,
+            }));
+            onNeedAuthRef.current?.();
+            return;
+          }
+
           handleEvent(eventLine, payload);
         }
       }
@@ -263,7 +326,8 @@ export function useDebate() {
   []);
 
   const startDebate = useCallback(
-    async (brief: Brief, opts?: { onNeedLlmKey?: () => void }) => {
+    async (brief: Brief, opts?: { onNeedLlmKey?: () => void; onNeedAuth?: () => void }) => {
+      onNeedAuthRef.current = opts?.onNeedAuth;
       if (isLlmKeyRequired() && !hasLlmKeyConfigured()) {
         setState((s) => ({
           ...s,
@@ -271,6 +335,18 @@ export function useDebate() {
           error: tRef.current("llm_key.missing_gate"),
         }));
         opts?.onNeedLlmKey?.();
+        return;
+      }
+      // Pre-flight auth: bez ważnego poświadczenia NIE wysyłamy żądania, które
+      // i tak wróci 401 (a w spakowanej apce webview pokaże je jako „backend nie
+      // odpowiada"). Zamiast tego: jasny komunikat i zrzut do ekranu logowania.
+      if (!hasValidApiAuth()) {
+        setState((s) => ({
+          ...s,
+          status: "error",
+          error: tRef.current("debate.auth.expired"),
+        }));
+        opts?.onNeedAuth?.();
         return;
       }
       // Nowy wątek — żadnych poprzednich tur do zachowania.
@@ -284,7 +360,8 @@ export function useDebate() {
   );
 
   const continueDebateThread = useCallback(
-    async (body: DebateContinueBody, opts?: { onNeedLlmKey?: () => void }) => {
+    async (body: DebateContinueBody, opts?: { onNeedLlmKey?: () => void; onNeedAuth?: () => void }) => {
+      onNeedAuthRef.current = opts?.onNeedAuth;
       if (isLlmKeyRequired() && !hasLlmKeyConfigured()) {
         setState((s) => ({
           ...s,
@@ -292,6 +369,17 @@ export function useDebate() {
           error: tRef.current("llm_key.missing_gate"),
         }));
         opts?.onNeedLlmKey?.();
+        return;
+      }
+      // Pre-flight auth (jak w startDebate): wygasła sesja → komunikat + login,
+      // nie doomed request kończący się „backend nie odpowiada".
+      if (!hasValidApiAuth()) {
+        setState((s) => ({
+          ...s,
+          status: "error",
+          error: tRef.current("debate.auth.expired"),
+        }));
+        opts?.onNeedAuth?.();
         return;
       }
       // Przed bootstrapem strumienia: zarchiwizuj bieżącą turę (głosy + synteza + promptText)

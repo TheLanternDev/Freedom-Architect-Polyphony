@@ -14,7 +14,13 @@ import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import gsap from "gsap";
 import { NODE_META } from "@/components/CouncilCircle";
-import { agentForm, syezCore, gpuBudget } from "@/lib/agentForms";
+import {
+  agentForm,
+  syezCore,
+  gpuBudget,
+  prefersReducedMotion,
+  onReducedMotionChange,
+} from "@/lib/agentForms";
 import { onSceneView, type SceneView } from "@/lib/sceneBus";
 
 const AGENTS = ["Kogit", "Szow", "Kidi", "Tai", "Obver", "Relacjan", "Emojy", "Smaty", "Deega"];
@@ -189,10 +195,30 @@ export function Backdrop3D() {
       renderer.render(scene, camera);
       raf = requestAnimationFrame(frame);
     };
-    frame();
+    // prefers-reduced-motion: renderujemy JEDNĄ klatkę (scena zostaje, ruch nie)
+    // i nie startujemy pętli rAF. CSS-owe @media samo tej pętli nie zatrzymywało.
+    let reduced = prefersReducedMotion();
+    if (reduced) {
+      renderer.render(scene, camera);
+    } else {
+      frame();
+    }
+
+    const offReduced = onReducedMotionChange((next) => {
+      reduced = next;
+      if (reduced) {
+        running = false;
+        cancelAnimationFrame(raf);
+        renderer.render(scene, camera);
+      } else if (!document.hidden) {
+        running = true;
+        clock.getDelta();
+        frame();
+      }
+    });
 
     const onVis = () => {
-      running = !document.hidden;
+      running = !document.hidden && !reduced;
       if (running) { clock.getDelta(); frame(); }
       else cancelAnimationFrame(raf);
     };
@@ -202,6 +228,7 @@ export function Backdrop3D() {
       running = false;
       cancelAnimationFrame(raf);
       offBus();
+      offReduced();
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("resize", resize);

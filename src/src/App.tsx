@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { Clock, Eye, Flag, MessageCircle, Settings } from "lucide-react";
 import { LocalSetupModal } from "@/components/LocalSetupModal";
 import { useDebate } from "@/hooks/useDebate";
-import { CouncilCircle } from "@/components/CouncilCircle";
+import { Council3D } from "@/components/Council3D";
+import { Backdrop3D } from "@/components/Backdrop3D";
+import { BootSequence } from "@/components/BootSequence";
+import { sceneView } from "@/lib/sceneBus";
 import { SyezPanel } from "@/components/SyezPanel";
 import { PriorTurnView } from "@/components/PriorTurnView";
 import { BriefForm } from "@/components/BriefForm";
@@ -10,6 +13,8 @@ import { CommitmentsTimeline } from "@/components/CommitmentsTimeline";
 import { DebateCommitments } from "@/components/DebateCommitments";
 import { FadeIn } from "@/components/ui/FadeIn";
 import { Icon } from "@/components/ui/Icon";
+import { BrandVisual } from "@/components/BrandVisual";
+import { BackendStatusBanner } from "@/components/BackendStatusBanner";
 import { SectionDivider } from "@/components/ui/SectionDivider";
 import { OnboardingPanel, DailyRitualPanel } from "@/components/PersonalRitualPanels";
 import { MojObrazPanel } from "@/components/MojObrazPanel";
@@ -36,7 +41,7 @@ import {
   COUNCIL_MODE_EVENT,
 } from "@/config/product";
 import { getApiBase } from "@/lib/apiBase";
-import { getApiAuthHeaders } from "@/lib/apiAuth";
+import { getApiAuthHeaders, hasValidApiAuth } from "@/lib/apiAuth";
 import { loadLlmKey } from "@/lib/llmKeyStorage";
 import {
   clearDemoSession,
@@ -114,8 +119,11 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [state.status, state.debateId, feedbackForDebate]);
   const [authenticated, setAuthenticated] = useState(() => {
-    const jwt = getStoredJwt();
-    return jwt !== null || !_jwtEnabled();
+    // Sprawdzamy WAŻNOŚĆ (niewygasłość) poświadczenia, nie samą obecność stringa
+    // JWT. Wygasły token w localStorage wcześniej udawał „zalogowany", a każde
+    // żądanie i tak leciało bez auth → 401 → mylące „backend nie odpowiada".
+    if (!_jwtEnabled()) return true;
+    return hasValidApiAuth();
   });
   const [demoPublicConfig, setDemoPublicConfig] =
     useState<DemoPublicConfig | null>(null);
@@ -197,11 +205,21 @@ export default function App() {
     }
   }, [inDemo, demoPublicConfig, mode]);
 
+  // Trwała scena 3D: fazy debaty sterują kamerą konstelacji (sceneBus).
+  useEffect(() => {
+    const s = state.status;
+    if (s === "agents_speaking") sceneView("debate");
+    else if (s === "synthesizing") sceneView("synthesis");
+    else if (s === "done") sceneView("done");
+    else sceneView(councilMode === "fa2" ? "fa2" : "personal");
+  }, [state.status, councilMode]);
+
   const selectCouncilMode = useCallback(
     (next: "personal" | "fa2") => {
       if (next === councilMode) return;
       setCouncilMode(next);
       setCouncilModeState(next);
+      sceneView(next === "fa2" ? "fa2" : "personal");
     },
     [councilMode],
   );
@@ -313,6 +331,7 @@ export default function App() {
       }
       void startDebate({ ...brief, language: lang }, {
         onNeedLlmKey: () => setSetupOpen(true),
+        onNeedAuth: () => setAuthenticated(false),
       });
     },
     [startDebate, lang],
@@ -357,6 +376,8 @@ export default function App() {
 
   return (
     <div key={councilMode} className="aw-app-shell" data-council-mode={councilMode}>
+      <Backdrop3D />
+      <BootSequence />
       <LocalSetupModal
         open={setupOpen}
         onClose={() => setSetupOpen(false)}
@@ -429,9 +450,11 @@ export default function App() {
       <aside className="no-print w-[52px] shrink-0 border-r border-border bg-[#0A0C14] hidden lg:flex flex-col h-screen sticky top-0 z-10">
         {/* AW brand mark */}
         <div className="shrink-0 h-14 flex items-center justify-center border-b border-border/60">
-          <div className="w-8 h-8 rounded-lg bg-gold/10 border border-gold/25 flex items-center justify-center text-[10px] font-semibold text-gold leading-none select-none">
-            AW
-          </div>
+          <BrandVisual
+            variant="rail"
+            className="w-8 h-8 rounded-lg border border-gold/25 object-cover object-center"
+            alt="Architekt Wolności"
+          />
         </div>
 
         {/* Nav icons */}
@@ -586,6 +609,11 @@ export default function App() {
           t={t}
           demoLogoutLabel={inDemo ? t("demo.new_session") : t("login.logout")}
         />
+
+        {/* Stan silnika Rady z launchera — pod nagłówkiem, nad treścią.
+            Bez tego „port zajęty" i „brak backendu w paczce" wyglądały
+            identycznie jak zwykły błąd sieci (review 2026-07-30). */}
+        <BackendStatusBanner />
 
         {inDemo && (
           <div
@@ -751,7 +779,7 @@ export default function App() {
                 }
                 className="mb-6"
               />
-              <CouncilCircle
+              <Council3D
                 agents={agentList}
                 tensions={state.liveTensions ?? []}
               />
@@ -782,7 +810,10 @@ export default function App() {
                             previous_debate_id: state.debateId!,
                             follow_up: followUp,
                           },
-                          { onNeedLlmKey: () => setSetupOpen(true) },
+                          {
+                            onNeedLlmKey: () => setSetupOpen(true),
+                            onNeedAuth: () => setAuthenticated(false),
+                          },
                         )
                     : undefined
                 }

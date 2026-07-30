@@ -54,8 +54,8 @@ export const DICT: Record<string, Phrase> = {
 
   "setup.title": { pl: "Połączenie lokalne", en: "Local connection" },
   "setup.intro": {
-    pl: "Ustaw adres backendu FastAPI i sprawdź endpoint /health. Klucz Anthropic ustawiasz w pliku ui/.env (nie w tej aplikacji) — backend go wczytuje przy starcie. Gdy backend ma ustawione ARCHITEKT_API_KEY, wpisz ten sam token w polu poniżej (albo VITE_ARCHITEKT_API_KEY przy buildzie).",
-    en: "Set the FastAPI backend URL and check /health. Put your Anthropic key in ui/.env (not in this UI) — the backend reads it on startup. If the server has ARCHITEKT_API_KEY set, paste the same bearer token below (or use VITE_ARCHITEKT_API_KEY at build time).",
+    pl: "Ustaw adres backendu FastAPI i sprawdź endpoint /health. Klucz Anthropic wpisz w polu BYOK poniżej — trafia do keychaina i jest wysyłany per żądanie, serwer go nie zapisuje. Gdy backend ma ustawione ARCHITEKT_API_KEY, wpisz ten sam token w osobnym polu niżej (albo VITE_ARCHITEKT_API_KEY przy buildzie).",
+    en: "Set the FastAPI backend URL and check /health. Enter your Anthropic key in the BYOK field below — it goes to the keychain and is sent per request; the server never stores it. If the server has ARCHITEKT_API_KEY set, paste the same bearer token in the separate field below (or use VITE_ARCHITEKT_API_KEY at build time).",
   },
   "setup.url_label": { pl: "Adres API (nadpisanie)", en: "API base URL (override)" },
   "setup.apply": { pl: "Zastosuj", en: "Apply" },
@@ -79,8 +79,8 @@ export const DICT: Record<string, Phrase> = {
     en: "Stored in the browser — use only on a trusted device. In production prefer injecting the header via reverse proxy.",
   },
   "setup.key_hint": {
-    pl: "Nie wklejaj klucza API w to pole — nie jest przesyłany do przeglądarki w trybie bezpiecznym. Trzymaj ANTHROPIC_API_KEY w ui/.env; nie commituj tego pliku (jest w .gitignore).",
-    en: "Do not paste your API key here — it is not handled securely in the browser. Keep ANTHROPIC_API_KEY in ui/.env; never commit that file (.gitignore covers it).",
+    pl: "Klucz Anthropic (BYOK) i klucz HTTP API to dwa różne sekrety — patrz opisy przy odpowiednich polach wyżej. Żaden z nich nie trafia do repozytorium ani logów.",
+    en: "The Anthropic key (BYOK) and the HTTP API key are two different secrets — see the notes under each field above. Neither is written to the repository or to logs.",
   },
   "setup.security_warn": {
     pl: "Nie wystawiaj backendu na publiczny internet bez reverse proxy i uwierzytelniania — API nie jest zaprojektowane pod otwarty dostęp z sieci.",
@@ -206,6 +206,12 @@ export const DICT: Record<string, Phrase> = {
     en:
       "Could not reach the server (no response). Start the backend: uvicorn main:app --host 127.0.0.1 --port 8000 (from the repo root). With npm run dev, Vite proxies /health etc. to :8000 — both must be running. The desktop build defaults to http://127.0.0.1:8000; for hosted web set VITE_API_URL or use Connection in the UI.",
   },
+  "debate.network.unreachable_desktop": {
+    pl:
+      "Backend jeszcze nie odpowiada. Poczekaj kilka sekund po starcie aplikacji i spróbuj ponownie. Jeśli problem się powtarza, sprawdź logi: macOS ~/Library/Application Support/ArchitektWolnosci/logs/backend-stderr.log, Windows %APPDATA%\\ArchitektWolnosci\\logs\\backend-stderr.log — i zrestartuj aplikację.",
+    en:
+      "The backend isn't responding yet. Wait a few seconds after app startup and try again. If this persists, check the logs: macOS ~/Library/Application Support/ArchitektWolnosci/logs/backend-stderr.log, Windows %APPDATA%\\ArchitektWolnosci\\logs\\backend-stderr.log — then restart the app.",
+  },
   "debate.network.abort": {
     pl: "Żądanie zostało przerwane.",
     en: "The request was aborted.",
@@ -218,6 +224,52 @@ export const DICT: Record<string, Phrase> = {
     pl: "Strumień debaty się urwał — sprawdź logi serwera.",
     en: "The debate stream broke — check the server logs.",
   },
+  // Auth: sesja wygasła (401 na starcie debaty). Rozróżniamy to od martwego
+  // backendu — inaczej wygasły token pokazywał się jako „backend nie odpowiada".
+  "debate.auth.expired": {
+    pl: "Twoja sesja wygasła — zaloguj się ponownie, aby uruchomić Radę.",
+    en: "Your session has expired — sign in again to start the Council.",
+  },
+  // Sesja wygasła W TRAKCIE strumienia debaty (nie na starcie) — inny komunikat,
+  // bo część głosów Rady user już widzi na ekranie i nie chcemy udawać, że nie.
+  "debate.auth.expired_mid_stream": {
+    pl: "Sesja wygasła w trakcie debaty — zaloguj się ponownie. Głosy, które już się pojawiły, zostają na ekranie.",
+    en: "Your session expired mid-debate — sign in again. The voices already on screen stay.",
+  },
+
+  // ── Stan backendu z launchera Tauri (src-tauri/src/lib.rs) ──────────────
+  // Każdy status ma WŁASNY komunikat z instrukcją. Wcześniej wszystkie
+  // wyglądały tak samo: „nie udało się połączyć z serwerem".
+  "backend.status.starting": {
+    pl: "Uruchamiam silnik Rady… Pierwsze uruchomienie po instalacji może potrwać kilkanaście sekund.",
+    en: "Starting the Council engine… The first launch after install can take a dozen seconds.",
+  },
+  "backend.status.pending": {
+    pl: "Sprawdzam stan silnika Rady…",
+    en: "Checking the Council engine…",
+  },
+  "backend.status.port_blocked": {
+    pl: "Port 8000 jest zajęty przez inny program, więc silnik Rady nie mógł wystartować. Zamknij program używający tego portu (macOS: lsof -i :8000, Windows: netstat -ano | findstr :8000) i uruchom aplikację ponownie.",
+    en: "Port 8000 is taken by another program, so the Council engine could not start. Close whatever uses that port (macOS: lsof -i :8000, Windows: netstat -ano | findstr :8000) and restart the app.",
+  },
+  "backend.status.spawn_failed": {
+    pl: "Nie udało się uruchomić silnika Rady — w paczce brakuje zbudowanego backendu. To błąd tej wersji aplikacji, nie Twojej konfiguracji: zgłoś go razem z plikami logów.",
+    en: "The Council engine could not be launched — this build is missing its backend binary. That's a defect in this app version, not your setup: report it together with the log files.",
+  },
+  "backend.status.unreachable": {
+    pl: "Silnik Rady wystartował, ale nie odpowiada. Zrestartuj aplikację; jeśli to się powtarza, dołącz do zgłoszenia plik backend-stderr.log.",
+    en: "The Council engine started but isn't responding. Restart the app; if it repeats, attach backend-stderr.log to your report.",
+  },
+  "backend.status.ready": { pl: "Silnik Rady gotowy.", en: "Council engine ready." },
+  "backend.status.reused_existing": {
+    pl: "Używam już działającego silnika Rady.",
+    en: "Using an already running Council engine.",
+  },
+  "backend.status.autospawn_disabled": {
+    pl: "Automatyczny start silnika jest wyłączony (AW_DISABLE_AUTOSPAWN).",
+    en: "Automatic engine startup is disabled (AW_DISABLE_AUTOSPAWN).",
+  },
+  "backend.status.logs_at": { pl: "Logi:", en: "Logs:" },
   "app.section.council": {
     pl: "Rada Nadzorcza — perspektywy",
     en: "Supervisory Council — perspectives",
