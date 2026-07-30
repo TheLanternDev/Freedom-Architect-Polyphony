@@ -77,3 +77,24 @@ coverage_baseline.txt
 *.wav
 tools/szow_voice_candidates/
 tools/fcp-*/
+
+# Artefakty builda paczki desktop (review 2026-07-16) — NIGDY do repo:
+# venv PyInstallera i zbudowane binarki sidecara (setki MB, per-maszyna).
+.venv-sidecar/
+src/src-tauri/binaries/
+# Stempel builda sidecara — generowany przez scripts/build-backend-sidecar.sh
+# razem z binarką, per-maszyna, nie wersjonowany (jak sama binarka).
+BUILD_STAMP
+
+# Katalogi robocze / eksperymenty POZA kodem produktu (review 2026-07-30).
+# Zostają na dysku, ale `git status` ma pokazywać kod, nie warsztat — inaczej
+# realny nowy plik (jak config/pricing.py) ginie w 27 wpisach untracked.
+# assets/ (202 MB) i wieza-rady/ (505 MB) to w sumie 0,7 GB binarek, do tego
+# nic w kodzie ich nie importuje — do repo nie mają po co trafiać.
+assets/
+landing/
+polifonia/
+widmo/
+wieza-rady/
+reels/
+obsydianowa-rada.html
