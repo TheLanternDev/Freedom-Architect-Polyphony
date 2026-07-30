@@ -26,8 +26,24 @@ async def health():
         llm_b = effective_llm_backend() if m.CORE_AVAILABLE else "none"
     except Exception:
         llm_b = "none"
+    # Stempel builda — pozwala rozpoznać, że appka rozmawia z ZAMROŻONYM
+    # backendem starszym niż kod w repo (review 2026-07-30: dokładnie ten
+    # rozjazd przez 8 dni udawał „wszystko działa"). Fallback „dev" gdy modułu
+    # nie ma (uruchomienie z repo bez freeze'u) — brak stempla nie może wywalić
+    # publicznego /health.
+    try:
+        from config.build_info import build_info
+
+        _build = build_info()
+    except Exception:
+        _build = {"build_id": "unknown", "built_at": "", "git_rev": "", "frozen_build": False}
+
     payload: dict[str, object] = {
         "status": "alive",
+        # Marker dla launchera Tauri (src-tauri/src/lib.rs): odróżnia NASZ
+        # backend na porcie od obcego procesu przy sprawdzaniu konfliktu portu.
+        "app": "architekt-wolnosci",
+        **_build,
         # P1-A5: frontend NIE może decydować o wymogu JWT lokalną flagą —
         # serwer deklaruje, czy auth jest skonfigurowane. /health jest publiczny
         # (ekran logowania), więc to jedyne bezpieczne źródło tej informacji.

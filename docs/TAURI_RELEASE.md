@@ -30,10 +30,45 @@ maszyny bez CI (patrz `.github/workflows/tauri-release.yml`, który robi to
 automatycznie na `macos-latest` + `windows-latest`).
 
 **Dev (`npm run tauri:dev`) nie wymaga tego kroku** — jeśli sidecar nie jest
-zbudowany, `lib.rs` spada automatycznie na stare zachowanie
-(`python -m uvicorn main:app --reload` z `.venv` obok repo), więc hot-reload
-w developmencie działa bez zmian. `AW_DISABLE_AUTOSPAWN=1` wyłącza obie
-ścieżki (gdy wolisz odpalić backend ręcznie).
+zbudowany, `lib.rs` spada na dev fallback (`python -m uvicorn main:app` z venva
+obok repo). `AW_DISABLE_AUTOSPAWN=1` wyłącza obie ścieżki (gdy wolisz odpalić
+backend ręcznie — launcher rozpozna twój uvicorn i użyje go bez spawnu).
+
+Dev fallback leci **bez `--reload`** (review 2026-07-30): reloader uvicorna to
+supervisor + worker, a przy zamykaniu appki zabijaliśmy tylko supervisora —
+worker zostawał sierotą trzymającą port i był potem rozpoznawany jako
+„działający backend", więc appka po cichu gadała ze starym kodem. Hot-reload
+przy pracy nad backendem: `AW_DISABLE_AUTOSPAWN=1` + własny
+`uvicorn main:app --reload` w terminalu.
+
+## 0a. Guard świeżości sidecara (od 2026-07-30)
+
+`npm run tauri:build` woła najpierw `node scripts/check-sidecar-fresh.mjs`,
+który **przerywa build**, gdy binarka sidecara nie istnieje albo jest starsza
+niż jakikolwiek plik `.py` wchodzący do paczki.
+
+Powód: przez 8 dni `.app` uruchamiana z ikony serwowała backend zamrożony
+22.07, mimo że kod Pythona zmieniono 23.07. `tauri build` nigdy nie
+odbudowywał sidecara, `binaries/` jest gitignorowane, a `/health` zwracał
+hardkod `version: "3.3"` — nie było ŻADNEGO sygnału. Aplikacja wyglądała na
+działającą i tak też się zachowywała, tylko nie miała nowego kodu.
+
+Dwa mechanizmy zamykają tę dziurę:
+
+1. **guard** — stale build nie przejdzie (`AW_SKIP_SIDECAR_CHECK=1` żeby
+   świadomie pominąć przy iteracji po samym froncie);
+2. **stempel** — `config/build_info.py` jest nadpisywany przy freeze
+   (`build_id` = krótki rev + timestamp, `-dirty` gdy freeze z niescommitowanych
+   zmian) i wracany do wartości „dev" po buildzie. `GET /health` zwraca
+   `build_id`, launcher loguje go do `logs/launcher.log`, a UI pokazuje
+   w banerze stanu. Smoke test w skrypcie builda **weryfikuje**, że stempel
+   faktycznie wszedł do binarki.
+
+Pełna paczka jednym poleceniem (buduje sidecara → guard → tauri build → dmg):
+
+```bash
+cd src && npm run dist:mac
+```
 
 Backend w trybie sidecar generuje sam `ARCHITEKT_JWT_SECRET` i ścieżki danych
 przy pierwszym uruchomieniu (`env_bootstrap.py` → `app_data_dir()`) — tester
