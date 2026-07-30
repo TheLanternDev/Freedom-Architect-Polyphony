@@ -15,14 +15,19 @@ Workflow `.github/workflows/tauri-release.yml` ma job `build-windows` na
 `windows-latest`, który buduje sidecara, potem instalator, i sprawdza że
 faktycznie powstał.
 
-1. Wypchnij branch i scal do `main` (workflow czyta `main`):
+1. Wypchnij branch — **bez scalania do `main`**:
 
    ```bash
    git push -u origin fix/review-2026-07-30
-   # po review: merge do main
    ```
 
-2. GitHub → zakładka **Actions** → `tauri-release` → **Run workflow**.
+2. GitHub → zakładka **Actions** → `tauri-release` → **Run workflow** →
+   w rozwijanym **„Use workflow from"** wybierz `fix/review-2026-07-30`.
+
+   Przycisk „Run workflow" jest widoczny, bo `tauri-release.yml` istnieje już na
+   domyślnym branchu — ale samo uruchomienie leci z wybranej gałęzi. Dzięki temu
+   sprawdzasz paczkę Windows **przed** dotknięciem `main`. Merge dopiero, gdy
+   instalator faktycznie działa u kumpla.
 
 3. W polu „Pomiń walidację certyfikatów" wybierz **`true`** — chyba że masz
    kupiony certyfikat Authenticode i wgrane sekrety `WINDOWS_CERTIFICATE` /
