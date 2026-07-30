@@ -21,8 +21,12 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from config.agent_models import (
+    ADVISOR_MAX_TOKENS,
+    ADVISOR_MAX_USES,
+    ADVISOR_MODEL,
     HYBRID_MODELS_ENABLED,
     ModelCfg,
+    advisor_enabled_for,
     get_model_config,
 )
 from config.llm_providers import (
@@ -30,6 +34,7 @@ from config.llm_providers import (
     LLM_TIMEOUT_WAIT_SEC,
     anthropic_api_key,
     anthropic_omits_temperature,
+    anthropic_thinking_config,
     effective_llm_backend,
     map_claude_model_to_ollama,
     map_claude_model_to_xai,
@@ -191,21 +196,9 @@ except Exception:  # pragma: no cover
     _REDIS_OK = False
 
 
-# ── Cennik (USD za 1M tokenów) — jedno miejsce do podmiany ──────────────────
+# ── Cennik: config/pricing.py (JEDYNE źródło prawdy; promo liczone datą) ────
 # Zapis kosztów: `core.cost_tracking` (async append).
-_PRICES_PER_M: dict[str, tuple[float, float]] = {
-    # input, output
-    "claude-opus-4-6":             (15.0, 75.0),
-    "claude-sonnet-4-6":            (3.0, 15.0),
-    "claude-haiku-4-5-20251001":    (0.25, 1.25),
-    # legacy aliasy — bez kosztu „rozbicia”, gdy ktoś nadpisze przez env
-    "claude-4-opus":               (15.0, 75.0),
-    "claude-3-5-sonnet-20241022":   (3.0, 15.0),
-    "claude-3-haiku":               (0.25, 1.25),
-    # xAI (szacunki USD / 1M — do logów kosztu; API zwraca tokeny)
-    "grok-3":                       (3.0, 15.0),
-    "grok-3-mini":                  (0.3, 0.5),
-}
+from config.pricing import price_per_m as _price_per_m
 
 
 # ── Counter-hypothesis (anty-echo-chamber) ───────────────────────────────────
@@ -263,6 +256,16 @@ _COUNTER_SKELETON_EN = (
 )
 
 
+class _AdvisorPathError(Exception):
+    """Błąd w trakcie tury z Advisor toolem — niesie CZĘŚCIOWE odpowiedzi API
+    (iteracje, które zdążyły wrócić przed błędem), żeby caller mógł doliczyć
+    ich zafakturowany koszt do logu, zamiast udawać, że wydatku nie było."""
+
+    def __init__(self, msg: str, responses: list[Any]):
+        super().__init__(msg)
+        self.responses = responses
+
+
 class BaseAgent(ABC):
     """Abstrakcyjna klasa bazowa dla każdego agenta Rady."""
 
@@ -296,9 +299,16 @@ class BaseAgent(ABC):
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
         counter_role: bool = False,
+        advisor_override: Optional[bool] = None,
     ) -> str:
         """
         Asynchroniczna wersja: realne wywołanie LLM (z cache + retry).
+
+        `advisor_override`: nadpisuje `advisor_enabled_for()` dla TEGO wywołania.
+        Użyj `False` dla wywołań mechanicznych (np. re-prompt naprawy formatu —
+        `_attempt_completion_audit` w `debate_orchestrator.py`), gdzie treść
+        merytoryczna się nie zmienia i konsultacja advisora byłaby podwójnym
+        kosztem bez wartości. `None` (default) = decyduje konfiguracja.
 
         `counter_role` (anty-echo-chamber): gdy True, agent dostaje dodatkowy
         moduł testu wspólnej przesłanki (patrz `_COUNTER_SKELETON_*`). Ustawiany
@@ -344,6 +354,7 @@ class BaseAgent(ABC):
             tenant_id=tenant_id,
             user_id=user_id,
             counter_role=counter_role,
+            advisor_override=advisor_override,
         )
 
     def get_full_instruction(
@@ -638,7 +649,7 @@ class BaseAgent(ABC):
 
     @staticmethod
     def _calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-        prices = _PRICES_PER_M.get(model)
+        prices = _price_per_m(model)
         if not prices:
             return 0.0
         pin, pout = prices
@@ -657,7 +668,14 @@ class BaseAgent(ABC):
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
         counter_role: bool = False,
+        advisor: bool = False,
     ) -> str:
+        # v11: TYLKO dla wywołań z advisorem (Advisor tool wpływa na
+        # system_prompt/treść — inny wynik dla tego samego briefu). Wywołania
+        # BEZ advisora zostają na v10 bajt-w-bajt: bump wersji dla wszystkich
+        # unieważniałby cały ciepły cache (zimny start + realny koszt BYOK)
+        # za feature domyślnie wyłączony. Rozdzielne przestrzenie kluczy dają
+        # tę samą izolację co pole w kluczu.
         # v10: + llm_key_hash — izolacja cache między różnymi kluczami BYOK.
         # v9: + counter_role (anty-echo-chamber) w kluczu — ten sam brief z
         llm_key_hash = ""
@@ -667,12 +685,15 @@ class BaseAgent(ABC):
                 llm_key_hash = hashlib.sha256(_ak.encode("utf-8")).hexdigest()[:16]
         except Exception:
             pass
-        raw = (
+        base = (
             f"{context[:400]}:{model}:{temperature}:{dream_id or ''}:"
             f"{language}:{debate_mode}:{council_mode}:"
-            f"{tenant_id or ''}:{user_id or ''}:{int(counter_role)}:"
-            f"{llm_key_hash}"
-        ).encode("utf-8")
+            f"{tenant_id or ''}:{user_id or ''}:{int(counter_role)}"
+        )
+        if advisor:
+            raw = f"{base}:1:{llm_key_hash}".encode("utf-8")
+            return f"llm:v11:{name}:{hashlib.sha256(raw).hexdigest()}"
+        raw = f"{base}:{llm_key_hash}".encode("utf-8")
         return f"llm:v10:{name}:{hashlib.sha256(raw).hexdigest()}"
 
     @retry(
@@ -697,7 +718,13 @@ class BaseAgent(ABC):
         tenant_id: Optional[str] = None,
         user_id: Optional[str] = None,
         counter_role: bool = False,
+        advisor_override: Optional[bool] = None,
     ) -> str:
+        use_advisor = (
+            advisor_override
+            if advisor_override is not None
+            else advisor_enabled_for(self.name, debate_mode)
+        )
         cfg = dict(self.get_model_config(council_mode=council_mode))
         if debate_mode == "codzienny":
             if self.name == "Syez":
@@ -705,14 +732,19 @@ class BaseAgent(ABC):
             else:
                 cfg["max_tokens"] = min(int(cfg["max_tokens"]), 380)
         backend = effective_llm_backend()
+        # Advisor tool istnieje TYLKO w API Anthropic. Na xai/ollama instrukcja
+        # „skonsultuj się z advisorem" kazałaby modelowi odgrywać nieistniejące
+        # narzędzie w treści odpowiedzi. Gate PRZED cache_key (advisor= w kluczu).
+        if use_advisor and backend != "anthropic":
+            use_advisor = False
         client = self._get_client()
         if backend == "anthropic" and client is None:
             raise MissingLlmKeyError()
         if backend == "none":
             try:
-                from api.settings import is_production
+                from api.settings import security_hardened
 
-                if is_production():
+                if security_hardened():
                     raise MissingLlmKeyError()
             except MissingLlmKeyError:
                 raise
@@ -746,6 +778,7 @@ class BaseAgent(ABC):
             tenant_id=tenant_id,
             user_id=user_id,
             counter_role=counter_role,
+            advisor=use_advisor,
         )
         redis = await self._get_redis()
         if redis is not None:
@@ -777,6 +810,69 @@ class BaseAgent(ABC):
         user_msg = self._build_user_message(
             context, language=language, council_mode=council_mode
         )
+
+        advisor_cost = 0.0  # tylko backend anthropic z advisorem to nadpisuje
+        advisor_suffix = ""  # do system promptu WYŁĄCZNIE dla wywołania z advisorem
+        if use_advisor:
+            # Advisor daje radę mid-generation, ale finalny tekst nadal piszesz
+            # Ty, swoim głosem, wg formatu z instrukcji wyżej — bez tego agent
+            # dolepia narrację „konsultuję się z advisorem”, co łamie format
+            # (Rada: 3 zdania bez autoprezentacji; Syez: strict-PROSE).
+            #
+            # CELOWO osobna zmienna, nie mutacja system_prompt: gdy ścieżka
+            # advisora padnie (stary SDK / 400 / rate-limit), fallbackowe
+            # standardowe wywołanie MUSI iść z czystym promptem — inaczej
+            # każemy modelowi używać narzędzia, którego w tym wywołaniu nie ma.
+            #
+            # Syez dostaje CELOWANE pytanie zamiast ogólnej instrukcji advisora
+            # (ta wbudowana w narzędzie jest pisana pod agentowe pętle tool-use
+            # w kodowaniu — "zapisz plik przed konsultacją" itp. — nietrafiona
+            # dla jednorazowej syntezy prozą). Syez ma udokumentowany failure
+            # mode: "uśredniasz konfliktujące głosy do umiarkowanego stanowiska"
+            # (patrz _AGENT_FAILURE_MODES_PL powyżej) — advisor jest tu
+            # najbardziej wart swojej ceny, gdy pyta się GO właśnie o to,
+            # zamiast o generyczne "zaplanuj podejście".
+            if self.name == "Syez":
+                advisor_suffix = (
+                    "\n\n═══ ADVISOR ═══\nZANIM zaczniesz pisać syntezę, "
+                    "skonsultuj się z `advisor` (ciche wywołanie — nie "
+                    "informuj o nim w odpowiedzi). Zapytaj go konkretnie: "
+                    "(1) którą sprzeczność między głosami Rady ryzykujesz "
+                    "uśrednić do umiarkowanego stanowiska zamiast ją nazwać "
+                    "wprost — to Twój udokumentowany błąd; (2) czy audyt "
+                    "domknięcia który planujesz (co zostało / co blokuje / "
+                    "najmniejszy ruch ≤60 min) jest konkretny, nie ogólnikowy. "
+                    "Rada advisora wpływa na TREŚĆ; format, długość i kontrakt "
+                    "strict-PROSE z instrukcji wyżej zostają bez zmian."
+                    if language != "en"
+                    else "\n\n═══ ADVISOR ═══\nBEFORE you start writing the "
+                    "synthesis, consult `advisor` (silent call — do not "
+                    "narrate it in your reply). Ask it specifically: (1) which "
+                    "tension between Council voices you're at risk of "
+                    "averaging into a moderate stance instead of naming "
+                    "directly — this is your documented failure mode; (2) "
+                    "whether the completion audit you're planning (what "
+                    "remains / what blocks / smallest move ≤60 min) is "
+                    "concrete, not generic. Let the advice inform the "
+                    "CONTENT; the format, length, and strict-PROSE contract "
+                    "above stay unchanged."
+                )
+            else:
+                advisor_suffix = (
+                    "\n\n═══ ADVISOR ═══\nMasz dostęp do narzędzia `advisor` "
+                    "(silniejszy model konsultowany w trakcie generacji). Użyj go "
+                    "PRZED napisaniem odpowiedzi, jeśli sprawa jest nieoczywista — "
+                    "ciche wywołanie, bez informowania o tym w odpowiedzi. Rada "
+                    "advisora wpływa na TREŚĆ, format i długość odpowiedzi zostają "
+                    "bez zmian (patrz instrukcja wyżej)."
+                    if language != "en"
+                    else "\n\n═══ ADVISOR ═══\nYou have access to an `advisor` tool "
+                    "(a stronger model consulted mid-generation). Use it BEFORE "
+                    "writing your answer if the call is non-obvious — call it "
+                    "silently, do not narrate the consultation in your reply. Let "
+                    "the advice inform the CONTENT; the format/length rules above "
+                    "still apply unchanged."
+                )
 
         try:
             if backend == "xai":
@@ -812,25 +908,175 @@ class BaseAgent(ABC):
                 }
                 if not anthropic_omits_temperature(cfg["model"]):
                     create_kw["temperature"] = cfg["temperature"]
-                # Belt+suspenders: wait_for > SDK (AW_LLM_TIMEOUT_WAIT vs SDK).
-                message = await asyncio.wait_for(
-                    client.messages.create(**create_kw),
-                    timeout=float(LLM_TIMEOUT_WAIT_SEC),
+                _thinking = anthropic_thinking_config(cfg["model"])
+                if _thinking is not None:
+                    create_kw["thinking"] = _thinking
+
+                # Per-agent timeout (ModelCfg.timeout_s) — np. Syez fa2 z 5000 tok.
+                # PODŁOGA, nie zamiennik: gdy globalny AW_LLM_TIMEOUT_WAIT jest
+                # wyższy (np. .env = 120s), timeout_s=90 nie może go SKRACAĆ.
+                # Belt+suspenders (wait_for > SDK) obowiązuje ZAWSZE, nie tylko
+                # przy per-agent timeout_s — bez tego ścieżka globalna szła
+                # z domyślnym timeoutem SDK (10 min) pod wait_for 55s i para
+                # przestawała cokolwiek znaczyć.
+                _wait_s = max(
+                    float(cfg.get("timeout_s") or 0.0), float(LLM_TIMEOUT_WAIT_SEC)
                 )
-                response_text = message.content[0].text.strip()
-                in_tok = message.usage.input_tokens
-                out_tok = message.usage.output_tokens
+                create_kw["timeout"] = max(1.0, _wait_s - 10.0)
+
+                advisor_done = False
+                if use_advisor:
+                    # Fail-open na STANDARDOWĄ ścieżkę (nie _fallback_contribute):
+                    # stary SDK bez tej bety (TypeError na `betas=`/`tools=`),
+                    # 400 na niedozwolonej parze modeli, rate-limit w środku
+                    # konsultacji, pusty tekst, niedomknięty pause_turn —
+                    # synteza MA powstać zwykłym wywołaniem; advisor to
+                    # opcjonalne wzmocnienie, nie warunek odpowiedzi.
+                    # Wyjątki łapiemy TUTAJ (nie propagujemy do tenacity):
+                    # retry całej wielowywołaniowej konsultacji Opusa na
+                    # kluczu BYOK mnożyłby koszt bez wartości.
+                    _adv_responses: list[Any] = []
+                    try:
+                        adv_kw = dict(create_kw)
+                        adv_kw["system"] = system_prompt + advisor_suffix
+                        _adv_responses = await self._call_with_advisor(client, adv_kw)
+                        (response_text, in_tok, out_tok,
+                         advisor_cost) = self._extract_advisor_response(_adv_responses)
+                        if _adv_responses and getattr(
+                            _adv_responses[-1], "stop_reason", None
+                        ) == "pause_turn":
+                            raise RuntimeError(
+                                f"pause_turn niedomknięty po {len(_adv_responses)} "
+                                f"iteracjach — tekst byłby ucięty"
+                            )
+                        if not response_text:
+                            raise RuntimeError("ścieżka advisora zwróciła pusty tekst")
+                        advisor_done = True
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        # Częściowa konsultacja została już ZAFAKTUROWANA na
+                        # kluczu BYOK (tokeny executora nieudanej tury + tokeny
+                        # advisora) — NIE zerujemy, tylko przenosimy jako koszt
+                        # utopiony do `advisor_cost`, żeby log kosztów mówił
+                        # prawdę. Wcześniejsze `advisor_cost = 0.0` sprawiało,
+                        # że realny wydatek znikał z trackingu.
+                        if isinstance(e, _AdvisorPathError):
+                            _adv_responses = e.responses or _adv_responses
+                        _w_in, _w_out, _w_adv = 0, 0, 0.0
+                        if _adv_responses:
+                            _, _w_in, _w_out, _w_adv = (
+                                self._extract_advisor_response(_adv_responses)
+                            )
+                        advisor_cost = (
+                            self._calculate_cost(cfg["model"], _w_in, _w_out) + _w_adv
+                        )
+                        logger.error(
+                            "LLM [%s] ścieżka advisora padła (%s: %s) — fallback "
+                            "do standardowego wywołania bez advisora; koszt "
+                            "utopiony nieudanej tury ≈ $%.4f (zaliczony do logu)",
+                            self.name, type(e).__name__, e, advisor_cost,
+                        )
+                        # Wynik fallbacku powstaje BEZ advisora — musi trafić
+                        # pod klucz cache advisor=False (v10). Zapis pod kluczem
+                        # v11/advisor=1 serwowałby nie-advisorową odpowiedź jako
+                        # advisorową do końca TTL (cache poisoning).
+                        cache_key = self._cache_key(
+                            self.name, context, cfg["model"], cfg["temperature"],
+                            dream_id=dream_id, language=language,
+                            debate_mode=debate_mode, council_mode=council_mode,
+                            tenant_id=tenant_id, user_id=user_id,
+                            counter_role=counter_role, advisor=False,
+                        )
+                if not advisor_done:
+                    # Belt+suspenders: wait_for > SDK (AW_LLM_TIMEOUT_WAIT vs SDK).
+                    try:
+                        message = await asyncio.wait_for(
+                            client.messages.create(**create_kw),
+                            timeout=_wait_s,
+                        )
+                    except BadRequestError as _e:
+                        # Nowe modele odrzucają `temperature` (400 "deprecated").
+                        # Jeden retry bez parametru zamiast pustej syntezy.
+                        # TYLKO typowany 400 (nie sniffing dowolnego Exception
+                        # po stringu) — timeouty/5xx/sieć nie mają prawa wejść
+                        # w tę gałąź, a warunek nie zależy od pełnej treści
+                        # komunikatu, tylko od nazwy odrzuconego parametru.
+                        _msg = str(_e).lower()
+                        if "temperature" in create_kw and "temperature" in _msg:
+                            logger.warning(
+                                "LLM [%s] %s odrzucił `temperature` — retry bez parametru",
+                                self.name, cfg["model"],
+                            )
+                            create_kw.pop("temperature", None)
+                            message = await asyncio.wait_for(
+                                client.messages.create(**create_kw),
+                                timeout=_wait_s,
+                            )
+                        else:
+                            raise
+                    from shared.utils.llm import extract_message_text
+
+                    response_text = extract_message_text(message)
+                    # Sonnet 5 + adaptive thinking: thinking zjada max_tokens →
+                    # content = [ThinkingBlock] bez text. Jeden retry z jawnym
+                    # disabled (jeśli jeszcze nie) zamiast pustego głosu Rady.
+                    if not response_text:
+                        _types = [
+                            getattr(b, "type", type(b).__name__)
+                            for b in (message.content or [])
+                        ]
+                        _sr = getattr(message, "stop_reason", None)
+                        if (
+                            "thinking" in _types
+                            and create_kw.get("thinking", {}).get("type") != "disabled"
+                        ):
+                            logger.warning(
+                                "LLM [%s] %s: tylko thinking (stop=%s, types=%s) "
+                                "— retry z thinking=disabled",
+                                self.name, cfg["model"], _sr, _types,
+                            )
+                            create_kw["thinking"] = {"type": "disabled"}
+                            message = await asyncio.wait_for(
+                                client.messages.create(**create_kw),
+                                timeout=_wait_s,
+                            )
+                            response_text = extract_message_text(message)
+                        if not response_text:
+                            raise ValueError(
+                                f"LLM [{self.name}] zwrócił odpowiedź bez bloku text "
+                                f"(content types: {_types}, stop_reason={_sr})"
+                            )
+                    _sr_final = getattr(message, "stop_reason", None)
+                    if _sr_final == "max_tokens":
+                        logger.warning(
+                            "LLM [%s] %s: stop_reason=max_tokens (out≈%s, limit=%s) "
+                            "— odpowiedź może być ucięta; podnieś max_tokens lub "
+                            "trzymaj thinking=disabled",
+                            self.name,
+                            cfg["model"],
+                            getattr(getattr(message, "usage", None), "output_tokens", "?"),
+                            cfg["max_tokens"],
+                        )
+                    in_tok = message.usage.input_tokens
+                    out_tok = message.usage.output_tokens
                 log_model = cfg["model"]
 
             # Syez — kontrakt strict-PROSE; sanitizujemy JSON/markdown jeśli model się zbuntuje.
             if self.name == "Syez":
                 response_text = self._sanitize_syez_output(response_text)
 
-            cost = self._calculate_cost(log_model, in_tok, out_tok)
-            logger.info(
-                "LLM [%s] %s in=%d out=%d ≈ $%.4f",
-                self.name, log_model, in_tok, out_tok, cost,
-            )
+            cost = self._calculate_cost(log_model, in_tok, out_tok) + advisor_cost
+            if advisor_cost:
+                logger.info(
+                    "LLM [%s] %s in=%d out=%d + advisor(%s) ≈ $%.4f (advisor $%.4f)",
+                    self.name, log_model, in_tok, out_tok, ADVISOR_MODEL, cost, advisor_cost,
+                )
+            else:
+                logger.info(
+                    "LLM [%s] %s in=%d out=%d ≈ $%.4f",
+                    self.name, log_model, in_tok, out_tok, cost,
+                )
             # Strukturalny log (JSON gdy LOG_FORMAT=json) + Prometheus counter.
             try:
                 from api._log import slog
@@ -910,6 +1156,135 @@ class BaseAgent(ABC):
             except Exception:  # pragma: no cover
                 pass
             return self._fallback_contribute(context)
+
+    # ── Advisor tool (beta advisor-tool-2026-03-01) ────────────────────────
+    # Executor = ten agent (Sonnet 5), advisor = model silniejszy (domyślnie
+    # Opus 4.8, config/agent_models.py). Włączane per agent/tryb debaty przez
+    # `advisor_enabled_for()` — domyślnie WYŁĄCZONE globalnie.
+    #
+    # UWAGA: ten kod NIE był odpalony przeciw prawdziwemu API (środowisko bez
+    # dostępu do sieci Anthropic w momencie pisania) — kształt `usage.iterations`
+    # jest zaimplementowany defensywnie wg docs, ale wymaga jednego realnego
+    # przebiegu z AW_ADVISOR_ENABLED=true zanim zaufasz kosztom w produkcji.
+    # Patrz docs Anthropic: platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool
+
+    async def _call_with_advisor(self, client: "AsyncAnthropic", create_kw: dict) -> list[Any]:
+        """Woła `beta.messages.create` z tools=[advisor] i obsługuje
+        `stop_reason: "pause_turn"` (advisor call w toku) doreszłowaniem tury —
+        patrz sekcja „Resuming a paused turn” w docs. Zwraca listę wszystkich
+        odpowiedzi API złożonych na tę turę (zwykle 1, czasem 2-3 przy pauzach).
+
+        Błąd W TRAKCIE tury (timeout, API error między iteracjami pause_turn)
+        → `_AdvisorPathError` z częściowymi `responses`: caller musi umieć
+        doliczyć koszt już zafakturowanych iteracji, mimo że tura padła."""
+        tools = [{
+            "type": "advisor_20260301",
+            "name": "advisor",
+            "model": ADVISOR_MODEL,
+            "max_uses": ADVISOR_MAX_USES,
+            "max_tokens": ADVISOR_MAX_TOKENS,
+        }]
+        betas = ["advisor-tool-2026-03-01"]
+        messages = list(create_kw["messages"])
+        # Advisor (np. opus-4-8) w turze wymusza reguły nowszych modeli:
+        # `temperature` w payloadzie → 400 "deprecated". Wycinamy prewencyjnie.
+        # UWAGA (świadomy side-effect, logowany): executor traci wtedy swoją
+        # temperature (np. Syez 0.5 → default API) na czas tury z advisorem.
+        if anthropic_omits_temperature(ADVISOR_MODEL) and "temperature" in create_kw:
+            logger.info(
+                "Advisor [%s]: para z %s wymusza brak `temperature` — "
+                "executor idzie z domyślnym samplingiem w tej turze",
+                self.name, ADVISOR_MODEL,
+            )
+            create_kw = {k: v for k, v in create_kw.items() if k != "temperature"}
+        responses: list[Any] = []
+        # Jeden ŁĄCZNY budżet czasu na całą turę (deadline), nie pełny timeout
+        # per iteracja — inaczej 4 pauzy × 100s dawałyby ~7-minutową syntezę,
+        # której pipeline SSE nie ma prawa tolerować.
+        _budget = (
+            float(create_kw["timeout"]) + 10.0
+            if create_kw.get("timeout")
+            else float(LLM_TIMEOUT_WAIT_SEC)
+        )
+        _loop = asyncio.get_running_loop()
+        _deadline = _loop.time() + _budget
+        # Bounded — dokumentacja mówi "a resumed turn can pause again", ale nie
+        # ma twardego limitu; 4 próby to margines bez ryzyka pętli w nieskończoność.
+        try:
+            for _ in range(4):
+                kw = dict(create_kw)
+                kw["messages"] = messages
+                kw["tools"] = tools
+                kw["betas"] = betas
+                _remaining = _deadline - _loop.time()
+                if _remaining <= 0:
+                    raise asyncio.TimeoutError(
+                        f"advisor: budżet {_budget:.0f}s wyczerpany po {len(responses)} iteracjach"
+                    )
+                message = await asyncio.wait_for(
+                    client.beta.messages.create(**kw),
+                    timeout=_remaining,
+                )
+                responses.append(message)
+                if getattr(message, "stop_reason", None) != "pause_turn":
+                    break
+                # Domknięty advisor call w toku, brak naszego tool_use do obsłużenia
+                # (patrz base_agent — agenci Rady nie mają własnych client tools) —
+                # doślij assistant content bez zmian, bez nowego user message.
+                messages = messages + [{"role": "assistant", "content": message.content}]
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Iteracje, które ZDĄŻYŁY wrócić, są już zafakturowane — oddaj je
+            # callerowi razem z błędem (koszt utopiony do logu kosztów).
+            raise _AdvisorPathError(str(exc), responses) from exc
+        return responses
+
+    def _extract_advisor_response(self, responses: list[Any]) -> tuple[str, int, int, float]:
+        """Skleja tekst finalny + sumuje tokeny executora i koszt advisora
+        (osobne stawki — `usage.iterations[].type == "advisor_message"`).
+
+        Fallback gdy SDK nie zna jeszcze `usage.iterations` (starsza wersja
+        `anthropic` niż ta beta): liczy WSZYSTKO jako tokeny executora —
+        koszt będzie zaniżony o realny koszt advisora, ale nic nie wybucha.
+
+        Dedup przy pause_turn: wznowiona tura MOŻE zwrócić treść skumulowaną
+        (powtórzyć dotychczasowy tekst + kontynuację) zamiast samego przyrostu.
+        Naiwna konkatenacja dawałaby wtedy zduplikowaną syntezę — jeśli tekst
+        kolejnej odpowiedzi zaczyna się od całości dotychczasowej, traktujemy
+        go jako skumulowany i ZASTĘPUJEMY, nie doklejamy."""
+        acc = ""
+        in_tok = 0
+        out_tok = 0
+        advisor_cost = 0.0
+        for message in responses:
+            part = "".join(
+                (getattr(block, "text", "") or "")
+                for block in (getattr(message, "content", []) or [])
+                if getattr(block, "type", None) == "text"
+            )
+            if part:
+                if acc and part.startswith(acc):
+                    acc = part  # treść skumulowana — zastąp
+                else:
+                    acc += part  # przyrost — doklej
+            usage = getattr(message, "usage", None)
+            iterations = getattr(usage, "iterations", None) if usage is not None else None
+            if iterations:
+                for it in iterations:
+                    it_type = getattr(it, "type", None)
+                    it_in = int(getattr(it, "input_tokens", 0) or 0)
+                    it_out = int(getattr(it, "output_tokens", 0) or 0)
+                    if it_type == "advisor_message":
+                        it_model = getattr(it, "model", None) or ADVISOR_MODEL
+                        advisor_cost += self._calculate_cost(it_model, it_in, it_out)
+                    else:
+                        in_tok += it_in
+                        out_tok += it_out
+            elif usage is not None:
+                in_tok += int(getattr(usage, "input_tokens", 0) or 0)
+                out_tok += int(getattr(usage, "output_tokens", 0) or 0)
+        return acc.strip(), in_tok, out_tok, advisor_cost
 
     def _build_user_message(self, context: str, *, language: str = "pl",
                             council_mode: str = "personal") -> str:

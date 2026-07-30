@@ -757,9 +757,14 @@ async def _attempt_completion_audit(
         logger.warning("Syez audit violation, re-prompting: %s", cv)
         fix_prompt = build_audit_fix_prompt(lang, synthesis_final)
         try:
+            # advisor_override=False: to mechaniczna naprawa formatu (audyt
+            # domknięcia niekompletny/niewykryty), nie świeże rozumowanie —
+            # Rada i marzenie się nie zmieniły. Advisor drugi raz na tej samej
+            # treści to podwójny koszt/opóźnienie Opusa bez wartości.
             fixed = await SYNTHESIZER.acontribute(
                 fix_prompt, dream=dream, language=lang, debate_mode=brief.mode,
                 council_mode=council_mode,
+                advisor_override=False,
             )
             synthesis_final = fixed
             parsed_fix = _try_parse_synthesis_json(fixed)
@@ -1043,11 +1048,11 @@ async def _stream_debate_inner(
         },
     )
 
-    # BYOK fail-closed: w produkcji bez klucza usera nie startujemy Rady.
+    # BYOK fail-closed: prod/boxed bez klucza usera nie startujemy Rady.
     try:
-        from api.settings import is_production
+        from api.settings import security_hardened
 
-        if is_production() and effective_llm_backend() == "none" and not anthropic_api_key():
+        if security_hardened() and effective_llm_backend() == "none" and not anthropic_api_key():
             _msg = (
                 "Brak klucza LLM — dodaj swój klucz w Ustawieniach"
                 if brief.language != "en"

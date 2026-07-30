@@ -1,4 +1,8 @@
-anthropic>=0.40.0
+# ≥0.69: Advisor tool beta (advisor-tool-2026-03-01: `betas=`, tools advisor_20260301,
+# `usage.iterations`). Starszy SDK → ścieżka advisora pada w kontrolowany fallback
+# (base_agent), ale koszty advisora nie są wtedy rozliczane. Build sidecara
+# (scripts/build-backend-sidecar.sh) MUSI instalować z tego pliku.
+anthropic>=0.69.0
 openai>=1.30.0
 tenacity>=8.2.0
 redis>=5.0.0
