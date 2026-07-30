@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_sign_check:
-        description: "Pomiń walidację certyfikatów (tylko dev/most bez certów — patrz docs/TAURI_RELEASE.md)"
+        description: "Zbuduj bez podpisu (tylko dev/most bez certów — patrz docs/TAURI_RELEASE.md)"
         default: "false"
         type: choice
         options:
@@ -36,10 +36,15 @@ jobs:
       - name: Install frontend deps
         working-directory: src
         run: npm ci
-      - name: Build Tauri (signed when secrets present)
+      # GitHub rozwija brakujące sekrety do pustych stringów. Samo pominięcie
+      # walidacji nie wystarcza: obecność APPLE_CERTIFICATE="" uruchamia w Tauri
+      # import pustego certyfikatu i kończy się SecKeychainItemImport. Wariant
+      # unsigned celowo nie deklaruje żadnej zmiennej APPLE_*.
+      - name: Build Tauri (unsigned)
+        if: ${{ inputs.skip_sign_check == 'true' }}
         working-directory: src
         env:
-          AW_TAURI_SKIP_SIGN_CHECK: ${{ inputs.skip_sign_check }}
+          AW_TAURI_SKIP_SIGN_CHECK: "true"
           # MUSI wskazywać LOKALNY backend (review 2026-07-30). Paczka desktop
           # to model pudełkowy: sidecar słucha na 127.0.0.1:8000. Poprzednia
           # wartość domyślna 'https://api.example.com' dawała paczkę zepsutą
@@ -51,6 +56,13 @@ jobs:
           #      → CSP blokowałby 127.0.0.1:8000, nawet gdyby punkt 1 naprawić.
           # `vars.VITE_API_URL` zostaje jako świadome nadpisanie dla ewentualnego
           # builda pod hosting, ale domyślnie budujemy PUDEŁKO.
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://127.0.0.1:8000' }}
+        run: npm run tauri:build:release
+      - name: Build Tauri (signed)
+        if: ${{ inputs.skip_sign_check != 'true' }}
+        working-directory: src
+        env:
+          AW_TAURI_SKIP_SIGN_CHECK: "false"
           VITE_API_URL: ${{ vars.VITE_API_URL || 'http://127.0.0.1:8000' }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
