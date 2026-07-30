@@ -44,7 +44,7 @@ def _public_paths() -> frozenset[str]:
         }
     )
     force_docs = os.getenv("AW_FORCE_OPENAPI", "").strip().lower() in ("1", "true", "yes")
-    if not settings.is_production() or force_docs:
+    if not settings.security_hardened() or force_docs:
         return p | frozenset({"/openapi.json", "/docs", "/redoc"})
     return p
 
@@ -134,12 +134,12 @@ async def architekt_http_guard(
         # Stage 1 hardening: fail-closed gdy brak sekretów.
         # Dev-only bypass (nigdy w produkcji): AW_INSECURE_NO_AUTH=1
         if os.getenv("AW_INSECURE_NO_AUTH", "").strip().lower() in ("1", "true", "yes"):
-            if settings.is_production():
+            if settings.security_hardened():
                 logger.critical(
-                    "AW_INSECURE_NO_AUTH=1 niedozwolone w produkcji — blokuję żądanie"
+                    "AW_INSECURE_NO_AUTH=1 niedozwolone w produkcji/boxed — blokuję żądanie"
                 )
                 return JSONResponse(
-                    {"detail": "AW_INSECURE_NO_AUTH niedozwolone w środowisku produkcyjnym."},
+                    {"detail": "AW_INSECURE_NO_AUTH niedozwolone w tym środowisku."},
                     status_code=403,
                 )
             logger.warning(

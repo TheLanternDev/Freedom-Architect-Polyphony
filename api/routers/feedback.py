@@ -21,7 +21,7 @@ from slowapi import Limiter
 
 from api._log import slog
 from api._rate_limit import jwt_or_ip_key
-from api.settings import is_production
+from api.settings import security_hardened
 from db.tenant import current_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,8 @@ async def submit_feedback(request: Request, payload: FeedbackPayload):
             logger.warning("DB persist feedback failed: %s", e)
 
     if not persisted:
-        if is_production():
+        # prod/boxed: uczciwe 503 zamiast cichego zgubienia zapisu.
+        if security_hardened():
             raise HTTPException(
                 503,
                 detail=(
@@ -101,7 +102,7 @@ async def submit_feedback(request: Request, payload: FeedbackPayload):
         import re
         from pathlib import Path
 
-        if is_production():  # nieosiągalne (return wyżej), ale fail-closed na refaktor
+        if security_hardened():  # nieosiągalne (return wyżej), ale fail-closed na refaktor
             raise HTTPException(503, detail="Feedback DB niedostępna w produkcji.")
 
         tid = current_tenant_id()

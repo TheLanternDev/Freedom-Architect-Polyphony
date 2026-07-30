@@ -26,7 +26,7 @@ from core.dream_architect import (
 
 
 def test_fallback_dream_has_all_required_fields():
-    brief = "Chcę dokończyć aplikację SoberSteps i wydać ją w App Store w 6 tygodni."
+    brief = "Chcę dokończyć MVP Architekta Wolności i wydać pierwszą wersję w 6 tygodni."
     dream = distill_dream(brief)
 
     assert dream.dream_id, "dream_id musi być wypełnione"

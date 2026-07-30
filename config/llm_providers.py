@@ -10,7 +10,9 @@ Zmienne:
   MODEL_XAI_OPUS, MODEL_XAI_SONNET, MODEL_XAI_HAIKU — gdy lecimy na xAI
   AW_ANTHROPIC_OMIT_TEMPERATURE_SUBSTR — opcjonalnie: dodatkowe fragmenty nazwy modelu
     (po przecinku), dla których nie wysyłamy `temperature` do Messages API (Anthropic
-    zwraca 400 „deprecated for this model” m.in. dla Claude Opus 4.7).
+    zwraca 400 „deprecated for this model” m.in. dla Claude Opus 4.7 / Sonnet 5).
+  AW_ANTHROPIC_THINKING=adaptive|disabled — Sonnet 5 ma adaptive thinking ON by default;
+    domyślnie wyłączamy (disabled), bo max_tokens obejmuje thinking+tekst i ucina Radę.
 
   Timeouty LLM (sekundy, jawna konfiguracja):
   AW_LLM_TIMEOUT_SDK — httpx/Anthropic SDK (domyślnie 45)
@@ -61,15 +63,17 @@ def anthropic_api_key() -> str | None:
             return ctx
     except Exception:
         pass
-    # Brak klucza usera: env fallback TYLKO w dev. Błąd ustalenia trybu =
-    # fail-closed (traktuj jak prod → None), nie wyciekaj klucza serwera.
+    # Brak klucza usera: env fallback TYLKO w dev. Prod ORAZ boxed = fail-closed
+    # (boxed: klucz idzie wyłącznie z Keychaina nagłówkiem X-LLM-Key; config.env
+    # nigdy nie przenosi kluczy LLM — patrz env_bootstrap.py). Błąd ustalenia
+    # trybu = fail-closed (traktuj jak prod → None), nie wyciekaj klucza serwera.
     try:
-        from api.settings import is_production
+        from api.settings import security_hardened
 
-        prod = is_production()
+        hardened = security_hardened()
     except Exception:
-        prod = True
-    if prod:
+        hardened = True
+    if hardened:
         return None
     return _strip_key("ANTHROPIC_API_KEY")
 
@@ -105,10 +109,10 @@ def effective_llm_backend() -> LLMBackend:
     if ak:
         return "anthropic"
     try:
-        from api.settings import is_production
+        from api.settings import security_hardened
 
-        if is_production():
-            # BYOK: w produkcji brak klucza usera → fail-closed (bez cichego xAI/env).
+        if security_hardened():
+            # BYOK: prod/boxed bez klucza usera → fail-closed (bez cichego xAI/env).
             return "none"
     except Exception:
         pass
@@ -121,14 +125,20 @@ def effective_llm_backend() -> LLMBackend:
 
 def anthropic_omits_temperature(model: str) -> bool:
     """
-    Claude Opus 4.7 (wg Anthropic migration guide) odrzuca `temperature` w payloadzie
+    Nowe modele Anthropic odrzucają `temperature` w payloadzie
     z komunikatem 400 „deprecated for this model” — należy go pominąć.
 
     Dodatkowe dopasowania: `AW_ANTHROPIC_OMIT_TEMPERATURE_SUBSTR=a,b,c`
     (podłańcuchy w `model.lower()`, rozdzielone przecinkami).
     """
     m = (model or "").lower()
-    if "opus-4-6" in m:
+    # Modele odrzucające `temperature` (400 "deprecated for this model"):
+    # Opus 4.6+, Sonnet 5, rodzina Fable/Mythos.
+    # Uwaga: „sonnet-5” NIE łapie „sonnet-4-5” (brak podciągu).
+    if any(
+        s in m
+        for s in ("opus-4-6", "opus-4-7", "opus-4-8", "sonnet-5", "fable", "mythos")
+    ):
         return True
     raw = os.getenv("AW_ANTHROPIC_OMIT_TEMPERATURE_SUBSTR", "").strip()
     if not raw:
@@ -138,6 +148,39 @@ def anthropic_omits_temperature(model: str) -> bool:
         if p and p in m:
             return True
     return False
+
+
+def anthropic_defaults_adaptive_thinking(model: str) -> bool:
+    """True gdy model BEZ pola `thinking` i tak odpala adaptive thinking.
+
+    Claude Sonnet 5: adaptive ON by default; trzeba jawnie
+    `thinking: {type: \"disabled\"}` żeby wrócić do zachowania 4.6.
+    """
+    m = (model or "").lower()
+    return "sonnet-5" in m
+
+
+def anthropic_thinking_config(model: str) -> dict[str, str] | None:
+    """Zwraca param `thinking` do Messages API albo None (= nie wysyłaj pola).
+
+    Domyślnie dla modeli z adaptive-by-default: **disabled**.
+    Powód: `max_tokens` to twardy strop na thinking+tekst — przy budżetach Rady
+    (Szow 1500, Syez 3000) thinking zjada limity → pusty głos albo synteza
+    ucięta w pół słowa (stop_reason=max_tokens).
+
+    Escape hatch: `AW_ANTHROPIC_THINKING=adaptive|disabled`
+    (puste → disabled dla adaptive-default, None dla pozostałych).
+    """
+    mode = (os.getenv("AW_ANTHROPIC_THINKING") or "").strip().lower()
+    if mode in ("adaptive", "on", "1", "true", "enabled"):
+        if anthropic_defaults_adaptive_thinking(model):
+            return {"type": "adaptive"}
+        return None
+    if mode in ("disabled", "off", "0", "false"):
+        return {"type": "disabled"}
+    if anthropic_defaults_adaptive_thinking(model):
+        return {"type": "disabled"}
+    return None
 
 
 def is_retryable_anthropic_exception(exc: Exception) -> bool:

@@ -103,7 +103,7 @@ def test_call_llm_reads_identity_from_contextvar(monkeypatch):
     async def _fake_call(self, context, dream=None, *, language="pl",
                          debate_mode="pelna", council_mode="personal",
                          has_evolution_note=False, tenant_id=None, user_id=None,
-                         counter_role=False):
+                         counter_role=False, advisor_override=None):
         # Replikujemy fragment _call_llm odczytujący ContextVar.
         if tenant_id is None or user_id is None:
             from db.tenant import current_tenant_id, current_user_id

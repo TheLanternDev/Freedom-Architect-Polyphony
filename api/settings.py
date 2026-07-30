@@ -14,12 +14,36 @@ def is_production() -> bool:
     return v in ("production", "prod")
 
 
+def is_boxed() -> bool:
+    """Paczka desktop (PyInstaller sidecar, single-user, local-first).
+
+    Ustawiane przez `env_bootstrap._apply_boxed_defaults()` (AW_ENV=boxed).
+    NIE jest produkcją (brak preflightu Postgres/Redis/CORS — lokalny SQLite
+    i jeden user), ale bramki BEZPIECZEŃSTWA traktują boxed jak produkcję —
+    patrz `security_hardened()`.
+    """
+    return (os.getenv("AW_ENV") or "").strip().lower() == "boxed"
+
+
+def security_hardened() -> bool:
+    """Fail-closed gates: produkcja ORAZ paczka boxed.
+
+    Używać wszędzie, gdzie `is_production()` oznacza „zaostrz bezpieczeństwo"
+    (BYOK bez env-fallbacku, brak /docs, zakaz AW_INSECURE_NO_AUTH, uczciwe
+    503 zamiast cichego pominięcia zapisu). NIE używać dla wymagań
+    infrastrukturalnych (Postgres/Redis/CORS preflight) — te zostają na
+    `is_production()`; boxed świadomie działa na SQLite bez Redis
+    (JTI revocation: patrz komentarz w `api/auth_identity.py`).
+    """
+    return is_production() or is_boxed()
+
+
 def openapi_urls() -> tuple[str | None, str | None, str | None]:
     """
     W produkcji domyślnie wyłączamy `/docs`, `/redoc`, `/openapi.json`
     (mniejsza powierzchnia ataku). Wymuszenie: AW_FORCE_OPENAPI=1.
     """
-    if is_production() and os.getenv("AW_FORCE_OPENAPI", "").strip().lower() not in (
+    if security_hardened() and os.getenv("AW_FORCE_OPENAPI", "").strip().lower() not in (
         "1",
         "true",
         "yes",
@@ -126,6 +150,11 @@ def cors_allow_origins() -> list[str]:
 
     raw = (os.getenv("AW_CORS_ORIGINS") or "*").strip()
     if raw == "*":
+        # Boxed: bez wildcarda — tylko origins webview Tauri + dev Vite.
+        # Backend słucha na 127.0.0.1, ale każda strona w przeglądarce usera
+        # mogłaby z '*' czytać odpowiedzi lokalnego API.
+        if is_boxed():
+            return list(_DEV_VITE_ORIGINS)
         return ["*"]
     out = [p.strip() for p in raw.split(",") if p.strip()]
     if not out:

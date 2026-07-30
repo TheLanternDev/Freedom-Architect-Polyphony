@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from api.settings import is_production
+from api.settings import security_hardened
 from db.tenant import current_tenant_id
 
 from personal_v1.rituals.onboarding import (
@@ -79,7 +79,8 @@ async def onboarding_save(request: Request, payload: OnboardingSavePayload):
             persist_error = str(e)
 
     if not persisted:
-        if is_production():
+        # prod/boxed: uczciwe 503 zamiast cichego zgubienia zapisu.
+        if security_hardened():
             raise HTTPException(
                 503,
                 detail=(

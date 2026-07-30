@@ -7,7 +7,7 @@ po polach (`agent`, `model`, `tenant_id`, `latency_ms`, `cache_hit`).
 
 Użycie:
     from api._log import slog
-    slog("llm_call_completed", agent="Syez", model="claude-sonnet-4-6",
+    slog("llm_call_completed", agent="Syez", model="claude-sonnet-5",
          input_tokens=420, output_tokens=1200, cost_usd=0.018, cache_hit=False)
 
 W trybie dev/test (`LOG_FORMAT != "json"`) loguje czytelnie dla człowieka.

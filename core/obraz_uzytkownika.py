@@ -32,6 +32,7 @@ from config.llm_providers import (
     LLM_TIMEOUT_SDK_SEC,
     anthropic_api_key,
     anthropic_omits_temperature,
+    anthropic_thinking_config,
     effective_llm_backend,
     map_claude_model_to_ollama,
     map_claude_model_to_xai,
@@ -249,7 +250,7 @@ async def adistill_obraz(
         obraz.wersja = wersja
         return obraz
 
-    model_name = model or os.getenv("MODEL_SONNET", "claude-sonnet-4-6")
+    model_name = model or os.getenv("MODEL_SONNET", "claude-sonnet-5")
     user_content = (
         "Odpowiedzi onboardingowe Patryka — zdestyluj w JSON wg schematu.\n"
         "---\n" + material + "\n---\nZwróć WYŁĄCZNIE JSON."
@@ -300,10 +301,15 @@ async def adistill_obraz(
         }
         if not anthropic_omits_temperature(model_name):
             create_kw["temperature"] = temperature
+        _thinking = anthropic_thinking_config(model_name)
+        if _thinking is not None:
+            create_kw["thinking"] = _thinking
         msg = await asyncio.wait_for(
             client.messages.create(**create_kw), timeout=float(DREAM_TIMEOUT_WAIT_SEC)
         )
-        return _from_payload(_parse_llm_json_object(msg.content[0].text))  # type: ignore[index,union-attr]
+        from shared.utils.llm import extract_message_text
+
+        return _from_payload(_parse_llm_json_object(extract_message_text(msg)))
     except Exception as e:  # noqa: BLE001
         logger.warning("adistill_obraz: błąd LLM (%s) — fallback deterministyczny.", e)
         obraz = _fallback_obraz(answers)

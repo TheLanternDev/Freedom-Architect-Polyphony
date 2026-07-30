@@ -35,6 +35,7 @@ from config.llm_providers import (
     LLM_TIMEOUT_SDK_SEC,
     anthropic_api_key,
     anthropic_omits_temperature,
+    anthropic_thinking_config,
     effective_llm_backend,
     map_claude_model_to_ollama,
     map_claude_model_to_xai,
@@ -677,7 +678,7 @@ async def adistill_dream(
         _DREAM_CACHE[key] = dream
         return dream
 
-    model_name = model or os.getenv("MODEL_SONNET", "claude-sonnet-4-6")
+    model_name = model or os.getenv("MODEL_SONNET", "claude-sonnet-5")
 
     if language == "en":
         system_prompt = DREAM_DISTILLATION_SYSTEM_PROMPT_EN
@@ -780,11 +781,16 @@ async def adistill_dream(
         }
         if not anthropic_omits_temperature(model_name):
             create_kw["temperature"] = temperature
+        _thinking = anthropic_thinking_config(model_name)
+        if _thinking is not None:
+            create_kw["thinking"] = _thinking
         msg = await asyncio.wait_for(
             client.messages.create(**create_kw),
             timeout=float(DREAM_TIMEOUT_WAIT_SEC),
         )
-        text = msg.content[0].text  # type: ignore[index,union-attr]
+        from shared.utils.llm import extract_message_text
+
+        text = extract_message_text(msg)
         payload = _parse_llm_json_object(text)
         dream = _build_dream_from_payload(raw_brief, payload)
         _DREAM_CACHE[key] = dream
