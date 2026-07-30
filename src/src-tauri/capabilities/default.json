@@ -6,6 +6,16 @@
   "permissions": [
     "core:default",
     "shell:allow-open",
+    {
+      "identifier": "shell:allow-spawn",
+      "allow": [
+        {
+          "name": "binaries/architekt-backend",
+          "sidecar": true,
+          "args": false
+        }
+      ]
+    },
     "allow-store-llm-key",
     "allow-get-llm-key",
     "allow-clear-llm-key"

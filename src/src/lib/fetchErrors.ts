@@ -3,10 +3,21 @@
  * na komunikaty opisowe — z tłumaczeniem przez przekazaną funkcję `translate`.
  */
 
+import { isTauriWebview } from "@/lib/tokenStorage";
+
 export type TranslateFn = (key: string) => string;
 
 const LOAD_FAILED_HINT = /\bload\s*failed\b/i;
 const FETCH_FAILED_LOWER = "failed to fetch";
+
+function unreachableKey(): string {
+  // W paczce desktop (Tauri) backend to lokalny sidecar, nie proces
+  // odpalany ręcznie przez usera — komunikat "uruchom uvicorn ręcznie"
+  // jest tam niewykonalny (brak repo/terminala) i myli testerów.
+  return isTauriWebview()
+    ? "debate.network.unreachable_desktop"
+    : "debate.network.unreachable";
+}
 
 export function humanizeFetchFailure(
   err: unknown,
@@ -27,14 +38,14 @@ export function humanizeFetchFailure(
   }
 
   if (LOAD_FAILED_HINT.test(m)) {
-    return translate("debate.network.unreachable");
+    return translate(unreachableKey());
   }
   if (lower === FETCH_FAILED_LOWER || lower.includes("failed to fetch")) {
-    return translate("debate.network.unreachable");
+    return translate(unreachableKey());
   }
   // Firefox: „NetworkError when attempting to fetch resource.”
   if (lower.includes("networkerror") && lower.includes("fetch")) {
-    return translate("debate.network.unreachable");
+    return translate(unreachableKey());
   }
 
   return m;

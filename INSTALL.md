@@ -2,7 +2,9 @@
 
 Krótka ścieżka „od repozytorium do działającego API + UI”. Szczegóły endpointów: `README.md`, kontrakt: `docs/spec/SPEC_CURRENT.md` (skrót w korzeniu: `SPEC_CURRENT.md`).
 
-**Beta Windows (przeglądarka):** [`docs/BETA_TESTER_WINDOWS.md`](docs/BETA_TESTER_WINDOWS.md) · skrót: `CZYTAJ_MNIE.txt`
+**Paczka testowa — instalator (macOS/Windows, zero terminala):** [`docs/PACZKA_TESTOWA_STATUS_2026-07-07.md`](docs/PACZKA_TESTOWA_STATUS_2026-07-07.md) — build + workflow.
+
+**Beta Windows (przeglądarka, stara ścieżka techniczna):** [`docs/BETA_TESTER_WINDOWS.md`](docs/BETA_TESTER_WINDOWS.md) · skrót: `CZYTAJ_MNIE.txt`
 
 ## Wymagania
 
@@ -98,15 +100,41 @@ npm run tauri:dev
 
 Backend jak w §1 musi działać równolegle (Tauri domyślnie woła `http://127.0.0.1:8000`).
 
-### Build instalacyjny (founders)
+### Build instalacyjny (paczka testowa — samowystarczalna)
+
+Od 2026-07-07 backend jest zamrażany do binarki (PyInstaller) i wpięty jako
+**Tauri sidecar** — wynikowy `.dmg`/`.msi` NIE wymaga od testera Pythona,
+Node ani sklonowanego repo. Kolejność:
 
 ```bash
+# 1. Zbuduj sidecar backendu DLA TEGO OS (PyInstaller nie cross-kompiluje —
+#    macOS buduje się na macOS, Windows na Windows).
+./scripts/build-backend-sidecar.sh          # macOS/Linux
+# lub: .\scripts\windows\build-backend-sidecar.ps1   (Windows, PowerShell)
+
+# 2. Zbuduj instalator Tauri.
 cd src
 npm ci
 npm run tauri:build
 ```
 
-Artefakty platformowe w `src/src-tauri/target/release/bundle/`. Podpis binarek (Apple / Microsoft) załatwiasz we własnym pipeline — poza zakresem tego pliku.
+Artefakty platformowe w `src/src-tauri/target/release/bundle/` (`.dmg`/`.app`
+na macOS, `.msi`/`.exe` na Windows). Szczegóły sidecara, generowania
+`ARCHITEKT_JWT_SECRET` i ścieżek danych: `docs/TAURI_RELEASE.md` §0 i
+`docs/PACZKA_TESTOWA_STATUS_2026-07-07.md`.
+
+Podpis binarek (Apple Developer ID + notaryzacja / certyfikat Windows) —
+`docs/TAURI_RELEASE.md`. Bez podpisu: macOS Gatekeeper i Windows SmartScreen
+ostrzegają testera (obejście: prawy klik → Otwórz / „Więcej informacji” →
+„Uruchom mimo to” — akceptowalne dla zamkniętej grupy zaufanych testerów,
+nie do publicznej dystrybucji).
+
+CI robi oba kroki automatycznie na `macos-latest` + `windows-latest`:
+`.github/workflows/tauri-release.yml` (workflow_dispatch).
+
+**Stara ścieżka (przeglądarka, bez instalatora)** wciąż istnieje dla
+technicznych testerów, którzy wolą uruchamiać z terminala — patrz §9 niżej
+i `docs/BETA_TESTER_WINDOWS.md`.
 
 ## 4. Jedna origin (opcjonalnie)
 
@@ -114,9 +142,10 @@ Po `npm run build` w `src/`: ustaw `AW_SERVE_UI=1`, uruchom `uvicorn` — statyc
 
 ## 5. Dane i backup
 
-- Baza SQLite: domyślnie **`data/architekt.db`** (katalog względem cwd przy starcie uvicorn).
-- Kopia zapasowa = skopiuj ten plik przy zamkniętej aplikacji lub w przerwie w zapisie.
-- Koszty LLM (jeśli włączone): domyślnie **`data/cost_log.jsonl`** — nadpisz `COST_LOG_PATH`, jeśli trzymasz log gdzie indziej (np. stary plik `cost_log.jsonl` w korzeniu repo).
+- Baza SQLite: domyślnie **`data/architekt.db`** (katalog względem cwd przy starcie uvicorn) — **tylko przy uruchomieniu z repo** (`uvicorn main:app`, tryb dev/§1).
+- **Paczka instalacyjna (sidecar, §3):** baza, `config.env` (z `ARCHITEKT_JWT_SECRET`) i logi żyją w katalogu danych aplikacji per-OS, NIE w repo: macOS `~/Library/Application Support/ArchitektWolnosci/`, Windows `%APPDATA%\ArchitektWolnosci\`, Linux `~/.local/share/ArchitektWolnosci/`. Override: `AW_APP_DATA_DIR`.
+- Kopia zapasowa = skopiuj `data/architekt.db` (odpowiedni katalog wg powyższego) przy zamkniętej aplikacji lub w przerwie w zapisie.
+- Koszty LLM (jeśli włączone): domyślnie `data/cost_log.jsonl` w tym samym katalogu co baza — nadpisz `COST_LOG_PATH`, jeśli trzymasz log gdzie indziej.
 
 **Skrót:** bez kopii pliku bazy **nie odzyskasz** historii debat po utracie dysku lub odinstalowaniu katalogu danych.
 

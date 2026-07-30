@@ -7,19 +7,19 @@ export default {
       colors: {
         /* ── Premium palette (Design System v1) ── */
         app: {
-          DEFAULT: "#0A0D14",
-          deep: "#070910",
+          DEFAULT: "#050505",
+          deep: "#030303",
         },
         surface: {
-          DEFAULT: "#11151F",
-          raised: "#161B28",
-          overlay: "#1A2030",
+          DEFAULT: "rgba(18, 18, 15, 0.60)",
+          raised: "rgba(28, 27, 21, 0.72)",
+          overlay: "rgba(34, 32, 25, 0.82)",
         },
         gold: {
-          DEFAULT: "#C5A46E",
-          light: "#D4B888",
-          dim: "rgba(197, 164, 110, 0.12)",
-          muted: "rgba(197, 164, 110, 0.55)",
+          DEFAULT: "#D4AF6A",
+          light: "#F4D896",
+          dim: "rgba(212, 175, 106, 0.12)",
+          muted: "rgba(212, 175, 106, 0.55)",
         },
         teal: {
           DEFAULT: "#3D8B8B",
@@ -28,26 +28,26 @@ export default {
           dim: "rgba(61, 139, 139, 0.12)",
         },
         text: {
-          primary: "#E8EBF0",
-          secondary: "#A6B0C3",
-          tertiary: "#667085",
+          primary: "#EEF0E6",
+          secondary: "#B8B2A4",
+          tertiary: "#857F72",
         },
         border: {
-          DEFAULT: "#1E2433",
-          subtle: "rgba(30, 36, 51, 0.6)",
-          focus: "rgba(197, 164, 110, 0.45)",
+          DEFAULT: "rgba(212, 175, 106, 0.20)",
+          subtle: "rgba(212, 175, 106, 0.10)",
+          focus: "rgba(212, 175, 106, 0.45)",
         },
         /* Legacy aliases — mapped to new palette for gradual migration */
         navy: {
-          DEFAULT: "#0A0D14",
-          800: "#11151F",
-          700: "#161B28",
+          DEFAULT: "#050505",
+          800: "#121210",
+          700: "#1c1b15",
         },
       },
       fontFamily: {
-        sans: ["DM Sans", "system-ui", "-apple-system", "sans-serif"],
-        serif: ['"DM Serif Display"', "Georgia", "Cambria", "serif"],
-        display: ['"DM Serif Display"', "Georgia", "serif"],
+        sans: ['"Space Grotesk"', "DM Sans", "system-ui", "-apple-system", "sans-serif"],
+        serif: ['"Cormorant Garamond"', '"DM Serif Display"', "Georgia", "Cambria", "serif"],
+        display: ['"Cormorant Garamond"', '"DM Serif Display"', "Georgia", "serif"],
       },
       fontSize: {
         "display-lg": ["1.75rem", { lineHeight: "1.25", letterSpacing: "-0.01em" }],
@@ -77,7 +77,7 @@ export default {
         card: "0 1px 2px rgba(0, 0, 0, 0.24), 0 4px 16px rgba(0, 0, 0, 0.18)",
         elevated:
           "0 2px 4px rgba(0, 0, 0, 0.28), 0 8px 32px rgba(0, 0, 0, 0.22)",
-        glowGold: "0 0 24px rgba(197, 164, 110, 0.12)",
+        glowGold: "0 0 24px rgba(212, 175, 106, 0.16)",
         glowTeal: "0 0 20px rgba(61, 139, 139, 0.1)",
         inset: "inset 0 1px 0 rgba(255, 255, 255, 0.04)",
       },
@@ -111,7 +111,7 @@ export default {
         "surface-gradient":
           "linear-gradient(165deg, rgba(255,255,255,0.025) 0%, rgba(255,255,255,0) 48%, rgba(0,0,0,0.08) 100%)",
         "app-gradient":
-          "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(61,139,139,0.06) 0%, transparent 55%)",
+          "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(212,175,106,0.05) 0%, transparent 55%)",
       },
     },
   },

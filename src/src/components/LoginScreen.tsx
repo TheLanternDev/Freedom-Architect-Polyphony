@@ -13,6 +13,7 @@ import {
   type DemoPublicConfig,
   startDemoSession,
 } from "@/lib/demoConfig";
+import { BrandVisual } from "@/components/BrandVisual";
 
 const LS_USER = "aw_user_display";
 
@@ -126,8 +127,20 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
 
   if (demoConfig?.enabled) {
     return (
-      <div className="aw-app-shell items-center justify-center">
-        <div className="aw-card w-full max-w-md mx-4 shadow-elevated border-gold/20">
+      <div className="aw-app-shell items-center justify-center relative overflow-hidden">
+        <BrandVisual
+          variant="login-bg"
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.22]"
+        />
+        <div className="relative z-10 flex w-full max-w-4xl mx-4 flex-col items-stretch gap-8 lg:flex-row lg:items-center">
+          <div className="hidden lg:block flex-1 max-w-sm">
+            <BrandVisual
+              variant="login-hero"
+              className="w-full rounded-card border border-gold/15 shadow-elevated object-cover aspect-[9/16] max-h-[min(72vh,640px)]"
+              alt=""
+            />
+          </div>
+          <div className="aw-card w-full max-w-md shadow-elevated border-gold/20 lg:flex-1">
           <p className="aw-eyebrow mb-3">{t("demo.badge")}</p>
           <h1 className="font-display text-display-md text-text-primary mb-2">
             {t("app.brand")}
@@ -158,14 +171,27 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
             {busy ? "..." : t("demo.btn_start")}
           </button>
           <p className="aw-caption mt-5 text-center">{t("demo.footer")}</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="aw-app-shell items-center justify-center">
-      <div className="aw-card w-full max-w-sm mx-4 shadow-elevated">
+    <div className="aw-app-shell items-center justify-center relative overflow-hidden">
+      <BrandVisual
+        variant="login-bg"
+        className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-[0.18]"
+      />
+      <div className="relative z-10 flex w-full max-w-4xl mx-4 flex-col items-stretch gap-8 lg:flex-row lg:items-center">
+        <div className="hidden lg:block flex-1 max-w-sm">
+          <BrandVisual
+            variant="login-hero"
+            className="w-full rounded-card border border-gold/15 shadow-elevated object-cover aspect-[9/16] max-h-[min(72vh,640px)]"
+            alt=""
+          />
+        </div>
+        <div className="aw-card w-full max-w-sm shadow-elevated lg:flex-1">
         <h1 className="font-display text-display-md text-text-primary mb-2">
           {t("app.brand")}
         </h1>
@@ -243,6 +269,7 @@ export function LoginScreen({ onAuthenticated, demoConfig }: Props) {
             {t("login.skip")}
           </button>
         )}
+        </div>
       </div>
     </div>
   );

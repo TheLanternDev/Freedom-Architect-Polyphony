@@ -20,6 +20,7 @@ import { getApiBase } from "@/lib/apiBase";
 import { getApiAuthHeaders } from "@/lib/apiAuth";
 import { cn } from "@/lib/cn";
 import { Icon } from "@/components/ui/Icon";
+import { BrandVisual } from "@/components/BrandVisual";
 
 const ONBOARD_KEY = "aw-onboarding-dismissed";
 
@@ -269,7 +270,8 @@ export function BriefForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-10 pb-4">
       <FadeIn>
-        <header className="space-y-3">
+        <header className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-3 min-w-0 flex-1">
           <span className="aw-council-seal">
             <Icon icon={Users} size="sm" className="opacity-80" />
             {t("app.workspace.seal")}
@@ -278,6 +280,12 @@ export function BriefForm({
             {t("brief.hero.title")}
           </h2>
           <p className="aw-body max-w-2xl">{t("brief.hero.subtitle")}</p>
+          </div>
+          <BrandVisual
+            variant="brief"
+            className="hidden sm:block w-28 shrink-0 rounded-card border border-gold/15 opacity-90 object-cover aspect-[9/16] shadow-card"
+            alt=""
+          />
         </header>
       </FadeIn>
 

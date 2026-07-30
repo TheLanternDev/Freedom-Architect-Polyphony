@@ -1,11 +1,17 @@
-# Ręczny build Tauri z podpisywaniem (macOS). Wymaga secrets w repo Settings.
+# Ręczny build Tauri z podpisywaniem (macOS + Windows). Wymaga secrets w repo Settings.
+#
+# Buduje backend jako sidecar PyInstaller (scripts/build-backend-sidecar.sh /
+# scripts/windows/build-backend-sidecar.ps1) PRZED `tauri build`, żeby paczka
+# .dmg/.msi była samowystarczalna — tester nie instaluje Pythona ani Node.
+# Bez sidecara .app/.msi auto-spawn backendu nie ma czego uruchomić
+# (patrz docs/REVIEW_I_PACZKA_TESTOWA_2026-06-25.md, blocker B1).
 name: tauri-release
 
 on:
   workflow_dispatch:
     inputs:
       skip_sign_check:
-        description: "Pomiń walidację certyfikatów (tylko dev artefakt)"
+        description: "Pomiń walidację certyfikatów (tylko dev/most bez certów — patrz docs/TAURI_RELEASE.md)"
         default: "false"
         type: choice
         options:
@@ -17,11 +23,16 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Build backend sidecar (PyInstaller)
+        run: ./scripts/build-backend-sidecar.sh
       - name: Install frontend deps
         working-directory: src
         run: npm ci
@@ -44,3 +55,38 @@ jobs:
           path: |
             src/src-tauri/target/release/bundle/**/*.dmg
             src/src-tauri/target/release/bundle/**/*.app
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build backend sidecar (PyInstaller)
+        shell: pwsh
+        run: .\scripts\windows\build-backend-sidecar.ps1
+      - name: Install frontend deps
+        working-directory: src
+        run: npm ci
+      - name: Build Tauri (signed when secrets present)
+        working-directory: src
+        shell: pwsh
+        env:
+          AW_TAURI_SKIP_SIGN_CHECK: ${{ inputs.skip_sign_check }}
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.example.com' }}
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: npm run tauri:build:release
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-windows-bundle
+          path: |
+            src/src-tauri/target/release/bundle/**/*.msi
+            src/src-tauri/target/release/bundle/**/*.exe

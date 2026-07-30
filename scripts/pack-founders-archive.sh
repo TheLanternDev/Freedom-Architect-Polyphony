@@ -47,6 +47,7 @@ EXCLUDES=(
   --exclude='.env'
   --exclude='./src/.env'
   --exclude='config/sponsor_payload.py'
+  --exclude='config/patryk_identity.json'
   --exclude='BETA_SPONSOR.marker'
   --exclude='data'
   --exclude='build'
@@ -117,6 +118,17 @@ else
 fi
 
 echo "→ Walidacja archiwum"
+# Zawsze zabronione, niezależnie od trybu sponsor/BYOK — prywatny plik
+# tożsamości Patryka (core/identity.py, AKSJOMAT 3) nie ma prawa trafić do
+# ŻADNEGO testera, to nie jest tester-owalna konfiguracja.
+for always_forbidden in 'config/patryk_identity.json'; do
+  if tar -tzf "$TAR_PATH" "./$always_forbidden" 2>/dev/null | grep -q .; then
+    echo "  ✗ w archiwum jest zabroniony plik (prywatny, zawsze): $always_forbidden" >&2
+    exit 1
+  fi
+done
+echo "  ✓ config/patryk_identity.json nieobecny (Aksjomat 3 działa w trybie 'soft' u testera)"
+
 if [[ "$SPONSOR" -eq 0 ]]; then
   for forbidden in '.env' 'src/.env' 'config/sponsor_payload.py' 'BETA_SPONSOR.marker' 'venv/bin/python' 'data/architekt.db'; do
     if tar -tzf "$TAR_PATH" "$forbidden" 2>/dev/null | grep -q .; then

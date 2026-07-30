@@ -18,7 +18,7 @@ const AGENT_ORDER = [
   "Kogit", "Szow", "Kidi", "Tai", "Obver", "Relacjan", "Emojy", "Smaty", "Deega",
 ];
 
-const NODE_META: Record<string, { abbr: string; fill: string; stroke: string; text: string }> = {
+export const NODE_META: Record<string, { abbr: string; fill: string; stroke: string; text: string }> = {
   Kogit:    { abbr: "KO", fill: "#1e1b4b", stroke: "#818cf8", text: "#a5b4fc" },
   Szow:     { abbr: "SZ", fill: "#18181b", stroke: "#a1a1aa", text: "#d4d4d8" },
   Kidi:     { abbr: "KI", fill: "#4a0520", stroke: "#f472b6", text: "#f9a8d4" },
@@ -30,7 +30,7 @@ const NODE_META: Record<string, { abbr: string; fill: string; stroke: string; te
   Deega:    { abbr: "DE", fill: "#450a0a", stroke: "#f87171", text: "#fca5a5" },
 };
 
-function edgeColor(intensity: number): string {
+export function edgeColor(intensity: number): string {
   if (intensity >= 0.72) return "rgba(248,113,113,0.75)";
   if (intensity >= 0.45) return "rgba(251,191,36,0.65)";
   return "rgba(56,189,248,0.5)";
@@ -44,7 +44,7 @@ function nodePos(i: number, total: number): { x: number; y: number } {
   };
 }
 
-function nodeMeta(name: string) {
+export function nodeMeta(name: string) {
   return NODE_META[name] ?? {
     abbr: name.slice(0, 2).toUpperCase(),
     fill: "#0E1019",
@@ -203,7 +203,7 @@ export function CouncilCircle({ agents, tensions }: Props) {
 
 /* ── AgentDetail ─────────────────────────────────────────────────── */
 
-function AgentDetail({
+export function AgentDetail({
   agent,
   t,
   onClose,
@@ -285,7 +285,7 @@ function AgentDetail({
 
 /* ── TensionList ─────────────────────────────────────────────────── */
 
-function TensionList({ tensions }: { tensions: LiveTensionPair[] }) {
+export function TensionList({ tensions }: { tensions: LiveTensionPair[] }) {
   const top = tensions.slice(0, 5);
   return (
     <div>
