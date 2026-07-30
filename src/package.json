@@ -12,7 +12,7 @@
     "tauri:dev": "tauri dev",
     "sidecar": "cd .. && ./scripts/build-backend-sidecar.sh",
     "check:sidecar": "node scripts/check-sidecar-fresh.mjs",
-    "tauri:build": "npm run check:sidecar && npm run sync-tauri-csp && tauri build --bundles app",
+    "tauri:build": "npm run check:sidecar && npm run sync-tauri-csp && node scripts/tauri-build.mjs",
     "dist:mac": "npm run sidecar && npm run tauri:build && ./scripts/make-dmg.sh",
     "dist:mac:install-local": "npm run dist:mac && rm -rf \"/Applications/Freedom Architect.app\" && cp -R \"src-tauri/target/release/bundle/macos/Freedom Architect.app\" /Applications/",
     "tauri:build:release": "node scripts/tauri-release-env-check.mjs && npm run tauri:build"

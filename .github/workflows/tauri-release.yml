@@ -40,7 +40,18 @@ jobs:
         working-directory: src
         env:
           AW_TAURI_SKIP_SIGN_CHECK: ${{ inputs.skip_sign_check }}
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.example.com' }}
+          # MUSI wskazywać LOKALNY backend (review 2026-07-30). Paczka desktop
+          # to model pudełkowy: sidecar słucha na 127.0.0.1:8000. Poprzednia
+          # wartość domyślna 'https://api.example.com' dawała paczkę zepsutą
+          # na dwa sposoby naraz:
+          #   1. getApiBase() honoruje VITE_API_URL PRZED fallbackiem na
+          #      localhost → apka wołała nieistniejącą domenę,
+          #   2. sync-tauri-csp wstrzykiwał tę domenę do connect-src i NIE
+          #      dodawał wpisów localhost (robi to tylko dla localhost/127.0.0.1)
+          #      → CSP blokowałby 127.0.0.1:8000, nawet gdyby punkt 1 naprawić.
+          # `vars.VITE_API_URL` zostaje jako świadome nadpisanie dla ewentualnego
+          # builda pod hosting, ale domyślnie budujemy PUDEŁKO.
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://127.0.0.1:8000' }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -52,6 +63,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: tauri-macos-bundle
+          # Zielony job BEZ artefaktu to dokładnie ten rodzaj cichego sukcesu,
+          # który kosztował 8 dni pracy na starym backendzie (review 2026-07-30).
+          if-no-files-found: error
           path: |
             src/src-tauri/target/release/bundle/**/*.dmg
             src/src-tauri/target/release/bundle/**/*.app
@@ -79,14 +93,43 @@ jobs:
         shell: pwsh
         env:
           AW_TAURI_SKIP_SIGN_CHECK: ${{ inputs.skip_sign_check }}
-          VITE_API_URL: ${{ vars.VITE_API_URL || 'https://api.example.com' }}
+          # MUSI wskazywać LOKALNY backend (review 2026-07-30). Paczka desktop
+          # to model pudełkowy: sidecar słucha na 127.0.0.1:8000. Poprzednia
+          # wartość domyślna 'https://api.example.com' dawała paczkę zepsutą
+          # na dwa sposoby naraz:
+          #   1. getApiBase() honoruje VITE_API_URL PRZED fallbackiem na
+          #      localhost → apka wołała nieistniejącą domenę,
+          #   2. sync-tauri-csp wstrzykiwał tę domenę do connect-src i NIE
+          #      dodawał wpisów localhost (robi to tylko dla localhost/127.0.0.1)
+          #      → CSP blokowałby 127.0.0.1:8000, nawet gdyby punkt 1 naprawić.
+          # `vars.VITE_API_URL` zostaje jako świadome nadpisanie dla ewentualnego
+          # builda pod hosting, ale domyślnie budujemy PUDEŁKO.
+          VITE_API_URL: ${{ vars.VITE_API_URL || 'http://127.0.0.1:8000' }}
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: npm run tauri:build:release
+      - name: Sanity check — instalator istnieje i ma sidecara
+        shell: pwsh
+        run: |
+          $inst = Get-ChildItem -Recurse src/src-tauri/target/release/bundle -Include *.msi,*.exe -ErrorAction SilentlyContinue
+          if (-not $inst) {
+            Write-Error "Brak instalatora w bundle/ — sprawdz target --bundles (msi,nsis) w scripts/tauri-build.mjs."
+          }
+          $inst | ForEach-Object { Write-Host ("OK instalator: {0} ({1:N1} MB)" -f $_.Name, ($_.Length/1MB)) }
+          # Instalator BEZ zamrozonego backendu to paczka, ktora u odbiorcy nie
+          # wystartuje — a sam build przechodzi. Zamrozony backend ma ~30-40 MB,
+          # wiec maly instalator = brakujacy sidecar.
+          $sidecar = Get-ChildItem src/src-tauri/binaries -Filter "architekt-backend-*.exe" -ErrorAction SilentlyContinue
+          if (-not $sidecar) { Write-Error "Brak binarki sidecara w src/src-tauri/binaries." }
+          Write-Host ("OK sidecar: {0} ({1:N1} MB)" -f $sidecar.Name, ($sidecar.Length/1MB))
+          if (($inst | Measure-Object -Property Length -Maximum).Maximum -lt 20MB) {
+            Write-Error "Najwiekszy instalator < 20 MB — sidecar prawdopodobnie NIE zostal zbundlowany."
+          }
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
           name: tauri-windows-bundle
+          if-no-files-found: error
           path: |
             src/src-tauri/target/release/bundle/**/*.msi
             src/src-tauri/target/release/bundle/**/*.exe
