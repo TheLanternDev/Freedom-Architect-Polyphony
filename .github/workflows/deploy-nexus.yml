@@ -1,0 +1,35 @@
+# Deploy NEXUS (sites/nexus) do OSOBNEGO projektu Pages — nie dotyka mypolyphony.com.
+name: deploy-nexus
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "sites/nexus/**"
+      - "scripts/deploy-nexus.sh"
+      - ".github/workflows/deploy-nexus.yml"
+
+jobs:
+  pages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Cloudflare Pages (Nexus-portfolio)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy sites/nexus --project-name=Nexus-portfolio --branch=main
+        continue-on-error: true
+
+      - name: Reminder when secrets missing
+        if: failure()
+        run: |
+          echo "## NEXUS deploy — brak sekretów CF" >> "$GITHUB_STEP_SUMMARY"
+          echo "Ustaw CLOUDFLARE_API_TOKEN i CLOUDFLARE_ACCOUNT_ID w repo secrets." >> "$GITHUB_STEP_SUMMARY"
+          echo "Lokalnie: ./scripts/deploy-nexus.sh po \`wrangler login\`." >> "$GITHUB_STEP_SUMMARY"
