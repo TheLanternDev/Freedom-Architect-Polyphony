@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Freedom Architect: Polyphony — Rada Nadzorcza</title>
+  <meta name="description" content="Dziewięć perspektyw. Jedna decyzja. Polifonia bez spłaszczania złożoności — dla firm i dla Ciebie.">
+  <link rel="icon" href="/assets/favicon.svg?v=1" type="image/svg+xml">
+  <link rel="canonical" href="https://mypolyphony.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Freedom Architect: Polyphony">
+  <meta property="og:url" content="https://mypolyphony.com/">
+  <meta property="og:title" content="Freedom Architect: Polyphony — Rada Nadzorcza">
+  <meta property="og:description" content="Dziewięć perspektyw. Jedna decyzja. Polifonia bez spłaszczania złożoności — dla firm i dla Ciebie.">
+  <meta property="og:locale" content="pl_PL">
+  <meta name="twitter:card" content="summary">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body data-page="home">
+
+  <header class="site-header">
+    <div class="container inner">
+      <a href="/" class="brand">Freedom Architect<span>:</span> Polyphony</a>
+      <nav class="nav-links">
+        <a href="/firmy" data-i18n="nav.firms">Dla firm</a>
+        <a href="/osobista" data-i18n="nav.personal">Dla Ciebie</a>
+        <a href="/fragment" data-i18n="nav.fragment">Fragment</a>
+        <a href="/firmy#jak-dziala" data-i18n="nav.how">Jak działa</a>
+        <a href="/testuj" data-i18n="nav.test">Program testowy</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <p class="caps section-label" data-i18n="home.hero.label">Warstwa narracyjna · pre-produkcja</p>
+        <h1 class="hero-hook" data-i18n="home.hero.title">Dziewięć perspektyw. Jedna decyzja. Polifonia bez konsensusu za wszelką cenę.</h1>
+        <p class="lead" style="max-width: 40rem; margin-top: 1.25rem;" data-i18n="home.hero.lead">
+          Freedom Architect: Polyphony to nie kolejny chatbot z odpowiedzią. To Rada — dziewięć odrębnych głosów,
+          które ścierają się ze sobą, zanim powstanie synteza. Bez motywacyjnego języka. Bez obietnicy natychmiastowego dostępu.
+        </p>
+        <div class="btn-row" style="margin-top: 1.75rem;">
+          <a href="/testuj" class="btn btn-primary" data-i18n="nav.test">Program testowy</a>
+          <a href="#rada-full" class="btn btn-ghost" data-i18n="home.council.all">Zobacz całą Radę</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="rada">
+      <div class="container">
+        <p class="caps section-label" data-i18n="home.council.label">Rada Nadzorcza</p>
+        <h2 class="section-title" data-i18n="home.council.title">Dziewięć głosów. Żaden nie jest „główny”.</h2>
+        <p class="lead" data-i18n="home.council.lead">Każdy agent reprezentuje inną warstwę poznania. Razem tworzą polifonię — nie konsensus za wszelką cenę.</p>
+        <div class="council-grid" id="council-grid-preview"></div>
+        <div class="btn-row">
+          <a href="#rada-full" class="btn btn-ghost" data-i18n="home.council.all">Zobacz całą Radę</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="rada-full">
+      <div class="container">
+        <div class="council-grid" id="council-grid"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container inner">
+      <span>Freedom Architect: Polyphony · mypolyphony.com</span>
+      <span class="muted" data-i18n="footer.layer">Warstwa narracyjna · 2026</span>
+    </div>
+  </footer>
+
+  <script src="/js/config.js"></script>
+  <script src="/js/agents.js"></script>
+  <script src="/js/i18n.js"></script>
+</body>
+</html>

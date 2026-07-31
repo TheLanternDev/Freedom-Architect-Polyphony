@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Polyphony">
+  <rect width="32" height="32" rx="6" fill="#050608"/>
+  <circle cx="16" cy="16" r="6" fill="none" stroke="#c9a227" stroke-width="1.5"/>
+  <circle cx="16" cy="16" r="2" fill="#c9a227"/>
+</svg>

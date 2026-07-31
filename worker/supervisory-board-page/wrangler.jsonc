@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "supervisory-board-page",
+  "main": "index.js",
+  "compatibility_date": "2026-06-01",
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "mypolyphony.com/*",
+      "zone_name": "mypolyphony.com"
+    },
+    {
+      "pattern": "www.mypolyphony.com/*",
+      "zone_name": "mypolyphony.com"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "FORM_COUNTER",
+      "id": "78b389b2bcaa4ecb9b52edb1a0e8d156" // pragma: allowlist secret
+    }
+  ]
+}

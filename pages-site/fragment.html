@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fragment — Freedom Architect: Polyphony</title>
+  <meta name="description" content="Głęboka warstwa filozoficzna Fragmentu — to, co zostaje, gdy debata się kończy.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container inner">
+      <a href="/" class="brand">Freedom Architect<span>:</span> Polyphony</a>
+      <nav class="nav-links">
+        <a href="/#rada">Rada</a>
+        <a href="/testuj">Program testowy</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" style="padding: 4rem 0;">
+    <p class="caps section-label">Fragment</p>
+    <h1 class="serif" style="font-size: clamp(2.4rem, 5vw, 3.2rem); margin-bottom: 1.5rem;">To, co zostaje po debacie</h1>
+
+    <div class="split" style="margin-bottom: 3rem;">
+      <div class="agent-story">
+        <p>Fragment nie jest podsumowaniem. Nie jest slajdem. Nie jest „action item listą”.</p>
+        <p>To ślad po polifonii — zapis tego, co było prawdziwe w momencie decyzji, zanim organizacja zaczęła to upraszczać dla prezentacji.</p>
+        <p>W Freedom Architect Fragment jest warstwą, która pilnuje, żeby synteza nie zjadła sprzeczności. Żeby lider widział nie tylko „co zrobić”, ale co w tej decyzji pozostaje niewygodne — i dlaczego to ma znaczenie.</p>
+        <p>Nie obiecujemy, że Fragment rozwiąże ten dyskomfort. Obiecujemy tylko, że nie zniknie w drodze do PowerPointa.</p>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="fragment-canvas" aria-label="Wizualizacja Fragmentu"></canvas>
+        <p class="canvas-caption">Fragment — ślad syntezy, który nie spłaszcza złożoności</p>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <a href="/#rada" class="btn btn-ghost">Poznaj Radę</a>
+      <a href="/testuj" class="btn btn-primary">Program testowy</a>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container inner">
+      <span>Freedom Architect: Polyphony · mypolyphony.com</span>
+      <span class="muted">Warstwa narracyjna · 2026</span>
+    </div>
+  </footer>
+
+  <script src="/js/canvas/agent-canvas.js"></script>
+  <script>
+    // Fragment: złoty rdzeń + rozproszone ślady (hybryda lens + waves)
+    (function() {
+      const canvas = document.getElementById("fragment-canvas");
+      const ctx = canvas.getContext("2d");
+      let w, h, dpr, t = 0;
+      function resize() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        dpr = Math.min(devicePixelRatio || 1, 2);
+        w = rect.width; h = Math.max(300, w * 0.55);
+        canvas.width = w * dpr; canvas.height = h * dpr;
+        canvas.style.height = h + "px";
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      function draw() {
+        t += 0.01;
+        ctx.clearRect(0, 0, w, h);
+        const cx = w/2, cy = h/2;
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 100);
+        g.addColorStop(0, "rgba(201,162,39,0.2)");
+        g.addColorStop(1, "transparent");
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(cx, cy, 100, 0, Math.PI*2); ctx.fill();
+        for (let i = 0; i < 12; i++) {
+          const a = (i/12)*Math.PI*2 + t*0.05;
+          ctx.strokeStyle = "rgba(201,162,39,0.15)";
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(a)*120, cy + Math.sin(a)*80);
+          ctx.stroke();
+        }
+        requestAnimationFrame(draw);
+      }
+      resize(); window.addEventListener("resize", resize); draw();
+    })();
+  </script>
+</body>
+</html>

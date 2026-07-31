@@ -566,6 +566,17 @@ class _Repo:
         )
         return int(cur.lastrowid)
 
+    async def count_debates_for_tenant(self, db: Any, tenant_id: str) -> int:
+        """Zlicza debaty dla konkretnego tenanta (np. limity demo)."""
+        cur = await db.execute(
+            "SELECT COUNT(*) AS n FROM debates WHERE tenant_id = ?",
+            (tenant_id,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return 0
+        return int(row[0] if not hasattr(row, "keys") else row["n"])
+
     async def link_dream_debate(self, db: Any, dream_id: str, debate_id: int) -> None:
         tid = _tid()
         cur = await db.execute(

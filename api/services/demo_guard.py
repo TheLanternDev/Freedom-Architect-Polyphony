@@ -21,14 +21,9 @@ def is_demo_tenant(tenant_id: str | None) -> bool:
 
 
 async def count_tenant_debates(db: Any, tenant_id: str) -> int:
-    cur = await db.execute(
-        "SELECT COUNT(*) AS n FROM debates WHERE tenant_id = ?",
-        (tenant_id,),
-    )
-    row = await cur.fetchone()
-    if row is None:
-        return 0
-    return int(row[0] if not hasattr(row, "keys") else row["n"])
+    from db import repo
+
+    return await repo.count_debates_for_tenant(db, tenant_id)
 
 
 async def demo_usage_for_tenant(db: Any, tenant_id: str) -> dict[str, int]:

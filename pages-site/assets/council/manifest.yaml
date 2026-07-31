@@ -1,0 +1,51 @@
+# Kolejność montażu Polyphony. Pliki w assets/council/ (nazwy = id agenta).
+# ZABLOKOWANE — źródło prawdy: brand/concepts.yaml → agents_canon
+# Nie zmieniaj bez wyraźnego polecenia użytkownika.
+order:
+  - id: Relacjan
+    file: Relacjan.png
+    role: "Relacje i zaufanie"
+    tagline: "Mapuje wpływ, dynamikę i ludzi wokół decyzji"
+    visual: "Middle-aged Caucasian, salt-pepper beard, warm knowing smile, golden neural-network robe"
+  - id: Kogit
+    file: Kogit.png
+    role: "Logika i struktura"
+    tagline: "Zimna architektoniczna jasność"
+    visual: "East Asian 50s–60s, Metatron cube on chest, dark grey kimono, calm architectural clarity"
+  - id: Emojy
+    file: Emojy.png
+    role: "Emocje prewerbalne"
+    tagline: "To, czego słowa jeszcze nie niosą"
+    visual: "Young East Asian, glowing golden eyes with geometric irises, floating golden octahedrons"
+  - id: Deega
+    file: Deega.png
+    role: "Głęboka diagnoza"
+    tagline: "Nieświadome pętle i ukryte powtórzenia"
+    visual: "Mature man, long dark-grey hair, pointed grey goatee, stern gaze, floating golden keys and sigils"
+  - id: Smaty
+    file: Smaty.png
+    role: "Somatyczny"
+    tagline: "To, co ciało już wie"
+    visual: "Muscular middle-aged man, golden topographic energy veins on chest, arms and skin"
+  - id: Tai
+    file: Tai.png
+    role: "Perspektywa czasu"
+    tagline: "Długie wzorce i konsekwencje przyszłości"
+    visual: "East Asian elder, hourglass and clockwork gears, silver-streaked swept-back hair"
+  - id: Szow
+    file: Szow.png
+    role: "Cień"
+    tagline: "To, czego najmniej chcesz usłyszeć"
+    visual: "Split-face: left black shadow, right golden neural-web lines, silver-streak hair, amber eyes"
+  - id: Obver
+    file: Obver.png
+    reference: false
+    role: "Obserwator zewnętrzny"
+    tagline: "Meta-perspektywa poza twoją historią"
+    visual: "Salt-pepper wavy hair, short beard, sacred geometry overlaid on face, gold embroidery robe"
+  - id: Kidi
+    file: Kidi.png
+    reference: false
+    role: "Dziecięca ciekawość"
+    tagline: "Czysta fascynacja i instynkt"
+    visual: "Young man early–mid 20s, wavy dark hair, fiery golden embroidery robe, youthful wonder"

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smaty — Rada Nadzorcza · Freedom Architect: Polyphony</title>
+  <meta name="description" content="Somatyczny. To, co ciało już wie">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container inner">
+      <a href="/" class="brand">Freedom Architect<span>:</span> Polyphony</a>
+      <nav class="nav-links">
+        <a href="/#rada">Rada</a>
+        <a href="/#jak-dziala">Jak działa</a>
+        <a href="/fragment">Fragment</a>
+        <a href="/testuj">Program testowy</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="agent-hero">
+      <div class="agent-portrait">
+        <img src="/assets/council/Smaty.png" alt="Portret Smaty" width="480" height="640" loading="eager">
+      </div>
+      <div>
+        <p class="caps">Somatyczny</p>
+        <h1 class="serif" style="font-size: clamp(2.2rem, 4vw, 3rem); margin: 0.5rem 0 1rem;">Smaty</h1>
+        <p class="lead">To, co ciało już wie</p>
+        <div class="agent-story" style="margin-top: 2rem;">
+          <p>Smaty nie czyta slajdów. Czyta napięcie w barkach, oddech w sali, sposób, w jaki ludzie przestają patrzeć na siebie.</p>
+          <p>W Radzie reprezentuje wiedzę ciała — tę, która nie przechodzi przez Excela, ale prowadzi zespoły do wypalenia albo do odwagi.</p>
+          <p>Gdy mówi, że „to nie pasuje”, nie chodzi o estetykę. Chodzi o sygnał, który organizacja zignorowała za długo.</p>
+        </div>
+        <div class="btn-row">
+          <a href="/testuj" class="btn btn-ghost">Zgłoś się do programu testowego</a>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <p class="caps section-label">Mechanizm w debacie</p>
+      <h2 class="section-title">Jak Smaty pracuje w Radzie</h2>
+      <div class="canvas-wrap">
+        <canvas id="agent-canvas" aria-label="Wizualizacja mechanizmu Smaty"></canvas>
+        <p class="canvas-caption">To, co ciało już wie</p>
+      </div>
+    </section>
+
+    <nav class="agent-nav">
+      <a href="/deega">← Deega</a>
+      <a href="/#rada">Powrót do Rady</a>
+      <a href="/tai">Tai →</a>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container inner">
+      <span>Freedom Architect: Polyphony · mypolyphony.com</span>
+      <span class="muted">Warstwa narracyjna · 2026</span>
+    </div>
+  </footer>
+
+  <script src="/js/canvas/agent-canvas.js"></script>
+  <script>initAgentCanvas("agent-canvas", "pulse");</script>
+</body>
+</html>
